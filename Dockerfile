@@ -1,44 +1,14 @@
-FROM binhex/arch-int-vpn:latest
-ENV NZBGET_VERSION=22.0
-# additional files
-##################
+FROM ghcr.io/linuxserver/nzbget:latest
 
-# add supervisor conf file for app
-ADD build/*.conf /etc/supervisor/conf.d/
+# Override with NZBGet v25
+ENV NZBGET_VERSION=25.0
 
-# add bash scripts to install app
-ADD build/root/*.sh /root/
+# Install OpenVPN and tools
+RUN apk add --no-cache openvpn iptables bash curl iproute2
 
-# add run bash scripts
-ADD run/root/*.sh /root/
+# Copy scripts
+COPY root/ /root/
+RUN chmod +x /root/init.sh /root/healthcheck.sh
 
-# add run bash scripts
-ADD run/nobody/*.sh /home/nobody/
-
-# install app
-#############
-
-# make executable and run bash scripts to install app
-RUN chmod +x /root/*.sh /home/nobody/*.sh && \
-	/bin/bash /root/install.sh
-
-# Replace default CA certificate store with updated one
-COPY build/cacert.pem /usr/sbin/nzbget_bin/
-
-# docker settings
-#################
-
-# map /config to host defined config path (used to store configuration from app)
-VOLUME /config
-
-# map /data to host defined data path (used to store data from app)
-VOLUME /data
-
-# expose port for http
-EXPOSE 6789
-
-# set permissions
-#################
-
-# run script to set uid, gid and permissions
-CMD ["/bin/bash", "/usr/local/bin/init.sh"]
+# Set entrypoint script
+CMD ["/root/init.sh"]
