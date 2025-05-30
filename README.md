@@ -12,6 +12,7 @@ A Dockerized NZBGet client with built-in OpenVPN support, based on the [linuxser
 
 ## 🛠️ Directory Structure
 
+```
 .
 ├── build/
 │   └── version-tag-push.sh        # Auto version/tag/push script
@@ -25,6 +26,7 @@ A Dockerized NZBGet client with built-in OpenVPN support, based on the [linuxser
 ├── Makefile                       # Build helper
 ├── README.md
 └── LICENSE.md
+```
 
 ---
 
