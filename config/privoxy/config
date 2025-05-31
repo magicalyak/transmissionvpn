@@ -8,10 +8,10 @@ confdir /etc/privoxy
 logdir /var/log/privoxy
 
 # Force logs to stdout for s6/Docker capture
-logfile /dev/stdout
+# logfile /dev/stdout
 
 # Basic settings
-listen-address  0.0.0.0:8118
+listen-address  0.0.0.0:__PRIVOXY_PORT__
 
 # Debugging
 debug     1  # Log the destination for each request

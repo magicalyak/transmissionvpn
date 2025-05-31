@@ -497,18 +497,18 @@ echo "[INFO] Default OUTPUT traffic routed through $VPN_INTERFACE. Other outboun
 
 # Privoxy: Apply firewall and PBR rules if enabled (s6 will start the service)
 if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
-  echo "[INFO] Privoxy is enabled. Ensuring firewall and PBR rules for port 8118."
-  iptables -A INPUT -i eth0 -p tcp --dport 8118 -j ACCEPT # Allow incoming to Privoxy
+  echo "[INFO] Privoxy is enabled. Ensuring firewall and PBR rules for port ${PRIVOXY_PORT:-8118}."
+  iptables -A INPUT -i eth0 -p tcp --dport "${PRIVOXY_PORT:-8118}" -j ACCEPT # Allow incoming to Privoxy
 
   if [ -n "$ETH0_IP" ]; then
-    echo "[INFO] Adding CONNMARK rules for Privoxy on port 8118 to $ETH0_IP"
-    iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport 8118 -j CONNMARK --set-mark 0x1
+    echo "[INFO] Adding CONNMARK rules for Privoxy on port ${PRIVOXY_PORT:-8118} to $ETH0_IP"
+    iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport "${PRIVOXY_PORT:-8118}" -j CONNMARK --set-mark 0x1
   else
     echo "[WARN] ETH0_IP not found, using less specific -i eth0 for PREROUTING CONNMARK rule for Privoxy."
-    iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 8118 -j CONNMARK --set-mark 0x1
+    iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport "${PRIVOXY_PORT:-8118}" -j CONNMARK --set-mark 0x1
   fi
-  iptables -t mangle -A OUTPUT -p tcp --sport 8118 -j CONNMARK --restore-mark # For replies
-  echo "[INFO] CONNMARK rules for Privoxy (port 8118) applied."
+  iptables -t mangle -A OUTPUT -p tcp --sport "${PRIVOXY_PORT:-8118}" -j CONNMARK --restore-mark # For replies
+  echo "[INFO] CONNMARK rules for Privoxy (port ${PRIVOXY_PORT:-8118}) applied."
 else
   echo "[INFO] Privoxy is disabled."
 fi
@@ -520,7 +520,7 @@ echo "[INFO] VPN setup script finished. Container should now be routing traffic 
 echo "[INFO] Final VPN interface: $(cat $VPN_INTERFACE_FILE)"
 echo "[INFO] NZBGet UI should be accessible on host port 6789."
 if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
-  echo "[INFO] Privoxy should be accessible on host port 8118."
+  echo "[INFO] Privoxy should be accessible on host port ${PRIVOXY_PORT:-8118}."
 fi
 date
 echo "[INFO] --- End of vpn-setup.sh ---"

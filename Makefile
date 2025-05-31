@@ -1,6 +1,12 @@
 IMAGE_NAME ?= nzbgetvpn
 CONTAINER_NAME ?= nzbgetvpn-container
 
+# Attempt to read PRIVOXY_PORT from .env file, default to 8118 if not found or .env is missing
+# This ensures PRIVOXY_HOST_PORT aligns with the internal PRIVOXY_PORT set in .env
+PRIVOXY_PORT_FROM_ENV := $(shell if [ -f .env ]; then grep '^PRIVOXY_PORT=' .env | cut -d= -f2; fi)
+PRIVOXY_HOST_PORT ?= $(PRIVOXY_PORT_FROM_ENV)
+PRIVOXY_HOST_PORT ?= 8118 # Fallback if not in .env or .env doesn't exist
+
 .PHONY: all build run run-openvpn run-wireguard logs stop shell clean help
 
 all: build
@@ -35,7 +41,7 @@ run-openvpn:
 		--cap-add=NET_ADMIN \
 		--device=/dev/net/tun \
 		-p 6789:6789 \
-		-p 8118:8118 \
+		-p $(PRIVOXY_HOST_PORT):$(PRIVOXY_HOST_PORT) \
 		-v "$(shell pwd)/config/openvpn:/config/openvpn" \
 		-v "$(shell pwd)/downloads:/downloads" \
 		--env-file .env \
@@ -55,7 +61,7 @@ run-wireguard:
 		--sysctl="net.ipv6.conf.all.disable_ipv6=0" \
 		--device=/dev/net/tun \
 		-p 6789:6789 \
-		-p 8118:8118 \
+		-p $(PRIVOXY_HOST_PORT):$(PRIVOXY_HOST_PORT) \
 		-v "$(shell pwd)/config/wireguard:/config/wireguard" \
 		-v "$(shell pwd)/downloads:/downloads" \
 		--env-file .env \
@@ -69,7 +75,7 @@ logs:
 stop:
 	@echo "Stopping and removing $(CONTAINER_NAME)..."
 	docker stop $(CONTAINER_NAME) || true
-	# Docker rm $(CONTAINER_NAME) is not needed due to --rm in run commands
+	docker rm -f $(CONTAINER_NAME) || true
 
 shell:
 	@echo "Opening shell in $(CONTAINER_NAME)..."

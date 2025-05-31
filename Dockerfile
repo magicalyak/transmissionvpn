@@ -21,6 +21,7 @@ ENV NAME_SERVERS=${NAME_SERVERS}
 ENV VPN_OPTIONS=${VPN_OPTIONS}
 ENV LAN_NETWORK=${LAN_NETWORK}
 ENV ADDITIONAL_PORTS=${ADDITIONAL_PORTS}
+ENV PRIVOXY_PORT=${PRIVOXY_PORT:-8118}
 
 # Install OpenVPN, WireGuard, Privoxy and tools
 RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy && \
@@ -32,8 +33,8 @@ COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 # Copy healthcheck script
 COPY root/healthcheck.sh /root/healthcheck.sh
 
-# Copy Privoxy configuration and s6 service files
-COPY config/privoxy/config /etc/privoxy/config
+# Copy Privoxy configuration template and s6 service files
+COPY config/privoxy/config /etc/privoxy/config.template
 COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \

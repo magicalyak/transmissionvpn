@@ -8,6 +8,27 @@ if [[ "${ENABLE_PRIVOXY,,}" != "yes" && "${ENABLE_PRIVOXY,,}" != "true" ]]; then
 fi
 
 echo "[INFO] Starting Privoxy service..."
+
+# Create actual config from template
+CONFIG_TEMPLATE="/etc/privoxy/config.template"
+ACTUAL_CONFIG="/etc/privoxy/config"
+
+if [ ! -f "$CONFIG_TEMPLATE" ]; then
+  echo "[ERROR] Privoxy config template $CONFIG_TEMPLATE not found! Cannot start Privoxy." | tee -a /var/log/privoxy/error.log # Also log to a persistent file if possible
+  exit 1
+fi
+
+# Default PRIVOXY_PORT if not set (though Dockerfile ENV should handle this)
+PRIVOXY_PORT=${PRIVOXY_PORT:-8118}
+echo "[INFO] Privoxy will listen on port: $PRIVOXY_PORT"
+
+sed "s/__PRIVOXY_PORT__/$PRIVOXY_PORT/g" "$CONFIG_TEMPLATE" > "$ACTUAL_CONFIG"
+
+if [ ! -s "$ACTUAL_CONFIG" ]; then # Check if sed failed or template was bad
+    echo "[ERROR] Failed to create $ACTUAL_CONFIG from $CONFIG_TEMPLATE. Check template and sed command." | tee -a /var/log/privoxy/error.log
+    exit 1
+fi
+
 # Ensure log directory exists
 mkdir -p /var/log/privoxy
 chown privoxy:privoxy /var/log/privoxy # Use privoxy user if it exists
