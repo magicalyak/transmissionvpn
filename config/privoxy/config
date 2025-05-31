@@ -1,0 +1,41 @@
+# Default Privoxy configuration for NZBGetVPN
+#
+# Main Privoxy configuration file.
+# For more information, see http://www.privoxy.org/user-manual/
+
+# Where Privoxy stores its log files and other generated data
+confdir /etc/privoxy
+logdir /var/log/privoxy
+
+# Force logs to stdout for s6/Docker capture
+logfile /dev/stdout
+
+# Basic settings
+listen-address  0.0.0.0:8118
+
+# Debugging
+debug     1  # Log the destination for each request
+debug  4096  # Startup banner and warnings.
+debug  8192  # Non-fatal errors
+# debug 16384 # Log connections that are refused on the listen-address (often too noisy)
+
+toggle  1
+enable-remote-toggle  0
+enable-remote-http-toggle 0
+enable-edit-actions 0
+enforce-blocks 0
+buffer-limit 4096
+max-client-connections 256
+accept-intercepted-requests 1 # Allow proxying for non-localhost sources
+
+# Actions files - use the defaults shipped with Privoxy package
+actionsfile default.action   # Main actions file
+actionsfile user.action      # User customizations
+filterfile default.filter
+# trustfile trust.txt # Generally not needed and can cause issues if file missing
+
+# Forcing all traffic through VPN will be handled by VPN routing,
+# so Privoxy doesn't need specific forward rules here.
+# If specific upstream proxies were needed, they would be defined:
+# forward / upstream_proxy_host:port
+# forward .my_local_network.com . 
