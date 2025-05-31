@@ -65,22 +65,27 @@ jobs:
           tags: |
             # For scheduled builds
             type=schedule,pattern=nightly
-            # For pushes to main
+
+            # For pushes to the main (default) branch
             type=ref,event=branch,enable={{is_default_branch}}
             type=sha,prefix=,suffix=,event=branch,enable={{is_default_branch}}
-            # For Git tags (e.g., v25.0.0)
-            # Non-prefixed tags
-            type=semver,pattern={{version}},latest=true
+
+            # For Git tags (e.g., vX.Y.Z)
+            # If Git tag is "v21.1.0", these produce Docker tags:
+            # "21.1.0", "21.1", "21"
+            type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            # Prefixed tags (with "v")
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=semver,pattern=v{{major}}
-            # Also include the Git tag itself as a Docker tag (e.g., "v25.0.0")
+            
+            # Also include the Git tag itself as a Docker tag (e.g., "v21.1.0")
             type=ref,event=tag
             # And the commit SHA for that tag
             type=sha,prefix=,suffix=,event=tag
+
+            # Set 'latest' Docker tag to point to the highest semver Git tag.
+            # Active only for Git tag events matching 'vX.Y.Z'.
+          flavor: |
+            latest=auto
 
       - name: Build and push Docker image
         id: build-and-push
