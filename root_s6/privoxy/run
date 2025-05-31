@@ -1,0 +1,19 @@
+#!/command/with-contenv bash
+# s6-rc script for privoxy
+
+# Exit if Privoxy is not enabled
+if [[ "${ENABLE_PRIVOXY,,}" != "yes" && "${ENABLE_PRIVOXY,,}" != "true" ]]; then
+  echo "[INFO] Privoxy is disabled (ENABLE_PRIVOXY is not 'yes' or 'true'). Exiting privoxy service script."
+  exit 0 # Exit cleanly, service won't start
+fi
+
+echo "[INFO] Starting Privoxy service..."
+# Ensure log directory exists
+mkdir -p /var/log/privoxy
+chown privoxy:privoxy /var/log/privoxy # Use privoxy user if it exists
+
+# Run Privoxy in the foreground, without chroot, with our config file
+# The s6 supervisor will handle daemonizing and restarting.
+# The --no-daemon flag is crucial for s6.
+exec /usr/sbin/privoxy --no-daemon /etc/privoxy/config 
+# exec /usr/sbin/privoxy --no-daemon /etc/privoxy/config >/dev/stdout 2>&1 

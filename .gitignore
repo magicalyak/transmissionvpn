@@ -1,3 +1,5 @@
 nzbgetvpn_dockerrun.txt
-logs/
+config/openvpn/credentials
 .env
+.cursorignore
+logs/
