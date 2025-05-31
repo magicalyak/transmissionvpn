@@ -1,1 +1,3 @@
 nzbgetvpn_dockerrun.txt
+logs/
+.env
