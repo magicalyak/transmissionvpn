@@ -93,6 +93,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
           builder: ${{ steps.buildx.outputs.name }}
           push: ${{ github.event_name != 'pull_request' }} # Do not push on PRs
           tags: ${{ steps.meta.outputs.tags }}
