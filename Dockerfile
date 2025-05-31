@@ -32,15 +32,15 @@ COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 # Copy healthcheck script
 COPY root/healthcheck.sh /root/healthcheck.sh
 
-# # Copy Privoxy configuration and s6 service files - Keep commented for now
-# COPY config/privoxy/config /etc/privoxy/config
-# COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
-# RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
-#     echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \
-#     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy
+# Copy Privoxy configuration and s6 service files
+COPY config/privoxy/config /etc/privoxy/config
+COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
+RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
+    echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy
 
 # Make scripts executable
-RUN chmod +x /etc/cont-init.d/50-vpn-setup /root/healthcheck.sh # /etc/s6-overlay/s6-rc.d/privoxy/run # Keep privoxy commented
+RUN chmod +x /etc/cont-init.d/50-vpn-setup /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run
 
 # Healthcheck
 HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \

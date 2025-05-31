@@ -1,428 +1,528 @@
 #!/command/with-contenv bash
+# shellcheck shell=bash
+# This script sets up the VPN connection (OpenVPN or WireGuard)
+# and configures iptables for policy-based routing.
 
-# Script to initialize VPN connection
-#
-echo "[INFO] Starting NZBGet + VPN container"
+set -e # Exit immediately if a command exits with a non-zero status.
+# set -x # Uncomment for debugging
 
-# Default to openvpn if not specified
-VPN_CLIENT=${VPN_CLIENT:-openvpn}
-echo "[INFO] Selected VPN Client: $VPN_CLIENT"
+echo "[INFO] Starting VPN setup script..."
+date
 
-if [ "$DEBUG" = "true" ] || [ "$DEBUG" = "yes" ]; then
-  echo "[DEBUG] Debug mode enabled. Activating set -x."
+# Ensure /tmp exists and is writable
+mkdir -p /tmp
+chmod 777 /tmp
+
+# Log all output of this script to a file in /tmp for easier debugging via docker exec
+exec &> /tmp/vpn-setup.log
+# Also print to stdout/stderr for s6 logging
+exec > >(tee -a /tmp/vpn-setup.log) 2> >(tee -a /tmp/vpn-setup.log >&2)
+
+
+if [ "${DEBUG,,}" = "true" ]; then
+  echo "[DEBUG] Debug mode enabled. Full script output will be logged."
   set -x
 fi
 
-# Function to write credentials to a file
-write_creds() {
-  local user=$1
-  local pass=$2
-  local creds_file="/config/openvpn/credentials" # Standardized path
-  echo "[INFO] Writing credentials to $creds_file"
-  echo "$user" > "$creds_file"
-  echo "$pass" >> "$creds_file"
-  chmod 600 "$creds_file"
-}
-
-# Function to find a single .ovpn or .conf file
-find_single_config() {
-  local dir=$1
-  local ext1=$2
-  local ext2=$3
-  local files
-  local count
-
-  # Find files with the first extension
-  files=$(find "$dir" -maxdepth 1 -name "*.$ext1" -print -quit)
-  if [ -n "$files" ]; then
-    count=$(find "$dir" -maxdepth 1 -name "*.$ext1" | wc -l)
-    if [ "$count" -eq 1 ]; then
-      echo "$files"
-      return
-    fi
-    if [ "$count" -gt 1 ]; then
-        echo "[ERROR] Multiple .$ext1 files found in $dir. Please specify one using VPN_CONFIG or WG_CONFIG_FILE." >&2
-        exit 1
+# Default VPN Interface (will be updated after connection)
+VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
+DEFAULT_VPN_INTERFACE="tun0" # Common for OpenVPN
+if [ "${VPN_CLIENT,,}" = "wireguard" ]; then
+  # For WireGuard, derive from WG_CONFIG_FILE or default to wg0
+  if [ -n "$WG_CONFIG_FILE" ]; then
+    DEFAULT_VPN_INTERFACE=$(basename "$WG_CONFIG_FILE" .conf)
+  else # try to find a .conf file
+    WG_CONF_FOUND=$(find /config/wireguard -maxdepth 1 -name '*.conf' -print -quit)
+    if [ -n "$WG_CONF_FOUND" ]; then
+        DEFAULT_VPN_INTERFACE=$(basename "$WG_CONF_FOUND" .conf)
+    else
+        DEFAULT_VPN_INTERFACE="wg0" # Fallback if no specific config found
     fi
   fi
-
-  # If no files with first extension, try second (if provided)
-  if [ -n "$ext2" ]; then
-    files=$(find "$dir" -maxdepth 1 -name "*.$ext2" -print -quit)
-    if [ -n "$files" ]; then
-      count=$(find "$dir" -maxdepth 1 -name "*.$ext2" | wc -l)
-      if [ "$count" -eq 1 ]; then
-        echo "$files"
-        return
-      fi
-      if [ "$count" -gt 1 ]; then
-          echo "[ERROR] Multiple .$ext2 files found in $dir. Please specify one using VPN_CONFIG or WG_CONFIG_FILE." >&2
-          exit 1
-      fi
-    fi
-  fi
-  echo "" # Return empty if no single file found
-}
+fi
+echo "$DEFAULT_VPN_INTERFACE" > "$VPN_INTERFACE_FILE"
+echo "[INFO] Default VPN interface set to: $(cat $VPN_INTERFACE_FILE)"
 
 
-##################################
-### OpenVPN Specific Setup
-##################################
-if [ "$VPN_CLIENT" = "openvpn" ]; then
-  echo "[INFO] Configuring OpenVPN..."
-  LOWERCASE_CREDS_FILE="/config/openvpn/credentials" # Preferred lowercase filename
-  ENV_FILE_PATH="/app/.env" # Path to a file for storing env vars if needed
-  OVERRIDE_CREDS_TXT_FILE="/config/openvpn-credentials.txt" # user-provided .txt override
-  LEGACY_UPPERCASE_CREDS_FILE="/config/openvpn/CREDENTIALS" # legacy support
-
-  # Consistently use /config/openvpn/credentials
-  # Order of credential precedence:
-  # 1. VPN_USER & VPN_PASS (directly from env)
-  # 2. /config/openvpn-credentials.txt (user override file)
-  # 3. /config/openvpn/credentials (if it already exists and is populated, perhaps by user)
-  # 4. /config/openvpn/CREDENTIALS (legacy uppercase)
-
+# Function to find OpenVPN credentials
+find_vpn_credentials() {
   if [ -n "$VPN_USER" ] && [ -n "$VPN_PASS" ]; then
-    echo "[INFO] Using VPN_USER and VPN_PASS from direct environment variables."
-    write_creds "$VPN_USER" "$VPN_PASS"
-  elif [ -f "$OVERRIDE_CREDS_TXT_FILE" ] && [ -s "$OVERRIDE_CREDS_TXT_FILE" ]; then
-    echo "[INFO] Using credentials from $OVERRIDE_CREDS_TXT_FILE."
-    # Ensure it has two lines
-    if [ "$(wc -l < "$OVERRIDE_CREDS_TXT_FILE")" -ge 2 ]; then
-      VPN_USER_FILE=$(head -n 1 "$OVERRIDE_CREDS_TXT_FILE")
-      VPN_PASS_FILE=$(head -n 2 "$OVERRIDE_CREDS_TXT_FILE" | tail -n 1)
-      write_creds "$VPN_USER_FILE" "$VPN_PASS_FILE"
-    else
-      echo "[WARN] $OVERRIDE_CREDS_TXT_FILE does not contain enough lines for username and password. Skipping."
-    fi
-  elif [ -f "$LOWERCASE_CREDS_FILE" ] && [ -s "$LOWERCASE_CREDS_FILE" ]; then
-    echo "[INFO] Using existing $LOWERCASE_CREDS_FILE."
-    # No action needed, file is already in place and populated
-  elif [ -f "$LEGACY_UPPERCASE_CREDS_FILE" ] && [ -s "$LEGACY_UPPERCASE_CREDS_FILE" ]; then
-    echo "[INFO] Using legacy $LEGACY_UPPERCASE_CREDS_FILE. Copying to $LOWERCASE_CREDS_FILE."
-    # Ensure it has two lines before copying
-    if [ "$(wc -l < "$LEGACY_UPPERCASE_CREDS_FILE")" -ge 2 ]; then
-      VPN_USER_FILE=$(head -n 1 "$LEGACY_UPPERCASE_CREDS_FILE")
-      VPN_PASS_FILE=$(head -n 2 "$LEGACY_UPPERCASE_CREDS_FILE" | tail -n 1)
-      write_creds "$VPN_USER_FILE" "$VPN_PASS_FILE"
-    else
-      echo "[WARN] Legacy $LEGACY_UPPERCASE_CREDS_FILE does not contain enough lines. Skipping."
-    fi
-  else
-    echo "[WARN] No VPN credentials provided or found. OpenVPN might fail if config requires auth."
+    echo "[INFO] Using VPN_USER and VPN_PASS from environment."
+    echo "$VPN_USER" > /tmp/vpn-credentials
+    echo "$VPN_PASS" >> /tmp/vpn-credentials
+    return 0
   fi
-
-  # Validate credentials file if it was supposed to be created
-  if [ -f "$LOWERCASE_CREDS_FILE" ]; then
-      if [ ! -s "$LOWERCASE_CREDS_FILE" ] || [ "$(wc -c < "$LOWERCASE_CREDS_FILE")" -le 1 ]; then # Check if empty or just newline
-          echo "[WARN] $LOWERCASE_CREDS_FILE is empty or invalid. OpenVPN might fail if auth is needed."
-      fi
-  else
-      # This case might occur if only VPN_USER was set, or file operations failed.
-      echo "[WARN] $LOWERCASE_CREDS_FILE was not created. OpenVPN might fail if auth is needed."
-  fi
-
-  OPENVPN_CONFIG_DIR="/config/openvpn"
-  SELECTED_OPENVPN_CONFIG="$VPN_CONFIG" # From ENV var
-
-  if [ -z "$SELECTED_OPENVPN_CONFIG" ]; then
-      echo "[INFO] VPN_CONFIG is not set. Trying to find a single .ovpn or .conf file in $OPENVPN_CONFIG_DIR"
-      SELECTED_OPENVPN_CONFIG=$(find_single_config "$OPENVPN_CONFIG_DIR" "ovpn" "conf")
-      if [ -z "$SELECTED_OPENVPN_CONFIG" ]; then
-          echo "[ERROR] No OpenVPN config file found in $OPENVPN_CONFIG_DIR, and VPN_CONFIG is not set. Cannot start OpenVPN."
-          exit 1
+  # Check for credentials file at /app/.env (if /app is mounted and contains them)
+  # This is less common with --env-file but supported for flexibility
+  if [ -f "/app/.env" ]; then
+    echo "[INFO] Checking /app/.env for VPN_USER/VPN_PASS..."
+    if grep -q "^VPN_USER=" /app/.env && grep -q "^VPN_PASS=" /app/.env; then
+      # Source .env file in a subshell to get vars without polluting current env
+      # Then write them to /tmp/vpn-credentials
+      ( . /app/.env && echo "$VPN_USER" > /tmp/vpn-credentials && echo "$VPN_PASS" >> /tmp/vpn-credentials )
+      if [ -s /tmp/vpn-credentials ]; then
+        echo "[INFO] Using VPN_USER/VPN_PASS from /app/.env"
+        return 0
       else
-          echo "[INFO] Automatically selected OpenVPN config: $SELECTED_OPENVPN_CONFIG"
+        echo "[WARN] Found VPN_USER/VPN_PASS in /app/.env but failed to extract them."
+        # Clean up empty credentials file if extraction failed
+        [ -f /tmp/vpn-credentials ] && > /tmp/vpn-credentials
       fi
-  elif [[ ! -f "$SELECTED_OPENVPN_CONFIG" ]]; then
-      # If VPN_CONFIG is set but doesn't include path, prepend default dir
-      if [[ ! "$SELECTED_OPENVPN_CONFIG" == /* ]]; then
-          SELECTED_OPENVPN_CONFIG="${OPENVPN_CONFIG_DIR}/${SELECTED_OPENVPN_CONFIG}"
-      fi
-      if [[ ! -f "$SELECTED_OPENVPN_CONFIG" ]]; then
-          echo "[ERROR] OpenVPN config file '$SELECTED_OPENVPN_CONFIG' not found. Cannot start OpenVPN."
-          exit 1
-      fi
+    fi
+  fi
+  if [ -f "/config/openvpn-credentials.txt" ]; then
+    echo "[INFO] Using /config/openvpn-credentials.txt"
+    cp /config/openvpn-credentials.txt /tmp/vpn-credentials
+    return 0
+  fi
+  if [ -f "/config/openvpn/CREDENTIALS" ]; then
+    echo "[INFO] Using /config/openvpn/CREDENTIALS"
+    cp /config/openvpn/CREDENTIALS /tmp/vpn-credentials
+    return 0
+  fi
+  echo "[WARN] VPN credentials not found through environment variables or common files."
+  return 1
+}
+
+# Function to start OpenVPN
+start_openvpn() {
+  echo "[INFO] Setting up OpenVPN..."
+  OVPN_CONFIG_FILE=""
+  if [ -n "$VPN_CONFIG" ]; then
+    if [ -f "$VPN_CONFIG" ]; then
+      OVPN_CONFIG_FILE="$VPN_CONFIG"
+      echo "[INFO] Using OpenVPN config: $OVPN_CONFIG_FILE"
+    else
+      echo "[ERROR] Specified VPN_CONFIG=$VPN_CONFIG not found."
+      exit 1
+    fi
+  else
+    # Try to find the first .ovpn file in /config/openvpn
+    OVPN_CONFIG_FILE=$(find /config/openvpn -maxdepth 1 -name '*.ovpn' -print -quit)
+    if [ -z "$OVPN_CONFIG_FILE" ]; then
+      echo "[ERROR] No OpenVPN configuration file specified via VPN_CONFIG and none found in /config/openvpn."
+      exit 1
+    else
+      echo "[INFO] Automatically selected OpenVPN config: $OVPN_CONFIG_FILE"
+    fi
   fi
 
-  TEMP_OPENVPN_CONFIG_MODIFIED="/tmp/openvpn_modified.conf"
-
-  echo "[INFO] Preparing OpenVPN temp config $TEMP_OPENVPN_CONFIG_MODIFIED from $SELECTED_OPENVPN_CONFIG"
-
-  # Ensure auth-user-pass uses the standardized credentials file and remove existing ones
-  {
-    echo "auth-user-pass /config/openvpn/credentials"
-    # Comment out existing auth-user-pass lines in the user's config
-    sed 's/^[[:space:]]*auth-user-pass.*/# &/' "$SELECTED_OPENVPN_CONFIG"
-  } > "$TEMP_OPENVPN_CONFIG_MODIFIED"
-
-  # Ensure script-security 2 and up/down scripts are set
-  if ! grep -q "script-security" "$TEMP_OPENVPN_CONFIG_MODIFIED"; then
-    echo "script-security 2" >> "$TEMP_OPENVPN_CONFIG_MODIFIED"
-  fi
-  if ! grep -q "up /etc/openvpn/update-resolv.sh" "$TEMP_OPENVPN_CONFIG_MODIFIED"; then
-    echo "up /etc/openvpn/update-resolv.sh" >> "$TEMP_OPENVPN_CONFIG_MODIFIED"
-  fi
-  if ! grep -q "down /etc/openvpn/restore-resolv.sh" "$TEMP_OPENVPN_CONFIG_MODIFIED"; then
-    echo "down /etc/openvpn/restore-resolv.sh" >> "$TEMP_OPENVPN_CONFIG_MODIFIED"
+  # Credentials
+  if ! find_vpn_credentials; then
+    echo "[ERROR] OpenVPN credentials not provided or found. Please set VPN_USER/VPN_PASS or provide a credentials file."
+    exit 1
   fi
 
   # Create up/down scripts for OpenVPN
   mkdir -p /etc/openvpn
   cat << EOF > /etc/openvpn/update-resolv.sh
-#!/bin/bash 
+#!/bin/bash
 # Script to update resolv.conf with DNS servers from OpenVPN
-exec &> /tmp/openvpn_script.log
-set -x
-echo "--- OpenVPN UP script started ---"
-date
-env # Log environment to see what OpenVPN provides
+# exec &> /tmp/openvpn_script.log # DO NOT log here, it causes issues with OpenVPN execution context
+# Instead, log to /tmp/openvpn.log directly in this script
+
+set -x # For debugging individual commands in this script
+
+echo "--- OpenVPN UP script started ---" | tee -a /tmp/openvpn.log
+date | tee -a /tmp/openvpn.log
+# env | tee -a /tmp/openvpn.log # Log environment to see what OpenVPN provides
 
 # Backup original resolv.conf if not already backed up
 if [ ! -f "/tmp/resolv.conf.backup" ]; then
   if [ -f "/etc/resolv.conf" ]; then # Only backup if original exists
     cp "/etc/resolv.conf" "/tmp/resolv.conf.backup"
-    echo "Backed up /etc/resolv.conf to /tmp/resolv.conf.backup"
+    echo "Backed up /etc/resolv.conf to /tmp/resolv.conf.backup" | tee -a /tmp/openvpn.log
   else
-    echo "Original /etc/resolv.conf not found, cannot backup." 
+    echo "Original /etc/resolv.conf not found, cannot backup." | tee -a /tmp/openvpn.log
   fi
 fi
 
 # Start with an empty temp resolv.conf
-> "/tmp/resolv.conf.openvpn"
+echo "# Generated by OpenVPN update-resolv.sh" > "/tmp/resolv.conf.openvpn"
 
 # Option 1: Use NAME_SERVERS if provided from parent environment
-if [ -n "$NAME_SERVERS" ]; then
-  echo "[INFO] Using NAME_SERVERS: $NAME_SERVERS" | tee -a /tmp/openvpn.log
-  echo "# Generated by OpenVPN update-resolv.sh using NAME_SERVERS" > "/tmp/resolv.conf.openvpn"
-  
+# The 'foreign_option' parsing relies on these being exported to the script by OpenVPN
+# Ensure NAME_SERVERS is accessible here if set in Docker env.
+# openvpn --script-security 2 --up /etc/openvpn/update-resolv.sh --up-restart
+# needs NAME_SERVERS to be pushed or available in the script's env.
+# If using with-contenv, NAME_SERVERS should be available.
+
+if [ -n "\$NAME_SERVERS" ]; then
+  echo "[INFO] Using NAME_SERVERS: \$NAME_SERVERS" | tee -a /tmp/openvpn.log
   # Use sed to transform comma-separated list directly to nameserver lines
-  # The first sed expression handles multiple IPs by replacing commas with newline + "nameserver "
-  # The second sed expression prepends "nameserver " to the very first IP
-  echo "$NAME_SERVERS" | sed -e 's/,/\nnameserver /g' -e 's/^/nameserver /' >> "/tmp/resolv.conf.openvpn"
-  
+  echo "\$NAME_SERVERS" | sed -e 's/,/\nnameserver /g' -e 's/^/nameserver /' >> "/tmp/resolv.conf.openvpn"
 else
   # Option 2: Try to parse foreign_option_ variables for DNS (pushed by VPN server)
-  echo "[INFO] NAME_SERVERS not set, trying to parse foreign_option_X for DNS" | tee -a /tmp/openvpn.log
+  echo "[INFO] NAME_SERVERS not set, trying to use DNS from VPN (foreign_option_X)" | tee -a /tmp/openvpn.log
   dns_found=0
-  for item in $(env | grep '^foreign_option_'); do # Use 'item' to avoid conflict if 'option' is special
-    option_value=$(echo "$item" | cut -d '=' -f 2-) # Get value after first '='
-    if echo "$option_value" | grep -q "^dhcp-option DNS"; then
-      dns_ip=$(echo "$option_value" | awk '{print $3}') # Assumes format 'dhcp-option DNS x.x.x.x'
-      if [ -n "$dns_ip" ]; then # Ensure dns_ip is not empty
-        if [ "$dns_found" -eq 0 ]; then # First DNS server found
-          echo "# Generated by OpenVPN update-resolv.sh from PUSH_REPLY" > "/tmp/resolv.conf.openvpn"
-          dns_found=1
-        fi
-        echo "nameserver $dns_ip" >> "/tmp/resolv.conf.openvpn"
-        echo "Found pushed DNS server: $dns_ip" | tee -a /tmp/openvpn.log
-      fi
+  for option_var_name in \$(env | grep '^foreign_option_' | cut -d= -f1); do
+    option_var_value=\$(eval echo "\\\"\$\$option_var_name\\\"")
+    if echo "\$option_var_value" | grep -q '^dhcp-option DNS'; then
+      dns_server=\$(echo "\$option_var_value" | cut -d' ' -f3)
+      echo "nameserver \$dns_server" >> "/tmp/resolv.conf.openvpn"
+      echo "[INFO] Added DNS server from VPN: \$dns_server" | tee -a /tmp/openvpn.log
+      dns_found=1
     fi
   done
-
-  # Option 3: Fallback to default DNS if none pushed or provided from NAME_SERVERS
-  if [ "$dns_found" -eq 0 ] && [ -z "$NAME_SERVERS" ]; then # Check -z for NAME_SERVERS here
-    echo "[INFO] No DNS servers pushed by VPN or provided by NAME_SERVERS. Using fallbacks 1.1.1.1, 8.8.8.8" | tee -a /tmp/openvpn.log
-    # Ensure temp file is empty or only has the header before adding fallbacks
-    echo "# Generated by OpenVPN update-resolv.sh using fallbacks" > "/tmp/resolv.conf.openvpn"
-    echo "nameserver 1.1.1.1" >> "/tmp/resolv.conf.openvpn"
-    echo "nameserver 8.8.8.8" >> "/tmp/resolv.conf.openvpn"
+  if [ \$dns_found -eq 0 ]; then
+      echo "[WARN] No DNS servers pushed by VPN, and NAME_SERVERS not set. Using fallbacks." | tee -a /tmp/openvpn.log
+      echo "nameserver 1.1.1.1" >> "/tmp/resolv.conf.openvpn" # Cloudflare
+      echo "nameserver 8.8.8.8" >> "/tmp/resolv.conf.openvpn" # Google
   fi
 fi
 
-# Apply the new resolv.conf only if the temp file has content
-if [ -s "/tmp/resolv.conf.openvpn" ]; then
-  cat "/tmp/resolv.conf.openvpn" > "/etc/resolv.conf"
-  echo "Applied new /etc/resolv.conf:" | tee -a /tmp/openvpn.log
-  cat "/etc/resolv.conf" | tee -a /tmp/openvpn.log
+# Atomically replace resolv.conf
+# Check if /tmp/resolv.conf.openvpn has content beyond the initial comment
+if [ \$(grep -cv '^#' /tmp/resolv.conf.openvpn) -gt 0 ]; then
+  cp "/tmp/resolv.conf.openvpn" "/etc/resolv.conf"
+  echo "Updated /etc/resolv.conf" | tee -a /tmp/openvpn.log
 else
-  echo "[WARN] Temporary DNS config /tmp/resolv.conf.openvpn is empty. Not overwriting /etc/resolv.conf." | tee -a /tmp/openvpn.log
+  echo "[WARN] /tmp/resolv.conf.openvpn was empty or only comments. Not updating /etc/resolv.conf." | tee -a /tmp/openvpn.log
 fi
 
-echo "Signaling OpenVPN UP script completion."
-touch /tmp/openvpn_up_complete
-
-echo "--- OpenVPN UP script finished ---"
+# Create a flag file to indicate the 'up' script has completed
+# This helps the main vpn-setup.sh script to know when tun0 is likely configured
+echo "OpenVPN UP script completed. Interface: \$dev" > /tmp/openvpn_up_complete
+echo "[INFO] OpenVPN UP script for \$dev completed (flag file created)." | tee -a /tmp/openvpn.log
 exit 0
 EOF
-  chmod +x /etc/openvpn/update-resolv.sh
 
   cat << EOF > /etc/openvpn/restore-resolv.sh
-#!/bin/bash 
-# Script to restore resolv.conf after OpenVPN disconnects
-exec &> /tmp/openvpn_script.log
+#!/bin/bash
+# Script to restore original resolv.conf
+# exec &> /tmp/openvpn_script_down.log # DO NOT log here
 set -x
-echo "--- OpenVPN DOWN script started ---"
-date
+echo "--- OpenVPN DOWN script started ---" | tee -a /tmp/openvpn.log
+date | tee -a /tmp/openvpn.log
 
 if [ -f "/tmp/resolv.conf.backup" ]; then
-  echo "Restoring /etc/resolv.conf from /tmp/resolv.conf.backup" | tee -a /tmp/openvpn.log
-  cat "/tmp/resolv.conf.backup" > "/etc/resolv.conf"
-  rm "/tmp/resolv.conf.backup"
-  echo "Applied restored /etc/resolv.conf:" | tee -a /tmp/openvpn.log
-  cat "/etc/resolv.conf" | tee -a /tmp/openvpn.log
+  cp "/tmp/resolv.conf.backup" "/etc/resolv.conf"
+  echo "Restored /etc/resolv.conf from /tmp/resolv.conf.backup" | tee -a /tmp/openvpn.log
+  rm "/tmp/resolv.conf.backup" # Clean up backup
 else
-  echo "/tmp/resolv.conf.backup not found, cannot restore." | tee -a /tmp/openvpn.log
+  echo "No backup /tmp/resolv.conf.backup found to restore." | tee -a /tmp/openvpn.log
 fi
-echo "--- OpenVPN DOWN script finished ---"
+# Remove the flag file
+rm -f /tmp/openvpn_up_complete
+echo "[INFO] OpenVPN DOWN script for \$dev completed (flag file removed)." | tee -a /tmp/openvpn.log
 exit 0
 EOF
-  chmod +x /etc/openvpn/restore-resolv.sh
 
-  echo "[INFO] Starting OpenVPN client (config $TEMP_OPENVPN_CONFIG_MODIFIED, options: $VPN_OPTIONS)"
-  # Start OpenVPN in daemon mode
-  # Log to /tmp/openvpn.log (appended by up/down scripts)
-  openvpn --config "$TEMP_OPENVPN_CONFIG_MODIFIED" \
-          --daemon \
-          --verb 4 \
-          --writepid /run/openvpn.pid \
-          --log /tmp/openvpn.log \
-          $VPN_OPTIONS
+  chmod +x /etc/openvpn/update-resolv.sh /etc/openvpn/restore-resolv.sh
 
-  # Wait for the OpenVPN UP script to signal completion via the flag file
-  echo "[INFO] Waiting up to 30 seconds for OpenVPN UP script to complete (waits for /tmp/openvpn_up_complete)..."
-  VPN_UP_FLAG_FILE="/tmp/openvpn_up_complete"
-  for i in $(seq 1 30); do
-    if [ -f "$VPN_UP_FLAG_FILE" ]; then
-      echo "[INFO] OpenVPN UP script completed (flag file found)."
-      break
+  # Modify OVPN config on the fly for auth-user-pass and script security
+  TEMP_OVPN_CONFIG="/tmp/config.ovpn"
+  cp "$OVPN_CONFIG_FILE" "$TEMP_OVPN_CONFIG"
+  # Ensure auth-user-pass points to our standard credentials file
+  if grep -q "^auth-user-pass" "$TEMP_OVPN_CONFIG"; then
+    sed -i 's|^auth-user-pass.*|auth-user-pass /tmp/vpn-credentials|' "$TEMP_OVPN_CONFIG"
+  else
+    echo "auth-user-pass /tmp/vpn-credentials" >> "$TEMP_OVPN_CONFIG"
+  fi
+  # Ensure script-security 2 is set for up/down scripts
+  if grep -q "^script-security" "$TEMP_OVPN_CONFIG"; then
+    sed -i 's|^script-security.*|script-security 2|' "$TEMP_OVPN_CONFIG"
+  else
+    echo "script-security 2" >> "$TEMP_OVPN_CONFIG"
+  fi
+  # Add up and down script directives
+  if ! grep -q "^up " "$TEMP_OVPN_CONFIG"; then
+    echo "up /etc/openvpn/update-resolv.sh" >> "$TEMP_OVPN_CONFIG"
+  fi
+  if ! grep -q "^down " "$TEMP_OVPN_CONFIG"; then
+    echo "down /etc/openvpn/restore-resolv.sh" >> "$TEMP_OVPN_CONFIG"
+  fi
+  # Remove redirect-gateway if LAN_NETWORK is set, we'll handle routing
+  if [ -n "$LAN_NETWORK" ]; then
+    sed -i '/^redirect-gateway def1/d' "$TEMP_OVPN_CONFIG"
+    echo "[INFO] Removed redirect-gateway def1 from OpenVPN config due to LAN_NETWORK being set."
+  fi
+
+
+  echo "[INFO] Starting OpenVPN client..."
+  # Using exec to replace the shell process with openvpn is not suitable here as we need to run commands after it.
+  # Run OpenVPN in the background. s6 will manage its lifecycle if needed as part of this init script.
+  openvpn --config "$TEMP_OVPN_CONFIG" \
+          --dev "$(cat $VPN_INTERFACE_FILE)" \
+          ${VPN_OPTIONS} > /tmp/openvpn.log 2>&1 &
+
+  # Wait for the 'up' script to complete by checking for the flag file
+  echo "[INFO] Waiting for OpenVPN 'up' script to complete (expect /tmp/openvpn_up_complete)..."
+  UP_SCRIPT_TIMEOUT=60 # seconds
+  UP_SCRIPT_FLAG="/tmp/openvpn_up_complete"
+  SECONDS=0
+  while [ ! -f "$UP_SCRIPT_FLAG" ]; do
+    if [ "$SECONDS" -ge "$UP_SCRIPT_TIMEOUT" ]; then
+      echo "[ERROR] Timeout waiting for OpenVPN 'up' script to create $UP_SCRIPT_FLAG."
+      echo "OpenVPN log (/tmp/openvpn.log) contents:"
+      cat /tmp/openvpn.log
+      echo "update-resolv.sh log (/tmp/openvpn_script.log) contents (if any):"
+      cat /tmp/openvpn_script.log || echo "No /tmp/openvpn_script.log found."
+      exit 1
     fi
-    echo "[DEBUG] Waiting for $VPN_UP_FLAG_FILE... (Attempt $i/30)"
     sleep 1
   done
-
-  if [ ! -f "$VPN_UP_FLAG_FILE" ]; then
-    echo "[ERROR] OpenVPN UP script did not complete in time (flag file $VPN_UP_FLAG_FILE not found)."
-    echo "[ERROR] Check /tmp/openvpn.log and /tmp/openvpn_script.log for errors."
-    # Optionally, dump logs here
-    cat /tmp/openvpn.log 2>/dev/null || echo "No /tmp/openvpn.log"
-    cat /tmp/openvpn_script.log 2>/dev/null || echo "No /tmp/openvpn_script.log"
-    exit 1 # Exit if VPN didn't come up properly
+  echo "[INFO] OpenVPN 'up' script completed (flag file found)."
+  VPN_INTERFACE_FROM_UP_SCRIPT=$(awk -F': ' '/Interface: / {print $2}' "$UP_SCRIPT_FLAG" | tr -d '\r')
+  if [ -n "$VPN_INTERFACE_FROM_UP_SCRIPT" ]; then
+      echo "$VPN_INTERFACE_FROM_UP_SCRIPT" > "$VPN_INTERFACE_FILE"
+      echo "[INFO] VPN interface updated from 'up' script: $(cat $VPN_INTERFACE_FILE)"
+  else
+      echo "[WARN] Could not determine VPN interface from up script. Using default: $(cat $VPN_INTERFACE_FILE)"
   fi
 
-  # At this point, update-resolv.sh should have run.
-  # We assume the VPN interface will be tun0 for OpenVPN.
-  VPN_INTERFACE="tun0"
-  echo "[INFO] Assuming OpenVPN interface is $VPN_INTERFACE after UP script completion."
+}
 
-  # Verify the interface exists and has an IP address
-  if ! ip addr show "$VPN_INTERFACE" | grep -q "inet "; then
-    echo "[ERROR] OpenVPN interface $VPN_INTERFACE does not have an IPv4 address or is not UP."
-    ip addr
-    exit 1
-  fi
-  rm -f "$VPN_UP_FLAG_FILE" # Clean up flag file
-
-##################################
-### WireGuard Specific Setup
-##################################
-elif [ "$VPN_CLIENT" = "wireguard" ]; then
-  echo "[INFO] Configuring WireGuard..."
-  WG_CONFIG_DIR="/config/wireguard"
-  SELECTED_WG_CONFIG="$WG_CONFIG_FILE" # From ENV
-
-  if [ -z "$SELECTED_WG_CONFIG" ]; then
-      echo "[INFO] WG_CONFIG_FILE is not set. Trying to find a single .conf file in $WG_CONFIG_DIR"
-      SELECTED_WG_CONFIG=$(find_single_config "$WG_CONFIG_DIR" "conf" "") # Only .conf for wireguard
-      if [ -z "$SELECTED_WG_CONFIG" ]; then
-          echo "[ERROR] No WireGuard config file found in $WG_CONFIG_DIR, and WG_CONFIG_FILE is not set. Cannot start WireGuard."
+# Function to start WireGuard
+start_wireguard() {
+  echo "[INFO] Setting up WireGuard..."
+  WG_CONFIG=""
+  if [ -n "$WG_CONFIG_FILE" ]; then
+      if [ -f "$WG_CONFIG_FILE" ]; then
+          WG_CONFIG="$WG_CONFIG_FILE"
+          echo "[INFO] Using WireGuard config: $WG_CONFIG"
+      else
+          echo "[ERROR] Specified WG_CONFIG_FILE=$WG_CONFIG_FILE not found."
+          exit 1
+      fi
+  else
+      WG_CONF_FOUND=$(find /config/wireguard -maxdepth 1 -name '*.conf' -print -quit)
+      if [ -z "$WG_CONF_FOUND" ]; then
+          echo "[ERROR] No WireGuard configuration file specified via WG_CONFIG_FILE and none found in /config/wireguard."
           exit 1
       else
-          echo "[INFO] Automatically selected WireGuard config: $SELECTED_WG_CONFIG"
-      fi
-  elif [[ ! -f "$SELECTED_WG_CONFIG" ]]; then
-      # If WG_CONFIG_FILE is set but doesn't include path, prepend default dir
-      if [[ ! "$SELECTED_WG_CONFIG" == /* ]]; then
-          SELECTED_WG_CONFIG="${WG_CONFIG_DIR}/${SELECTED_WG_CONFIG}"
-      fi
-      if [[ ! -f "$SELECTED_WG_CONFIG" ]]; then
-          echo "[ERROR] WireGuard config file '$SELECTED_WG_CONFIG' not found. Cannot start WireGuard."
-          exit 1
+          WG_CONFIG="$WG_CONF_FOUND"
+          echo "[INFO] Automatically selected WireGuard config: $WG_CONFIG"
+          # Update VPN_INTERFACE_FILE based on found config
+          echo "$(basename "$WG_CONFIG" .conf)" > "$VPN_INTERFACE_FILE"
       fi
   fi
+  INTERFACE_NAME=$(cat "$VPN_INTERFACE_FILE")
+  echo "[INFO] Starting WireGuard for interface $INTERFACE_NAME using $WG_CONFIG..."
+  wg-quick up "$WG_CONFIG"
+  echo "[INFO] WireGuard started. Interface: $INTERFACE_NAME"
+  # For WireGuard, DNS is typically set in the .conf file's [Interface] section (DNS = x.x.x.x)
+  # wg-quick should handle setting this up.
+  # If NAME_SERVERS is provided, we can override /etc/resolv.conf
+  if [ -n "$NAME_SERVERS" ]; then
+    echo "[INFO] NAME_SERVERS is set ($NAME_SERVERS), updating /etc/resolv.conf for WireGuard."
+    # Backup original resolv.conf if not already backed up
+    if [ ! -f "/tmp/resolv.conf.backup" ]; then
+      if [ -f "/etc/resolv.conf" ]; then cp "/etc/resolv.conf" "/tmp/resolv.conf.backup"; fi
+    fi
+    echo "# Generated by vpn-setup.sh for WireGuard using NAME_SERVERS" > /tmp/resolv.conf.wireguard
+    echo "$NAME_SERVERS" | sed -e 's/,/\nnameserver /g' -e 's/^/nameserver /' >> "/tmp/resolv.conf.wireguard"
+    cp "/tmp/resolv.conf.wireguard" "/etc/resolv.conf"
+    echo "Updated /etc/resolv.conf with NAME_SERVERS."
+  fi
+}
 
-  # Extract interface name from config filename (e.g., /config/wireguard/wg0.conf -> wg0)
-  WG_INTERFACE=$(basename "$SELECTED_WG_CONFIG" .conf)
-  echo "[INFO] WireGuard interface name: $WG_INTERFACE"
-
-  echo "[INFO] Starting WireGuard client (config $SELECTED_WG_CONFIG)"
-  wg-quick up "$SELECTED_WG_CONFIG"
-  # No daemon mode for wg-quick, it exits after setting up.
-  # We'll rely on the interface staying up.
-  # TODO: Add check to see if wg-quick up was successful.
-  # For now, assume it worked if the command didn't exit with error.
-  # Save interface name for healthcheck
-  VPN_INTERFACE="$WG_INTERFACE"
-  VPN_LOG_FILE="/tmp/wireguard.log" # wg-quick logs to journal/dmesg by default
-                                    # For basic logging, we can touch a file or redirect wg show
-  wg show "$WG_INTERFACE" > "$VPN_LOG_FILE" 2>&1
-
+# Select VPN client
+if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
+  start_openvpn
+elif [ "${VPN_CLIENT,,}" = "wireguard" ]; then
+  start_wireguard
 else
-  echo "[ERROR] Invalid VPN_CLIENT: $VPN_CLIENT. Supported: openvpn, wireguard."
+  echo "[ERROR] Invalid VPN_CLIENT: $VPN_CLIENT. Must be 'openvpn' or 'wireguard'."
   exit 1
 fi
 
-# --- Common VPN Post-Connection Steps ---
-echo "[INFO] VPN Interface name is: $VPN_INTERFACE"
-echo "$VPN_INTERFACE" > /tmp/vpn_interface_name # For healthcheck script
-echo "[INFO] Waiting 5s for $VPN_INTERFACE to settle..."
-sleep 5
+# Wait for VPN interface to be up and have an IP
+VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
+echo "[INFO] Waiting for VPN interface $VPN_INTERFACE to come up and get an IP address..."
+TIMEOUT=60 # seconds
+SECONDS=0
+while true; do
+  # Check for interface existence and UP state broadly
+  if ! ip link show "$VPN_INTERFACE" | grep -q "state UP"; then
+    # For tun devices, state might be UNKNOWN but still functional if it has an IP
+    if ! (ip addr show "$VPN_INTERFACE" | grep -q "inet ") && ! (ip link show "$VPN_INTERFACE" | grep -q "state UNKNOWN"); then
+        echo "[DEBUG] Interface $VPN_INTERFACE not UP yet or no IP. Waiting..."
+    elif ! (ip addr show "$VPN_INTERFACE" | grep -q "inet "); then
+        echo "[DEBUG] Interface $VPN_INTERFACE is UP but no IP address yet. Waiting..."
+    else # Has IP
+        echo "[INFO] Interface $VPN_INTERFACE has an IP address."
+        break
+    fi
+  else # State is UP
+    # Now check for IP specifically
+    if ip addr show "$VPN_INTERFACE" | grep -q "inet "; then
+        echo "[INFO] Interface $VPN_INTERFACE is UP and has an IP address."
+        break
+    else
+        echo "[DEBUG] Interface $VPN_INTERFACE is UP but no IP address yet. Waiting..."
+    fi
+  fi
 
-echo "[INFO] Adding CONNMARK policy routing for NZBGet UI access (mark 0x1, table 100)"
+  if [ "$SECONDS" -ge "$TIMEOUT" ]; then
+    echo "[ERROR] Timeout waiting for $VPN_INTERFACE to come up and get an IP."
+    echo "Details for interface $VPN_INTERFACE:"
+    ip addr show "$VPN_INTERFACE" || echo "Interface $VPN_INTERFACE not found."
+    if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
+        echo "OpenVPN log (/tmp/openvpn.log) contents:"
+        cat /tmp/openvpn.log || echo "No /tmp/openvpn.log"
+    fi
+    exit 1
+  fi
+  sleep 1
+done
+echo "[INFO] VPN interface $VPN_INTERFACE is active."
+
+# --- IPTables and Routing ---
+echo "[INFO] Configuring iptables and routing rules..."
+
+# Get gateway for eth0 (Docker's bridge)
+ETH0_GATEWAY=$(ip route | grep default | grep eth0 | awk '{print $3}')
+if [ -z "$ETH0_GATEWAY" ]; then
+    # Fallback for older ip route versions or different outputs
+    ETH0_GATEWAY=$(ip route show dev eth0 | awk '/default via/ {print $3}')
+fi
+if [ -z "$ETH0_GATEWAY" ]; then
+    # A common default if detection fails, but this is a guess
+    ETH0_GATEWAY="172.17.0.1" # This often is the Docker host IP on the default bridge
+    echo "[WARN] Could not reliably determine eth0 gateway. Using default $ETH0_GATEWAY. If UI is inaccessible, this might be the cause."
+else
+    echo "[INFO] Detected eth0 gateway: $ETH0_GATEWAY"
+fi
+
+# Get IP for eth0
 ETH0_IP=$(ip -4 addr show dev eth0 | awk '/inet/ {print $2}' | cut -d/ -f1)
-
 if [ -z "$ETH0_IP" ]; then
-    echo "[WARN] Could not determine IP address of eth0. CONNMARK Policy routing for NZBGet UI might not work."
-    # As a fallback, if ETH0_IP isn't found, the original PREROUTING -i eth0 -j MARK rule might be tried
-    # but CONNMARK on OUTPUT without a reliable PREROUTING CONNMARK set won't work well.
-    # For now, we'll proceed, and if ETH0_IP is empty, the -d "" will fail gracefully or match nothing.
+    echo "[WARN] Could not determine IP address of eth0. Policy routing for UI access might not be optimal."
+else
+    echo "[INFO] Detected eth0 IP: $ETH0_IP"
 fi
 
-iptables -t mangle -F PREROUTING # Flush existing rules
-iptables -t mangle -F OUTPUT     # Flush existing rules
+# Flush existing rules (important for restarts or rule changes)
+iptables -F INPUT
+iptables -F FORWARD
+iptables -F OUTPUT
+iptables -t nat -F
+iptables -t mangle -F
+echo "[INFO] Flushed existing iptables rules."
 
-# 1. On incoming packets to NZBGet on eth0, set the connection mark based on the destination IP and port.
-#    This mark will be associated with the entire connection.
+# Set default policies
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT # Allow outbound traffic by default, will be shaped by VPN
+echo "[INFO] Set default iptables policies (INPUT/FORWARD DROP, OUTPUT ACCEPT)."
+
+# Allow loopback traffic
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+echo "[INFO] Allowed loopback traffic."
+
+# Allow established and related connections (standard rule)
+iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+# For FORWARD chain as well, if container were to act as a router for others (not typical for this use case but good practice)
+iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+echo "[INFO] Allowed established/related connections."
+
+# Allow NZBGet UI access from host (Docker for Mac via 127.0.0.1 proxies to eth0 IP)
+iptables -A INPUT -i eth0 -p tcp --dport 6789 -j ACCEPT
+echo "[INFO] Added iptables rule to allow NZBGet UI on eth0:6789."
+
+# Policy routing for NZBGet UI & Privoxy when accessed from host
+# This ensures replies to connections hitting eth0 go back out via eth0 gateway, not VPN tunnel
+echo "[INFO] Adding CONNMARK policy routing for UI access (mark 0x1, table 100)"
+
 if [ -n "$ETH0_IP" ]; then
-    echo "[INFO] eth0 IP address is $ETH0_IP. Applying CONNMARK rules."
-    iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport 6789 -j CONNMARK --set-mark 0x1
+  echo "[INFO] Using specific eth0 IP $ETH0_IP for PREROUTING CONNMARK rules."
+  # 1. On incoming connections to NZBGet on eth0, mark the connection
+  iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport 6789 -j CONNMARK --set-mark 0x1
 else
-    echo "[INFO] ETH0_IP not found. Attempting PREROUTING rule with -i eth0 for CONNMARK."
-    iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 6789 -j CONNMARK --set-mark 0x1
+  echo "[WARN] ETH0_IP not found. Using less specific -i eth0 for PREROUTING CONNMARK rule for NZBGet."
+  iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 6789 -j CONNMARK --set-mark 0x1
 fi
 
-# 2. For locally generated reply packets from NZBGet (source port 6789),
-#    restore the connection mark to the packet mark. This packet mark (fwmark)
-#    will then be used by the ip rule.
-#    No need to filter by destination IP here, as OUTPUT chain is for locally generated packets.
-#    The sport filter should be specific enough.
+# 2. Restore mark on packets belonging to these connections in OUTPUT chain
 iptables -t mangle -A OUTPUT -p tcp --sport 6789 -j CONNMARK --restore-mark
+# 3. Create a routing rule to use table 100 if mark is 0x1
+ip rule add fwmark 0x1 lookup 100 priority 1000
+# 4. Add a default route to table 100 via eth0 gateway
+ip route add default via "$ETH0_GATEWAY" dev eth0 table 100
 
-# IP rule: acts on the packet mark (fwmark) restored by CONNMARK on OUTPUT
-ip rule flush pref 100
-ip rule add fwmark 0x1 lookup 100 pref 100
+echo "[INFO] CONNMARK rules for NZBGet UI (port 6789) applied."
 
-ETH0_GATEWAY=$(ip route show dev eth0 | grep '^default via' | awk '{print $3}')
-if [ -n "$ETH0_GATEWAY" ]; then
-    echo "[INFO] Using eth0 gateway $ETH0_GATEWAY for policy routing table 100"
-    ip route flush table 100
-    ip route add default via "$ETH0_GATEWAY" dev eth0 table 100
-else
-    echo "[WARN] Could not determine eth0 gateway. Policy routing for NZBGet UI might not work."
-fi
 
-# Allow LAN access by routing specified LAN_NETWORK via eth0 (pre-VPN default route)
+# VPN is up, redirect all other OUTPUT traffic through VPN interface
+# This is the main "kill switch" part.
+# All OUTPUT not matching previous rules (like loopback, PBR for UI)
+# and not going to LAN_NETWORK, will be forced via VPN.
+
+# If LAN_NETWORK is set, allow traffic to it without VPN
 if [ -n "$LAN_NETWORK" ]; then
-  echo "[INFO] Adding route to LAN_NETWORK: $LAN_NETWORK"
-  ip route add "$LAN_NETWORK" dev eth0
+  echo "[INFO] LAN_NETWORK ($LAN_NETWORK) is set. Adding route and iptables exception."
+  # Add route for LAN_NETWORK to go via eth0's gateway
+  ip route add "$LAN_NETWORK" via "$ETH0_GATEWAY" dev eth0
+  # Allow output to LAN_NETWORK
+  iptables -A OUTPUT -o eth0 -d "$LAN_NETWORK" -j ACCEPT
+  # Allow input from LAN_NETWORK (e.g. for NZBGet calling back to a local Sonarr/Radarr)
+  iptables -A INPUT -i eth0 -s "$LAN_NETWORK" -j ACCEPT
+  echo "[INFO] Allowed traffic to/from LAN_NETWORK $LAN_NETWORK via eth0."
 fi
 
+# Allow specific additional ports if ADDITIONAL_PORTS is set
+if [ -n "$ADDITIONAL_PORTS" ]; then
+  OLD_IFS="$IFS"
+  IFS=','
+  for port_entry in $ADDITIONAL_PORTS; do
+    IFS="$OLD_IFS" # Restore IFS for commands inside the loop
+    port_num=$(echo "$port_entry" | cut -d'/' -f1 | xargs)
+    proto=$(echo "$port_entry" | awk -F'/' '{if (NF>1) {print $2} else {print "tcp"}}' | xargs) # Default to tcp if no proto specified
+    if [[ "$proto" != "tcp" && "$proto" != "udp" ]]; then
+        echo "[WARN] Invalid protocol '$proto' in ADDITIONAL_PORTS for entry '$port_entry'. Assuming tcp."
+        proto="tcp"
+    fi
+    if [[ "$port_num" =~ ^[0-9]+$ ]] && [ "$port_num" -ge 1 ] && [ "$port_num" -le 65535 ]; then
+      echo "[INFO] Allowing outbound traffic on $proto port $port_num via $VPN_INTERFACE."
+      iptables -A OUTPUT -o "$VPN_INTERFACE" -p "$proto" --dport "$port_num" -j ACCEPT
+    else
+      echo "[WARN] Invalid port number '$port_num' in ADDITIONAL_PORTS for entry '$port_entry'. Skipping."
+    fi
+    IFS=',' # Re-set IFS for the loop
+  done
+  IFS="$OLD_IFS"
+  echo "[INFO] Processed ADDITIONAL_PORTS."
+fi
+
+# All other OUTPUT traffic must go through VPN interface or be dropped
+iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
+iptables -A OUTPUT -o eth0 -j DROP # Drop if trying to go out eth0 and not LAN/PBR
+# Could also be more strict: iptables -A OUTPUT ! -o "$VPN_INTERFACE" -j DROP
+# but the above allows things like established connections already handled.
+echo "[INFO] Default OUTPUT traffic routed through $VPN_INTERFACE. Other outbound on eth0 (non-LAN, non-PBR) dropped."
+
+
+# Privoxy: Apply firewall and PBR rules if enabled (s6 will start the service)
+if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
+  echo "[INFO] Privoxy is enabled. Ensuring firewall and PBR rules for port 8118."
+  iptables -A INPUT -i eth0 -p tcp --dport 8118 -j ACCEPT # Allow incoming to Privoxy
+
+  if [ -n "$ETH0_IP" ]; then
+    echo "[INFO] Adding CONNMARK rules for Privoxy on port 8118 to $ETH0_IP"
+    iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport 8118 -j CONNMARK --set-mark 0x1
+  else
+    echo "[WARN] ETH0_IP not found, using less specific -i eth0 for PREROUTING CONNMARK rule for Privoxy."
+    iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 8118 -j CONNMARK --set-mark 0x1
+  fi
+  iptables -t mangle -A OUTPUT -p tcp --sport 8118 -j CONNMARK --restore-mark # For replies
+  echo "[INFO] CONNMARK rules for Privoxy (port 8118) applied."
+else
+  echo "[INFO] Privoxy is disabled."
+fi
+
+# Create a flag file indicating VPN script completed successfully
+# This is mostly for the healthcheck or external monitoring.
+touch /tmp/vpn_setup_complete
 echo "[INFO] VPN setup script finished. Container should now be routing traffic through VPN (if connection was successful)."
-
-# Turn off debug mode if it was enabled by the script
-if [ "$DEBUG" = "true" ] || [ "$DEBUG" = "yes" ]; then
-  set +x
+echo "[INFO] Final VPN interface: $(cat $VPN_INTERFACE_FILE)"
+echo "[INFO] NZBGet UI should be accessible on host port 6789."
+if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
+  echo "[INFO] Privoxy should be accessible on host port 8118."
 fi
+date
+echo "[INFO] --- End of vpn-setup.sh ---"
 
-# End of script. s6 will continue with other init scripts and then start services.
 exit 0
