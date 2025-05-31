@@ -3,3 +3,4 @@ config/openvpn/credentials
 .env
 .cursorignore
 logs/
+openvpn-credentials.txt

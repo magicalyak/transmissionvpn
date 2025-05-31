@@ -22,12 +22,14 @@ ENV VPN_OPTIONS=${VPN_OPTIONS}
 ENV LAN_NETWORK=${LAN_NETWORK}
 ENV ADDITIONAL_PORTS=${ADDITIONAL_PORTS}
 ENV PRIVOXY_PORT=${PRIVOXY_PORT:-8118}
+ENV VPN_CREDENTIALS_FILE=${VPN_CREDENTIALS_FILE}
 
 # Install OpenVPN, WireGuard, Privoxy and tools
 RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
 
-# Copy VPN setup script to s6-overlay init directory (runs once at startup)
+# Copy s6-overlay init scripts
+COPY root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
 COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 
 # Copy healthcheck script
@@ -41,7 +43,7 @@ RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy
 
 # Make scripts executable
-RUN chmod +x /etc/cont-init.d/50-vpn-setup /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run
+RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run
 
 # Healthcheck
 HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \

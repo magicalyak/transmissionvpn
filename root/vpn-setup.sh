@@ -28,9 +28,9 @@ fi
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
 DEFAULT_VPN_INTERFACE="tun0" # Common for OpenVPN
 if [ "${VPN_CLIENT,,}" = "wireguard" ]; then
-  # For WireGuard, derive from WG_CONFIG_FILE or default to wg0
-  if [ -n "$WG_CONFIG_FILE" ]; then
-    DEFAULT_VPN_INTERFACE=$(basename "$WG_CONFIG_FILE" .conf)
+  # For WireGuard, derive from VPN_CONFIG or default to wg0
+  if [ -n "$VPN_CONFIG" ]; then # Using VPN_CONFIG now
+    DEFAULT_VPN_INTERFACE=$(basename "$VPN_CONFIG" .conf)
   else # try to find a .conf file
     WG_CONF_FOUND=$(find /config/wireguard -maxdepth 1 -name '*.conf' -print -quit)
     if [ -n "$WG_CONF_FOUND" ]; then
@@ -46,13 +46,33 @@ echo "[INFO] Default VPN interface set to: $(cat $VPN_INTERFACE_FILE)"
 
 # Function to find OpenVPN credentials
 find_vpn_credentials() {
+  # Priority 1: VPN_CREDENTIALS_FILE environment variable
+  if [ -n "$VPN_CREDENTIALS_FILE" ]; then
+    if [ -f "$VPN_CREDENTIALS_FILE" ] && [ -r "$VPN_CREDENTIALS_FILE" ]; then
+      echo "[INFO] Using OpenVPN credentials from file specified by VPN_CREDENTIALS_FILE: $VPN_CREDENTIALS_FILE"
+      cp "$VPN_CREDENTIALS_FILE" /tmp/vpn-credentials
+      # Ensure the copied file has at least two lines (user & pass)
+      if [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
+        return 0
+      else
+        echo "[WARN] Credentials file $VPN_CREDENTIALS_FILE does not contain at least two lines. Ignoring."
+        # Clear the copied file if it's invalid
+        > /tmp/vpn-credentials
+      fi
+    else
+      echo "[WARN] VPN_CREDENTIALS_FILE is set to $VPN_CREDENTIALS_FILE, but the file is not found or not readable."
+    fi
+  fi
+
+  # Priority 2: VPN_USER and VPN_PASS from environment.
   if [ -n "$VPN_USER" ] && [ -n "$VPN_PASS" ]; then
     echo "[INFO] Using VPN_USER and VPN_PASS from environment."
     echo "$VPN_USER" > /tmp/vpn-credentials
     echo "$VPN_PASS" >> /tmp/vpn-credentials
     return 0
   fi
-  # Check for credentials file at /app/.env (if /app is mounted and contains them)
+
+  # Priority 3: Check for credentials file at /app/.env (if /app is mounted and contains them)
   # This is less common with --env-file but supported for flexibility
   if [ -f "/app/.env" ]; then
     echo "[INFO] Checking /app/.env for VPN_USER/VPN_PASS..."
@@ -276,24 +296,25 @@ EOF
 # Function to start WireGuard
 start_wireguard() {
   echo "[INFO] Setting up WireGuard..."
-  WG_CONFIG=""
-  if [ -n "$WG_CONFIG_FILE" ]; then
-      if [ -f "$WG_CONFIG_FILE" ]; then
-          WG_CONFIG="$WG_CONFIG_FILE"
+  WG_CONFIG="" # This will be the path to the actual config file
+  if [ -n "$VPN_CONFIG" ]; then # Using VPN_CONFIG now
+      if [ -f "$VPN_CONFIG" ]; then
+          WG_CONFIG="$VPN_CONFIG"
           echo "[INFO] Using WireGuard config: $WG_CONFIG"
       else
-          echo "[ERROR] Specified WG_CONFIG_FILE=$WG_CONFIG_FILE not found."
+          echo "[ERROR] Specified VPN_CONFIG (for WireGuard) = $VPN_CONFIG not found."
           exit 1
       fi
   else
+      # Try to find the first .conf file in /config/wireguard
       WG_CONF_FOUND=$(find /config/wireguard -maxdepth 1 -name '*.conf' -print -quit)
       if [ -z "$WG_CONF_FOUND" ]; then
-          echo "[ERROR] No WireGuard configuration file specified via WG_CONFIG_FILE and none found in /config/wireguard."
+          echo "[ERROR] No WireGuard configuration file specified via VPN_CONFIG and none found in /config/wireguard."
           exit 1
       else
           WG_CONFIG="$WG_CONF_FOUND"
           echo "[INFO] Automatically selected WireGuard config: $WG_CONFIG"
-          # Update VPN_INTERFACE_FILE based on found config
+          # Update VPN_INTERFACE_FILE based on found config, if VPN_CONFIG was not explicitly set
           echo "$(basename "$WG_CONFIG" .conf)" > "$VPN_INTERFACE_FILE"
       fi
   fi
