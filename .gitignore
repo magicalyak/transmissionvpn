@@ -1,5 +1,5 @@
 nzbgetvpn_dockerrun.txt
-config/openvpn/credentials
+config/openvpn/credentials # Or any other path to your actual credentials file
 .env
 .cursorignore
 logs/

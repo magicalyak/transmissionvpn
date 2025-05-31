@@ -49,7 +49,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }} # Use the explicitly defined IMAGE_NAME
           tags: |
-            type=schedule,pattern=nightly,enable={{is_schedule}}
+            type=schedule,pattern=nightly
             type=ref,event=branch,enable={{is_default_branch}}
             type=ref,event=tag
             type=sha,prefix=,suffix=,event=branch,enable={{is_default_branch}}
