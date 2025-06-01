@@ -234,3 +234,5 @@ Base image (`lscr.io/linuxserver/transmission`) and bundled software (OpenVPN, W
 
 ## 🙏 Acknowledgements
 This project is inspired by the need for a secure, easy-to-use Transmission setup with VPN support. Thanks to the `linuxserver` team for their excellent base image and to the OpenVPN, WireGuard, and Privoxy communities for their contributions to open-source software.
+
+<!-- Workflow trigger -->
