@@ -7,15 +7,18 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches: [ main ] # Trigger on pushes to the main branch
-    # Publish semver tags as releases.
+    branches:
+      - main
     tags:
-      - 'v*.*.*' # Trigger on tags like v1.0.0, v1.2.3
+      - 'v*' # Matches tags like v1.2.3, v25.0.0 etc.
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sunday at midnight UTC
+  workflow_dispatch: # Allow manual triggering
 
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: docker.io
-  IMAGE_NAME: magicalyak/nzbgetvpn # Explicitly set your Docker Hub image name
+  IMAGE_NAME: ${{ github.repository_owner }}/nzbgetvpn # Use repository owner for Docker Hub username
 
 jobs:
   build-and-push:
@@ -24,7 +27,7 @@ jobs:
     permissions:
       contents: write # Needed to push new Git tags
       packages: write # Required for pushing to ghcr.io if used, good to have for Docker Hub too
-      # id-token: write # Required for OIDC token if using keyless auth with cloud providers
+      id-token: write # Needed for OIDC if you were to use keyless signing
 
     steps:
       - name: Checkout repository
@@ -50,6 +53,8 @@ jobs:
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container # Use a containerized builder for more features
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3 # Updated to v3
@@ -61,14 +66,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5 # Updated to v5
         with:
-          images: ${{ env.IMAGE_NAME }} # Use the explicitly defined IMAGE_NAME
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            ghcr.io/${{ github.repository }}
           tags: |
             # For scheduled builds
             type=schedule,pattern=nightly
 
             # For pushes to the main (default) branch
+            type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch,enable={{is_default_branch}}
-            type=sha,prefix=,suffix=,event=branch,enable={{is_default_branch}}
+            type=sha,prefix=,suffix=,event=branch,enable={{is_default_branch}},format=short
 
             # For Git tags (e.g., vX.Y.Z)
             # If Git tag is "v21.1.0", these produce Docker tags:
@@ -80,7 +88,7 @@ jobs:
             # Also include the Git tag itself as a Docker tag (e.g., "v21.1.0")
             type=ref,event=tag
             # And the commit SHA for that tag
-            type=sha,prefix=,suffix=,event=tag
+            type=sha,prefix=,suffix=,event=tag,format=short
 
             # Set 'latest' Docker tag to point to the highest semver Git tag.
             # Active only for Git tag events matching 'vX.Y.Z'.
@@ -100,3 +108,29 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Optional: Create GitHub Release when a new Git tag is pushed
+  create-release:
+    needs: build-and-push # Run after build and push
+    if: startsWith(github.ref, 'refs/tags/v') # Only run for tag pushes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To create releases
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Needed for release-drafter to get full commit history
+
+      - name: Draft release notes
+        id: draft_release
+        uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml # Optional: if you have custom config
+          publish: true # Automatically publish the release
+          # tag: ${{ github.ref_name }} # Explicitly use the tag that triggered the workflow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Display Release URL
+        run: echo "Release URL is ${{ steps.draft_release.outputs.html_url }}"
