@@ -87,10 +87,10 @@ jobs:
 
             # For the NEWLY CREATED Git tag from tag_version step (if it exists in this run)
             # These tags are added if 'tag_version' step outputted a new_tag
-            type=semver,pattern={{version}},value=${{ steps.tag_version.outputs.new_tag }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag_version.outputs.new_tag }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
-            type=semver,pattern={{major}},value=${{ steps.tag_version.outputs.new_tag }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
-            type=raw,value=${{ steps.tag_version.outputs.new_tag }},enable=${{ steps.tag_version.outputs.new_tag != '' }} # The vX.Y.Z tag itself
+            type=semver,pattern={{version}},value=${{ steps.tag_version.outputs.new_tag || '0.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag_version.outputs.new_tag || '0.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
+            type=semver,pattern={{major}},value=${{ steps.tag_version.outputs.new_tag || '0.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
+            type=raw,value=${{ steps.tag_version.outputs.new_tag || 'v0.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }} # The vX.Y.Z tag itself
 
             # For actual Git tag push events (when the workflow is triggered by a tag, not a branch push)
             # 'tag_version' step won't run, so new_tag output will be empty, disabling the rules above.
