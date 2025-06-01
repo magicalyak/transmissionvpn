@@ -81,9 +81,9 @@ jobs:
             type=schedule,pattern=nightly
 
             # For pushes to the main (default) branch - these always run
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch,enable={{is_default_branch}}
-            type=sha,prefix=,suffix=,event=branch,enable={{is_default_branch}},format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=,suffix=,event=branch,enable=${{ github.ref == 'refs/heads/main' }},format=short
 
             # For the NEWLY CREATED Git tag from tag_version step (if it exists in this run)
             # These tags are added if 'tag_version' step outputted a new_tag
