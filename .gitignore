@@ -4,3 +4,4 @@ config/openvpn/credentials # Or any other path to your actual credentials file
 .cursorignore
 logs/
 openvpn-credentials.txt
+.github/.DS_Store
