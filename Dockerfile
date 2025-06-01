@@ -1,6 +1,8 @@
 FROM lscr.io/linuxserver/transmission:latest
 
 ENV TRANSMISSION_VERSION=4.0.6
+ENV PUID=911
+ENV PGID=911
 
 # Add ARG for VPN credentials
 ARG VPN_USER
