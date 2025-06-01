@@ -38,4 +38,4 @@ filterfile default.filter
 # so Privoxy doesn't need specific forward rules here.
 # If specific upstream proxies were needed, they would be defined:
 # forward / upstream_proxy_host:port
-# forward .my_local_network.com . 
+# forward .my_local_network.com .
