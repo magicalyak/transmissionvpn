@@ -46,62 +46,50 @@ echo "[INFO] Default VPN interface set to: $(cat $VPN_INTERFACE_FILE)"
 
 # Function to find OpenVPN credentials
 find_vpn_credentials() {
-  # Priority 1: VPN_CREDENTIALS_FILE environment variable
-  if [ -n "$VPN_CREDENTIALS_FILE" ]; then
-    if [ -f "$VPN_CREDENTIALS_FILE" ] && [ -r "$VPN_CREDENTIALS_FILE" ]; then
-      echo "[INFO] Using OpenVPN credentials from file specified by VPN_CREDENTIALS_FILE: $VPN_CREDENTIALS_FILE"
-      cp "$VPN_CREDENTIALS_FILE" /tmp/vpn-credentials
-      # Ensure the copied file has at least two lines (user & pass)
-      if [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
-        return 0
-      else
-        echo "[WARN] Credentials file $VPN_CREDENTIALS_FILE does not contain at least two lines. Ignoring."
-        # Clear the copied file if it's invalid
-        > /tmp/vpn-credentials
-      fi
-    else
-      echo "[WARN] VPN_CREDENTIALS_FILE is set to $VPN_CREDENTIALS_FILE, but the file is not found or not readable."
-    fi
-  fi
+  # Clear any stale credentials file
+  rm -f /tmp/vpn-credentials
 
-  # Priority 2: VPN_USER and VPN_PASS from environment.
+  # Priority 1: VPN_USER and VPN_PASS from environment.
   if [ -n "$VPN_USER" ] && [ -n "$VPN_PASS" ]; then
     echo "[INFO] Using VPN_USER and VPN_PASS from environment."
     echo "$VPN_USER" > /tmp/vpn-credentials
     echo "$VPN_PASS" >> /tmp/vpn-credentials
-    return 0
-  fi
-
-  # Priority 3: Check for credentials file at /app/.env (if /app is mounted and contains them)
-  # This is less common with --env-file but supported for flexibility
-  if [ -f "/app/.env" ]; then
-    echo "[INFO] Checking /app/.env for VPN_USER/VPN_PASS..."
-    if grep -q "^VPN_USER=" /app/.env && grep -q "^VPN_PASS=" /app/.env; then
-      # Source .env file in a subshell to get vars without polluting current env
-      # Then write them to /tmp/vpn-credentials
-      ( . /app/.env && echo "$VPN_USER" > /tmp/vpn-credentials && echo "$VPN_PASS" >> /tmp/vpn-credentials )
-      if [ -s /tmp/vpn-credentials ]; then
-        echo "[INFO] Using VPN_USER/VPN_PASS from /app/.env"
+    if [ -s /tmp/vpn-credentials ] && [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
+        echo "[INFO] Credentials successfully written to /tmp/vpn-credentials from environment variables."
         return 0
-      else
-        echo "[WARN] Found VPN_USER/VPN_PASS in /app/.env but failed to extract them."
-        # Clean up empty credentials file if extraction failed
-        [ -f /tmp/vpn-credentials ] && > /tmp/vpn-credentials
-      fi
+    else
+        echo "[WARN] VPN_USER and/or VPN_PASS were provided but resulted in an empty or incomplete credential file. Clearing."
+        rm -f /tmp/vpn-credentials
     fi
   fi
-  if [ -f "/config/openvpn-credentials.txt" ]; then
-    echo "[INFO] Using /config/openvpn-credentials.txt"
-    cp /config/openvpn-credentials.txt /tmp/vpn-credentials
-    return 0
+
+  # Priority 2: Fixed credentials file path /config/openvpn/credentials.txt
+  FIXED_CRED_PATH="/config/openvpn/credentials.txt"
+  if [ -f "$FIXED_CRED_PATH" ] && [ -r "$FIXED_CRED_PATH" ]; then
+    echo "[INFO] Checking for credentials file at fixed path: $FIXED_CRED_PATH"
+    # Ensure the file is not empty and has at least two lines (user & pass)
+    if [ -s "$FIXED_CRED_PATH" ] && [ "$(wc -l < "$FIXED_CRED_PATH")" -ge 2 ]; then
+      echo "[INFO] Using OpenVPN credentials from $FIXED_CRED_PATH."
+      cp "$FIXED_CRED_PATH" /tmp/vpn-credentials
+      # Double check copy success and content
+      if [ -s /tmp/vpn-credentials ] && [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
+        echo "[INFO] Credentials successfully copied to /tmp/vpn-credentials from $FIXED_CRED_PATH."
+        return 0
+      else
+        echo "[WARN] Failed to copy or validate credentials from $FIXED_CRED_PATH to /tmp/vpn-credentials. Clearing."
+        rm -f /tmp/vpn-credentials
+      fi
+    else
+      echo "[WARN] Credentials file $FIXED_CRED_PATH was found but is empty or does not contain at least two lines. Ignoring."
+    fi
+  else
+    echo "[INFO] No credentials file found at $FIXED_CRED_PATH (this is okay if using VPN_USER/PASS or if your VPN config doesn't need separate auth)."
   fi
-  if [ -f "/config/openvpn/CREDENTIALS" ]; then
-    echo "[INFO] Using /config/openvpn/CREDENTIALS"
-    cp /config/openvpn/CREDENTIALS /tmp/vpn-credentials
-    return 0
-  fi
-  echo "[WARN] VPN credentials not found through environment variables or common files."
-  return 1
+  
+  # If neither method yielded credentials
+  echo "[WARN] No valid VPN credentials provided via VPN_USER/VPN_PASS or at $FIXED_CRED_PATH."
+  echo "[INFO] If your OpenVPN configuration requires username/password authentication and doesn't embed them, connection may fail."
+  return 1 
 }
 
 # Function to start OpenVPN
@@ -129,7 +117,7 @@ start_openvpn() {
 
   # Credentials
   if ! find_vpn_credentials; then
-    echo "[ERROR] OpenVPN credentials not provided or found. Please set VPN_USER/VPN_PASS or provide a credentials file."
+    echo "[ERROR] OpenVPN credentials not provided or found. Please set VPN_USER/VPN_PASS environment variables, or create a credentials file at /config/openvpn/credentials.txt (username on line 1, password on line 2)."
     exit 1
   fi
 

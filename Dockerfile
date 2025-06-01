@@ -22,7 +22,6 @@ ENV VPN_OPTIONS=${VPN_OPTIONS:-}
 ENV LAN_NETWORK=${LAN_NETWORK:-}
 ENV ADDITIONAL_PORTS=${ADDITIONAL_PORTS:-}
 ENV PRIVOXY_PORT=${PRIVOXY_PORT:-8118}
-ENV VPN_CREDENTIALS_FILE=${VPN_CREDENTIALS_FILE:-}
 
 # Install OpenVPN, WireGuard, Privoxy and tools
 RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy && \
