@@ -77,26 +77,8 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             ghcr.io/${{ github.repository }}
           tags: |
-            # For scheduled builds
-            type=schedule,pattern=nightly
-
-            # For pushes to the main (default) branch - these always run
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=,suffix=,event=branch,enable=${{ github.ref == 'refs/heads/main' }},format=short
-
-            # For the NEWLY CREATED Git tag from tag_version step (if it exists in this run)
-            # This adds the vX.Y.Z tag itself.
-            type=raw,value=${{ steps.tag_version.outputs.new_tag != '' && steps.tag_version.outputs.new_tag || 'v25.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
-
-            # For actual Git tag push events (when the workflow is triggered by a tag, not a branch push)
-            # 'tag_version' step won't run, so its new_tag output will be empty, disabling the rule above.
-            # These rules will generate the full semver set (X.Y.Z, X.Y, X, vX.Y.Z) for tag events.
-            type=semver,pattern={{version}},event=tag
-            type=semver,pattern={{major}}.{{minor}},event=tag
-            type=semver,pattern={{major}},event=tag
-            type=ref,event=tag # This is equivalent to the raw new_tag but specific to tag events
-            type=sha,prefix=,suffix=,event=tag,format=short
           flavor: |
             latest=auto # This will correctly set 'latest' for the default branch,
                         # AND for the highest semver tag (whether from a direct tag event
