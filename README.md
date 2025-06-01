@@ -224,3 +224,5 @@ Want to tinker or build it yourself?
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
 Base image (`linuxserver/nzbget`) and bundled software (OpenVPN, WireGuard, Privoxy, NZBGet) have their own respective licenses.
+
+Last test: 2025-06-01 18:00:00 UTC
