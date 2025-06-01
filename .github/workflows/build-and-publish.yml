@@ -77,8 +77,8 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=,suffix=,event=branch,enable=${{ github.ref == 'refs/heads/main' }},format=short
+            type=raw,value=latest,enable=true
+            type=sha,format=short,prefix=sha-,enable=true
           flavor: |
             latest=auto # This will correctly set 'latest' for the default branch,
                         # AND for the highest semver tag (whether from a direct tag event
