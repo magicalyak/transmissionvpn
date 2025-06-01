@@ -87,7 +87,7 @@ jobs:
 
             # For the NEWLY CREATED Git tag from tag_version step (if it exists in this run)
             # This adds the vX.Y.Z tag itself.
-            type=raw,value=${{ steps.tag_version.outputs.new_tag || 'v25.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
+            type=raw,value=${{ steps.tag_version.outputs.new_tag != '' && steps.tag_version.outputs.new_tag || 'v25.0.0' }},enable=${{ steps.tag_version.outputs.new_tag != '' }}
 
             # For actual Git tag push events (when the workflow is triggered by a tag, not a branch push)
             # 'tag_version' step won't run, so its new_tag output will be empty, disabling the rule above.
