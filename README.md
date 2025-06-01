@@ -236,3 +236,47 @@ Base image (`lscr.io/linuxserver/transmission`) and bundled software (OpenVPN, W
 This project is inspired by the need for a secure, easy-to-use Transmission setup with VPN support. Thanks to the `linuxserver` team for their excellent base image and to the OpenVPN, WireGuard, and Privoxy communities for their contributions to open-source software.
 
 <!-- Workflow trigger -->
+
+### `ADDITIONAL_PORTS`
+
+Comma-separated list of additional TCP or UDP ports (e.g., `51413`, `51413/udp`) that should be allowed for *outbound* traffic originating from within the container, through the VPN tunnel. This does NOT publish these ports from the container to the host. For Transmission, you might need to allow its listening port (`TRANSMISSION_PEER_PORT`) here if UPnP/NAT-PMP fails and you want to ensure connectivity *through the VPN* for incoming peer connections.
+
+### `TRANSMISSION_VERSION` (Informational)
+
+Reflects the version of the `lscr.io/linuxserver/transmission` base image, set in the `Dockerfile`.
+
+### Transmission Specific Settings
+
+These variables are passed directly to the underlying `linuxserver/transmission` base image and control the behavior of the Transmission daemon. Many of these correspond to settings in Transmission's `settings.json` file.
+
+*   `TRANSMISSION_RPC_AUTHENTICATION_REQUIRED`: (`true`|`false`) - Enable/disable password protection for the Web UI. Default: `false`.
+*   `TRANSMISSION_RPC_USERNAME`: Username for Web UI if authentication is enabled.
+*   `TRANSMISSION_RPC_PASSWORD`: Password for Web UI if authentication is enabled.
+*   `TRANSMISSION_RPC_HOST_WHITELIST`: Comma-separated list of IP addresses/ranges to allow Web UI access from (e.g., `'127.0.0.1,192.168.*.*,10.*.*.*,172.16.*.*'`). Default allows common private networks.
+*   `TRANSMISSION_RPC_WHITELIST_ENABLED`: (`true`|`false`) - Enable/disable the host whitelist. Default: `true`.
+*   `TRANSMISSION_PEER_PORT`: Port Transmission uses for incoming P2P connections (TCP and UDP). If blank, a random port is usually chosen. Set this if you need a fixed port (e.g., for port forwarding). Ensure this port is also listed in `ADDITIONAL_PORTS` if you want to allow it through the VPN.
+*   `TRANSMISSION_INCOMPLETE_DIR`: Path *inside the container* for partially downloaded files. If enabled, the base image usually defaults this to `/downloads/incomplete`.
+*   `TRANSMISSION_INCOMPLETE_DIR_ENABLED`: (`true`|`false`) - Enable/disable the incomplete downloads directory feature. Default: `true`.
+*   `TRANSMISSION_WATCH_DIR_ENABLED`: (`true`|`false`) - Enable/disable watching the `/watch` directory for `.torrent` files. The watch directory itself is fixed at `/watch` via volume mount. Default: `true`.
+*   `TRANSMISSION_BLOCKLIST_ENABLED`: (`true`|`false`) - Enable/disable the peer blocklist feature. Default: `true`.
+*   `TRANSMISSION_BLOCKLIST_URL`: URL of the blocklist to download. The base image has a default. Example: `"http://john.bitsurge.net/public/biglist.p2p.gz"`.
+
+For more details on some of these, refer to the [linuxserver/transmission documentation](https://docs.linuxserver.io/images/docker-transmission).
+
+### Setting Environment Variables from Files (Docker Secrets)
+
+This image, by virtue of using a `linuxserver.io` base, supports setting any environment variable from a file. This is useful for sensitive information like passwords if you prefer not to have them directly in your `.env` file or `docker-compose.yml`.
+
+To use this feature, prepend `FILE__` to the environment variable name and set its value to the path of a file *inside the container* that contains the secret.
+
+For example, to set `VPN_PASS` from a file named `vpn_password.txt` located in your host's `./config` directory (which is mounted to `/config` in the container):
+
+1.  Create `./config/vpn_password.txt` on your host with your VPN password as its content.
+2.  In your `.env` file, set:
+    ```env
+    FILE__VPN_PASS=/config/vpn_password.txt
+    ```
+
+This will instruct the container to read the contents of `/config/vpn_password.txt` and use that as the value for the `VPN_PASS` environment variable.
+
+## Volumes
