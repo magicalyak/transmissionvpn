@@ -428,31 +428,31 @@ iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 echo "[INFO] Allowed established/related connections."
 
-# Allow NZBGet UI access from host (Docker for Mac via 127.0.0.1 proxies to eth0 IP)
-iptables -A INPUT -i eth0 -p tcp --dport 6789 -j ACCEPT
-echo "[INFO] Added iptables rule to allow NZBGet UI on eth0:6789."
+# Allow Transmission UI access from host (Docker for Mac via 127.0.0.1 proxies to eth0 IP)
+iptables -A INPUT -i eth0 -p tcp --dport 9091 -j ACCEPT
+echo "[INFO] Added iptables rule to allow Transmission UI on eth0:9091."
 
-# Policy routing for NZBGet UI & Privoxy when accessed from host
+# Policy routing for Transmission UI & Privoxy when accessed from host
 # This ensures replies to connections hitting eth0 go back out via eth0 gateway, not VPN tunnel
 echo "[INFO] Adding CONNMARK policy routing for UI access (mark 0x1, table 100)"
 
 if [ -n "$ETH0_IP" ]; then
   echo "[INFO] Using specific eth0 IP $ETH0_IP for PREROUTING CONNMARK rules."
-  # 1. On incoming connections to NZBGet on eth0, mark the connection
-  iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport 6789 -j CONNMARK --set-mark 0x1
+  # 1. On incoming connections to Transmission on eth0, mark the connection
+  iptables -t mangle -A PREROUTING -d "$ETH0_IP" -p tcp --dport 9091 -j CONNMARK --set-mark 0x1
 else
-  echo "[WARN] ETH0_IP not found. Using less specific -i eth0 for PREROUTING CONNMARK rule for NZBGet."
-  iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 6789 -j CONNMARK --set-mark 0x1
+  echo "[WARN] ETH0_IP not found. Using less specific -i eth0 for PREROUTING CONNMARK rule for Transmission."
+  iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 9091 -j CONNMARK --set-mark 0x1
 fi
 
 # 2. Restore mark on packets belonging to these connections in OUTPUT chain
-iptables -t mangle -A OUTPUT -p tcp --sport 6789 -j CONNMARK --restore-mark
+iptables -t mangle -A OUTPUT -p tcp --sport 9091 -j CONNMARK --restore-mark
 # 3. Create a routing rule to use table 100 if mark is 0x1
 ip rule add fwmark 0x1 lookup 100 priority 1000
-# 4. Add a default route to table 100 via eth0 gateway
+# 4. Add a default route to table 100 via "$ETH0_GATEWAY" dev eth0 table 100
 ip route add default via "$ETH0_GATEWAY" dev eth0 table 100
 
-echo "[INFO] CONNMARK rules for NZBGet UI (port 6789) applied."
+echo "[INFO] CONNMARK rules for Transmission UI (port 9091) applied."
 
 
 # VPN is up, redirect all other OUTPUT traffic through VPN interface
@@ -527,7 +527,7 @@ fi
 touch /tmp/vpn_setup_complete
 echo "[INFO] VPN setup script finished. Container should now be routing traffic through VPN (if connection was successful)."
 echo "[INFO] Final VPN interface: $(cat $VPN_INTERFACE_FILE)"
-echo "[INFO] NZBGet UI should be accessible on host port 6789."
+echo "[INFO] Transmission UI should be accessible on host port 9091."
 if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
   echo "[INFO] Privoxy should be accessible on host port ${PRIVOXY_PORT:-8118}."
 fi

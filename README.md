@@ -1,74 +1,79 @@
-# 🛡️ NZBGet VPN Docker 🚀
+# 🛡️ Transmission VPN Docker 🚀
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/magicalyak/nzbgetvpn)](https://hub.docker.com/r/magicalyak/nzbgetvpn) [![Docker Stars](https://img.shields.io/docker/stars/magicalyak/nzbgetvpn)](https://hub.docker.com/r/magicalyak/nzbgetvpn) [![Build Status](https://github.com/magicalyak/nzbgetvpn/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/magicalyak/nzbgetvpn/actions/workflows/build-and-publish.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker Pulls](https://img.shields.io/docker/pulls/magicalyak/transmissionvpn)](https://hub.docker.com/r/magicalyak/transmissionvpn) [![Docker Stars](https://img.shields.io/docker/stars/magicalyak/transmissionvpn)](https://hub.docker.com/r/magicalyak/transmissionvpn) [![Build Status](https://github.com/magicalyak/transmissionvpn/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/magicalyak/transmissionvpn/actions/workflows/build-and-publish.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Supercharge your NZBGet downloads with robust VPN security and an optional Privoxy web proxy! This Docker image bundles the latest NZBGet (from `linuxserver/nzbget`) with OpenVPN & WireGuard clients, all seamlessly managed by s6-overlay.
+Supercharge your Transmission downloads with robust VPN security and an optional Privoxy web proxy! This Docker image bundles the latest Transmission (from `lscr.io/linuxserver/transmission`) with OpenVPN & WireGuard clients, all seamlessly managed by s6-overlay.
 
 **➡️ Get it now from Docker Hub:**
 ```bash
-docker pull magicalyak/nzbgetvpn:latest
+docker pull magicalyak/transmissionvpn:latest
 ```
 
 ## ✨ Core Features
 
-*   **🔒 Secure NZBGet:** Runs the latest NZBGet with all its traffic automatically routed through your chosen VPN.
-    *   🔑 **Default Login:** Username: `nzbget`, Password: `tegbzn6789` (Don't forget to change this in NZBGet settings!)
+*   **🔒 Secure Transmission:** Runs the latest Transmission with all its traffic automatically routed through your chosen VPN.
 *   **🛡️ VPN Freedom:** Supports both **OpenVPN** and **WireGuard** VPN clients. You choose!
 *   **📄 Simplified OpenVPN Credentials:**
     *   Use environment variables (`VPN_USER`/`VPN_PASS`).
     *   Or, simply place a `credentials.txt` file (username on line 1, password on L2) at `/config/openvpn/credentials.txt` inside the container. The script auto-detects it!
 *   **🌐 Optional Privoxy:** Includes Privoxy for HTTP proxying. If enabled, Privoxy's traffic also uses the VPN.
-*   **💻 Easy Host Access:** Access the NZBGet Web UI (port `6789`) and Privoxy (if enabled, default port `8118`) from your Docker host as if they were local services.
-*   **🗂️ Simple Volume Mounts:** Just map `/config` for NZBGet data & all VPN configurations, and `/downloads` for your completed media.
+*   **💻 Easy Host Access:** Access the Transmission Web UI (port `9091`) and Privoxy (if enabled, default port `8118`) from your Docker host as if they were local services.
+*   **🗂️ Simple Volume Mounts:** Just map `/config` for Transmission data & all VPN configurations, and `/downloads` for your completed media.
 *   **⚙️ Highly Configurable:** A rich set of environment variables to perfectly tailor the container to your needs.
-*   **🚦 Healthcheck:** Built-in healthcheck to monitor NZBGet and VPN operational status.
+*   **🚦 Healthcheck:** Built-in healthcheck to monitor Transmission and VPN operational status.
 
 ## 💾 Volume Mapping: Your Data, Your Rules
 
 Properly mapping volumes is crucial for data persistence and custom configurations.
 
 *   **`/config` (Required):** This is the heart of your persistent storage.
-    *   **NZBGet Configuration:** Stores all NZBGet settings, history, scripts, and queue files (managed by the `linuxserver/nzbget` base).
+    *   **Transmission Configuration:** Stores all Transmission settings, torrent files, and resume data (managed by the `lscr.io/linuxserver/transmission` base).
     *   **VPN Configuration:**
         *   Place OpenVPN files (`.ovpn`, certs, keys) in `your_host_config_dir/openvpn/`.
         *   **OpenVPN Credentials (Optional File):** For file-based auth, put `credentials.txt` (user L1, pass L2) in `your_host_config_dir/openvpn/credentials.txt`. It's used if `VPN_USER`/`VPN_PASS` are unset.
         *   Place WireGuard files (`.conf`) in `your_host_config_dir/wireguard/`.
-*   **`/downloads` (Required):** This is where NZBGet saves your completed downloads. Subdirectories (`intermediate`, `completed`, `nzb`, etc.) are managed by NZBGet's settings within this volume.
+*   **`/downloads` (Required):** This is where Transmission saves your completed downloads.
+*   **`/watch` (Optional):** Transmission can monitor this directory for new `.torrent` files to add automatically. Map a host directory here if you use this feature.
 
 **Example Host Directory Structure 🌳:**
 ```
-/opt/nzbgetvpn_data/      # Your chosen base directory on the host
-├── config/                # Maps to /config in container
-│   ├── nzbget.conf        # (NZBGet will create/manage this)
-│   ├── openvpn/           # For OpenVPN files
+/opt/transmissionvpn_data/      # Your chosen base directory on the host
+├── config/                    # Maps to /config in container
+│   ├── settings.json          # (Transmission will create/manage this)
+│   ├── torrents/              # (Transmission will store .torrent files here)
+│   ├── resume/                # (Transmission will store resume data here)
+│   ├── openvpn/               # For OpenVPN files
 │   │   └── your_provider.ovpn
-│   │   └── credentials.txt  # Optional: user on L1, pass on L2
-│   │   └── ca.crt         # And any other certs/keys
-│   ├── wireguard/         # For WireGuard files
+│   │   └── credentials.txt      # Optional: user on L1, pass on L2
+│   │   └── ca.crt             # And any other certs/keys
+│   ├── wireguard/             # For WireGuard files
 │   │   └── wg0.conf
-└── downloads/             # Maps to /downloads in container
-    ├── movies/            # (NZBGet might create these, or you can)
-    └── tv/
+├── downloads/                 # Maps to /downloads in container
+│   ├── movies/
+│   └── tv/
+└── watch/                     # Optional: Maps to /watch in container
+    └── new_torrents_here/
 ```
 
-**🔄 Migrating from `jshridha/docker-nzbgetvpn` or similar?**
-*   Host directory previously for `/data` (downloads) ➡️ Map to **`/downloads`**.
-*   Host directory previously for `/config` (NZBGet settings & VPN files) ➡️ Map to **`/config`**. Ensure VPN files are in `openvpn/` or `wireguard/` subfolders. For credentials, use `openvpn/credentials.txt`.
+**🔄 Migrating from a similar setup?**
+*   Host directory previously for `/data` or `/downloads` ➡️ Map to **`/downloads`**.
+*   Host directory previously for `/config` (Transmission settings & VPN files) ➡️ Map to **`/config`**. Ensure VPN files are in `openvpn/` or `wireguard/` subfolders. For credentials, use `openvpn/credentials.txt`.
 
 ## 🚀 Getting Started: Quick Launch Guide
 
-This guide focuses on running the pre-built `magicalyak/nzbgetvpn` image from Docker Hub.
+This guide focuses on running the pre-built `magicalyak/transmissionvpn` image from Docker Hub.
 
 **1. Prepare Your Docker Host System 🛠️**
 
 Create your configuration and downloads directories on your Docker host (as shown in "💾 Volume Mapping"). Example:
 ```bash
 # Create base directory (choose your own path!)
-HOST_DATA_DIR="/opt/nzbgetvpn_data"
+HOST_DATA_DIR="/opt/transmissionvpn_data"
 
 mkdir -p "${HOST_DATA_DIR}/config/openvpn"
 mkdir -p "${HOST_DATA_DIR}/config/wireguard"
 mkdir -p "${HOST_DATA_DIR}/downloads"
+mkdir -p "${HOST_DATA_DIR}/watch" # Optional
 ```
 
 Place your VPN configuration files into the appropriate subfolders on your host:
@@ -134,30 +139,30 @@ Use the following command, adjusting paths to your `.env` file and host director
 
 ```bash
 # Define your host data directory (must match where you put config and downloads)
-HOST_DATA_DIR="/opt/nzbgetvpn_data"
+HOST_DATA_DIR="/opt/transmissionvpn_data"
 
 docker run -d \
-  --name nzbgetvpn \
+  --name transmissionvpn \
   --rm \
   --cap-add=NET_ADMIN \
   # --cap-add=SYS_MODULE \ # Add for WireGuard if kernel module loading is needed
   # --sysctl="net.ipv4.conf.all.src_valid_mark=1" \ # Add for WireGuard
   # --sysctl="net.ipv6.conf.all.disable_ipv6=0" \  # Add for WireGuard if using IPv6
   --device=/dev/net/tun \
-  -p 6789:6789 \
+  -p 9091:9091 \
   # -p 8118:8118 \  # Uncomment if ENABLE_PRIVOXY=yes and you want to map it
   -v "${HOST_DATA_DIR}/config:/config" \
   -v "${HOST_DATA_DIR}/downloads:/downloads" \
+  -v "${HOST_DATA_DIR}/watch:/watch" \ # Optional: For auto-adding .torrent files
   --env-file "${HOST_DATA_DIR}/.env" \
-  magicalyak/nzbgetvpn:latest
+  magicalyak/transmissionvpn:latest
 ```
 *Tip: For WireGuard, you might need `--cap-add=SYS_MODULE` and relevant `--sysctl` flags if not already handled by your system. The `Makefile` includes these in its WireGuard example.*
 
 ## 🖥️ Accessing Services
 
-*   **NZBGet Web UI:** `http://localhost:6789`
-    *   🔑 **Default Login:** Username: `nzbget`, Password: `tegbzn6789`
-    *   *(Remember to change the password in NZBGet settings after your first login!)*
+*   **Transmission Web UI:** `http://localhost:9091` or `http://YOUR_DOCKER_HOST_IP:9091`
+    *   Note: Default Transmission authentication can vary. Check Transmission's `settings.json` in your `/config` volume or its documentation for auth details (RPC username/password). You may need to configure this after the first run.
 *   **🌐 Privoxy HTTP Proxy:** If `ENABLE_PRIVOXY=yes`, server: `localhost`, port: `PRIVOXY_PORT` (default `8118`).
 
 ## ⚙️ Environment Variables
@@ -170,15 +175,17 @@ docker run -d \
 | `VPN_PASS`               | OpenVPN password. Used if set with `VPN_USER`. Overrides `credentials.txt`. | `mypassword`                             |                             |
 | `ENABLE_PRIVOXY`         | Enable Privoxy (`yes`/`no`)                                                | `no`                                     | `no`                        |
 | `PRIVOXY_PORT`           | Internal port for Privoxy service                                          | `8118`                                   | `8118`                      |
-| `PUID`                   | User ID for NZBGet process.                                                | `1000`                                   | (from base image)           |
-| `PGID`                   | Group ID for NZBGet process.                                               | `1000`                                   | (from base image)           |
+| `PUID`                   | User ID for Transmission process.                                          | `1000`                                   | (from base image)           |
+| `PGID`                   | Group ID for Transmission process.                                         | `1000`                                   | (from base image)           |
 | `TZ`                     | Your local timezone.                                                       | `America/New_York`                       | `Etc/UTC`                   |
-| `LAN_NETWORK`            | Your LAN CIDR to bypass VPN for local NZBGet access.                     | `192.168.1.0/24`                         |                             |
+| `LAN_NETWORK`            | Your LAN CIDR to bypass VPN for local Transmission access.                 | `192.168.1.0/24`                         |                             |
 | `NAME_SERVERS`           | Custom DNS servers (comma-separated).                                      | `1.1.1.1,8.8.8.8`                        | (VPN/defaults)              |
 | `DEBUG`                  | Enable verbose script logging (`true`/`false`).                            | `false`                                  | `false`                     |
 | `VPN_OPTIONS`            | Additional OpenVPN client command-line options.                            | `--inactive 3600 --ping-restart 60`      |                             |
-| `UMASK`                  | File creation mask for NZBGet.                                             | `022`                                    | (from base image)           |
-| `ADDITIONAL_PORTS`       | Comma-separated TCP/UDP ports for outbound allow via iptables.             | `9090,53/udp`                          |                             |
+| `UMASK`                  | File creation mask for Transmission.                                       | `002` (LSIO default for Transmission)     | (from base image `022`) |
+| `ADDITIONAL_PORTS`       | Comma-separated TCP/UDP ports for outbound allow via iptables.             | `51413,51413/udp`                        |                             |
+| `TRANSMISSION_VERSION`   | Informational, corresponds to base image version.                          | `4.0.6` (example)                      | (from Dockerfile)           |
+
 
 **🔑 OpenVPN Credential Priority:**
 1.  If `VPN_USER` and `VPN_PASS` are both set, they will be used.
@@ -196,34 +203,34 @@ This gives you full control over the exact configuration used.
 ## 🤔 Troubleshooting Tips
 
 *   **Container Exits or VPN Not Connecting?**
-    *   `docker logs nzbgetvpn` for clues.
+    *   `docker logs transmissionvpn` for clues.
     *   Check `VPN_CONFIG` path in `.env` (must be container path, e.g., `/config/...`).
     *   Verify credentials (in `.env` or `credentials.txt`) and `.ovpn`/`.conf` file contents.
-*   **NZBGet UI / Privoxy Not Accessible?**
+*   **Transmission UI / Privoxy Not Accessible?**
     1.  `docker ps` - is it running?
-    2.  `docker logs nzbgetvpn` - any errors from NZBGet, Privoxy, or VPN setup?
+    2.  `docker logs transmissionvpn` - any errors from Transmission, Privoxy, or VPN setup?
     3.  Verify `-p` port mappings in your `docker run` command.
 *   **File Permission Issues?**
-    *   Ensure `PUID`/`PGID` in `.env` match the owner of your host data directories (`config/` and `downloads/`).
+    *   Ensure `PUID`/`PGID` in `.env` match the owner of your host data directories (`config/`, `downloads/`, `watch/`). The default umask for `linuxserver/transmission` is usually `002` which is more permissive for group write access than `022`. Consider setting `UMASK=002` in your `.env` file if you face permission issues with other services accessing the downloaded files.
 
 ## 🩺 Healthcheck
 
-Verifies NZBGet UI and VPN tunnel interface activity. If the container is unhealthy, check logs!
+Verifies Transmission UI and VPN tunnel interface activity. If the container is unhealthy, check logs!
 
 ## 🧑‍💻 For Developers / Building from Source
 
 Want to tinker or build it yourself?
-1.  **Clone:** `git clone https://github.com/magicalyak/nzbgetvpn.git && cd nzbgetvpn`
+1.  **Clone:** `git clone https://github.com/magicalyak/transmissionvpn.git && cd transmissionvpn`
 2.  **Customize `.env`:** `cp .env.sample .env && nano .env`
 3.  **Build & Run via Makefile:** Explore `make build`, `make run`, `make shell`, etc. The `Makefile` provides convenient targets.
-    *   You can also build directly with `docker build -t yourname/nzbgetvpn .`
+    *   You can also build directly with `docker build -t yourname/transmissionvpn .`
 
-*(The GitHub Container Registry `ghcr.io/magicalyak/nzbgetvpn` is also available if you prefer it over Docker Hub for development builds or specific versions.)*
+*(The GitHub Container Registry `ghcr.io/magicalyak/transmissionvpn` is also available if you prefer it over Docker Hub for development builds or specific versions.)*
 
 ## 📄 License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
-Base image (`linuxserver/nzbget`) and bundled software (OpenVPN, WireGuard, Privoxy, NZBGet) have their own respective licenses.
+Base image (`lscr.io/linuxserver/transmission`) and bundled software (OpenVPN, WireGuard, Privoxy, Transmission) have their own respective licenses.
 
 ## 🙏 Acknowledgements
-This project is inspired by the need for a secure, easy-to-use NZBGet setup with VPN support. Thanks to the `linuxserver/nzbget` team for their excellent base image and to the OpenVPN, WireGuard, and Privoxy communities for their contributions to open-source software.
+This project is inspired by the need for a secure, easy-to-use Transmission setup with VPN support. Thanks to the `linuxserver` team for their excellent base image and to the OpenVPN, WireGuard, and Privoxy communities for their contributions to open-source software.

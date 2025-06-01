@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Basic check: is NZBGet responding?
-curl -sSf http://localhost:6789 || exit 1 # Reverted to base URL check
+# Basic check: is Transmission responding?
+curl -sSf http://localhost:9091/transmission/web/ || exit 1
 
 # Determine VPN interface
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"

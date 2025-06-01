@@ -1,5 +1,5 @@
-IMAGE_NAME ?= nzbgetvpn
-CONTAINER_NAME ?= nzbgetvpn-container
+IMAGE_NAME ?= transmissionvpn
+CONTAINER_NAME ?= transmissionvpn-container
 
 # Attempt to read PRIVOXY_PORT from .env file, default to 8118 if not found or .env is missing
 # This ensures PRIVOXY_HOST_PORT aligns with the internal PRIVOXY_PORT set in .env
@@ -40,17 +40,18 @@ run-openvpn:
 		--rm \
 		--cap-add=NET_ADMIN \
 		--device=/dev/net/tun \
-		-p 6789:6789 \
+		-p 9091:9091 \
 		-p $(PRIVOXY_HOST_PORT):$(PRIVOXY_HOST_PORT) \
-		-v "$(shell pwd)/config/openvpn:/config/openvpn" \
+		-v "$(shell pwd)/config:/config" \
 		-v "$(shell pwd)/downloads:/downloads" \
+		-v "$(shell pwd)/watch:/watch" \
 		--env-file .env \
 		-e VPN_CLIENT=openvpn \
 		$(IMAGE_NAME)
 
 run-wireguard:
 	@echo "Running container $(CONTAINER_NAME) with WireGuard..."
-	@echo "Ensure your .env file has WG_CONFIG_FILE set (e.g., /config/wireguard/wg0.conf)."
+	@echo "Ensure your .env file has VPN_CONFIG set (e.g., /config/wireguard/wg0.conf)."
 	@echo "And that the actual WireGuard config (e.g., wg0.conf) exists in ./config/wireguard/"
 	docker run -d \
 		--name $(CONTAINER_NAME) \
@@ -60,10 +61,11 @@ run-wireguard:
 		--sysctl="net.ipv4.conf.all.src_valid_mark=1" \
 		--sysctl="net.ipv6.conf.all.disable_ipv6=0" \
 		--device=/dev/net/tun \
-		-p 6789:6789 \
+		-p 9091:9091 \
 		-p $(PRIVOXY_HOST_PORT):$(PRIVOXY_HOST_PORT) \
-		-v "$(shell pwd)/config/wireguard:/config/wireguard" \
+		-v "$(shell pwd)/config:/config" \
 		-v "$(shell pwd)/downloads:/downloads" \
+		-v "$(shell pwd)/watch:/watch" \
 		--env-file .env \
 		-e VPN_CLIENT=wireguard \
 		$(IMAGE_NAME)

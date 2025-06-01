@@ -1,6 +1,6 @@
-FROM ghcr.io/linuxserver/nzbget:latest
+FROM lscr.io/linuxserver/transmission:latest
 
-# ENV NZBGET_VERSION=25.0
+ENV TRANSMISSION_VERSION=4.0.6
 
 # Add ARG for VPN credentials
 ARG VPN_USER
