@@ -28,4 +28,9 @@ fi
 # Check that the determined tunnel is up
 ip link show "$VPN_IF" | grep -q "UP" || exit 2 # Changed to grep for "UP" only
 
+# Check network connectivity through VPN (similar to haugene approach)
+HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
+# Ping through the VPN interface to verify end-to-end connectivity
+ping -c 1 -W 3 -I "$VPN_IF" "$HEALTH_CHECK_HOST" > /dev/null 2>&1 || exit 4
+
 exit 0

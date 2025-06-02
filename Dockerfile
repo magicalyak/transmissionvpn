@@ -33,9 +33,13 @@ ARG TRANSMISSION_RPC_WHITELIST_ENABLED
 ARG TRANSMISSION_PEER_PORT
 ARG TRANSMISSION_INCOMPLETE_DIR
 ARG TRANSMISSION_INCOMPLETE_DIR_ENABLED
+ARG TRANSMISSION_WATCH_DIR
 ARG TRANSMISSION_WATCH_DIR_ENABLED
 ARG TRANSMISSION_BLOCKLIST_ENABLED
 ARG TRANSMISSION_BLOCKLIST_URL
+ARG TRANSMISSION_WEB_UI
+ARG HEALTH_CHECK_HOST
+ARG LOG_TO_STDOUT
 
 # Set ENV from ARG
 ENV VPN_USER=$VPN_USER
@@ -66,18 +70,26 @@ ENV TRANSMISSION_PEER_PORT=${TRANSMISSION_PEER_PORT:-}
 # Default for incomplete directory path. Base image usually defaults to /downloads/incomplete if this is enabled and path is empty.
 ENV TRANSMISSION_INCOMPLETE_DIR=${TRANSMISSION_INCOMPLETE_DIR:-/downloads/incomplete}
 ENV TRANSMISSION_INCOMPLETE_DIR_ENABLED=${TRANSMISSION_INCOMPLETE_DIR_ENABLED:-true}
+# Watch directory path. Default to /watch which matches our volume mount.
+ENV TRANSMISSION_WATCH_DIR=${TRANSMISSION_WATCH_DIR:-/watch}
 # Watch directory itself is fixed to /watch via volume mount. This toggles the feature.
 ENV TRANSMISSION_WATCH_DIR_ENABLED=${TRANSMISSION_WATCH_DIR_ENABLED:-true}
 ENV TRANSMISSION_BLOCKLIST_ENABLED=${TRANSMISSION_BLOCKLIST_ENABLED:-true}
 # Base image provides its own default URL for the blocklist if this is empty and blocklist is enabled.
 ENV TRANSMISSION_BLOCKLIST_URL=${TRANSMISSION_BLOCKLIST_URL:-}
 
+# Additional features from haugene compatibility
+ENV TRANSMISSION_WEB_UI=${TRANSMISSION_WEB_UI:-}
+ENV HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
+ENV LOG_TO_STDOUT=${LOG_TO_STDOUT:-false}
+
 # Install OpenVPN, WireGuard, Privoxy and tools
-RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy && \
+RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
 
 # Copy s6-overlay init scripts
 COPY root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
+COPY root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
 COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 
 # Copy healthcheck script

@@ -1,14 +1,15 @@
-nzbgetvpn_dockerrun.txt
+# VPN Credentials and sensitive files
 config/openvpn/credentials # Or any other path to your actual credentials file
-.env
-.cursorignore
-logs/
+*.ovpn # VPN configuration files (should be added manually)
+*.conf # WireGuard configuration files (should be added manually)
 openvpn-credentials.txt
-.github/.DS_Store
+.env
 
 # Test data and environment files
 ./test_data/
 test.env
+.env.local
+.env.production
 
 # User-specific data directories if mapped to project root
 downloads/
@@ -16,11 +17,79 @@ config/
 watch/
 build/
 
+# Build artifacts and temporary files
+dist/
+*.log
+*.pid
+*.tar
+*.tar.gz
+*.zip
+node_modules/
+.npm/
+.cache/
+
+# Downloaded web UI files (these should be mounted from host)
+flood-for-transmission/
+combustion/
+kettu/
+transmission-web-control/
+*.zip.tmp
+
+# Docker-related files
+.docker/
+docker-compose.override.yml
+*.dockerfile.bak
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
 # macOS
 .DS_Store
 .DS_Store?
 ._*
+.AppleDouble
+.LSOverride
 .Spotlight-V100
 .Trashes
+
+# Windows
 ehthumbs.db
 Thumbs.db
+*.lnk
+
+# Linux
+*~
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+*.old
+
+# Development files
+.cursorignore
+.github/.DS_Store
+
+# VPN provider specific files (these contain credentials)
+config/wireguard/*.conf
+config/openvpn/*.ovpn
+config/openvpn/*.key
+config/openvpn/*.crt
+config/openvpn/*.pem
+
+# Transmission data
+config/settings.json.backup
+config/torrents/
+config/resume/
+config/blocklists/
+
+# Logs
+logs/
+*.log
+config/log/

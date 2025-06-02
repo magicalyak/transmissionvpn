@@ -61,6 +61,8 @@ Properly mapping volumes is crucial for data persistence and custom configuratio
 
 This guide focuses on running the pre-built `magicalyak/transmissionvpn` image from Docker Hub.
 
+> 📋 **Need more examples?** Check out [EXAMPLES.md](EXAMPLES.md) for detailed configuration examples including themes, utilities, and various use cases.
+
 ### 🐳 Option 1: Docker Run (Minimal Setup)
 
 #### **1. Prepare Your Docker Host System 🛠️**
@@ -192,80 +194,141 @@ docker-compose up -d
 - **Transmission Web UI:** `http://localhost:9091` or `http://YOUR_DOCKER_HOST_IP:9091`
 - **🌐 Privoxy HTTP Proxy:** If `ENABLE_PRIVOXY=yes`, server: `localhost`, port: `PRIVOXY_PORT` (default `8118`)
 
+## 🔄 Migrating from `haugene/transmission-openvpn`
+
+Coming from the popular `haugene/transmission-openvpn` image? Welcome! This section helps you migrate smoothly with key differences and environment variable mapping.
+
+### 🎯 **Key Differences**
+
+| Feature | `haugene/transmission-openvpn` | `magicalyak/transmissionvpn` |
+|---------|--------------------------------|------------------------------|
+| **Base Image** | Custom Alpine + Transmission | LinuxServer.io Transmission |
+| **VPN Support** | OpenVPN only | OpenVPN + WireGuard |
+| **Process Manager** | Custom scripts | s6-overlay (more robust) |
+| **Volume Structure** | `/data` for downloads | `/downloads` for downloads |
+| **Config Location** | `/data/transmission-home` | `/config` |
+| **Web Proxy** | Built-in HTTP proxy | Optional Privoxy |
+| **Provider Configs** | Built-in provider templates | Bring your own config files |
+
+### 🗂️ **Volume Migration**
+
+**Before (haugene):**
+```bash
+-v /host/data:/data
+-v /host/config:/config
+```
+
+**After (magicalyak):**
+```bash
+-v /host/config:/config          # Transmission settings + VPN configs
+-v /host/downloads:/downloads    # Your downloads
+-v /host/watch:/watch           # Optional: watch folder
+```
+
+**Migration Steps:**
+1. **Move Downloads:** Copy `/host/data/completed/*` to `/host/downloads/`
+2. **Move Transmission Config:** Copy `/host/data/transmission-home/settings.json` to `/host/config/settings.json`
+3. **Copy VPN Files:** Move your `.ovpn` files to `/host/config/openvpn/`
+
+### 📝 **Environment Variable Mapping**
+
+| haugene Variable | magicalyak Equivalent | Notes |
+|------------------|----------------------|-------|
+| `OPENVPN_PROVIDER` | *Not needed* | Use `VPN_CONFIG` to specify your `.ovpn` file |
+| `OPENVPN_CONFIG` | `VPN_CONFIG` | Full path inside container: `/config/openvpn/your.ovpn` |
+| `OPENVPN_USERNAME` | `VPN_USER` | Same functionality |
+| `OPENVPN_PASSWORD` | `VPN_PASS` | Same functionality |
+| `LOCAL_NETWORK` | `LAN_NETWORK` | Same functionality - your LAN CIDR |
+| `TRANSMISSION_PEER_PORT` | `TRANSMISSION_PEER_PORT` | Same functionality |
+| `TRANSMISSION_DOWNLOAD_DIR` | *Auto-configured* | Always `/downloads` inside container |
+| `TRANSMISSION_INCOMPLETE_DIR` | `TRANSMISSION_INCOMPLETE_DIR` | Default: `/downloads/incomplete` |
+| `TRANSMISSION_WATCH_DIR` | `TRANSMISSION_WATCH_DIR` | Default: `/watch` inside container |
+| `TRANSMISSION_WEB_UI` | *Not needed* | Base image handles UI selection |
+| `WEBPROXY_ENABLED` | `ENABLE_PRIVOXY` | Use `yes`/`no` instead of `true`/`false` |
+| `WEBPROXY_PORT` | `PRIVOXY_PORT` | Default port changed from `8888` to `8118` |
+
+### 🚀 **Quick Migration Example**
+
+**Your old haugene setup:**
+```bash
+docker run -d \
+  --cap-add=NET_ADMIN \
+  --device=/dev/net/tun \
+  -p 9091:9091 \
+  -p 8888:8888 \
+  -v /opt/transmission:/data \
+  -v /opt/transmission/config:/config \
+  -e OPENVPN_PROVIDER=PIA \
+  -e OPENVPN_CONFIG=netherlands \
+  -e OPENVPN_USERNAME=myuser \
+  -e OPENVPN_PASSWORD=mypass \
+  -e LOCAL_NETWORK=192.168.1.0/24 \
+  -e WEBPROXY_ENABLED=true \
+  -e WEBPROXY_PORT=8888 \
+  haugene/transmission-openvpn
+```
+
+**Equivalent magicalyak setup:**
+```bash
+# 1. Prepare migration (one time)
+mkdir -p /opt/transmissionvpn/{config/openvpn,downloads,watch}
+cp /opt/transmission/completed/* /opt/transmissionvpn/downloads/
+cp /opt/transmission/transmission-home/settings.json /opt/transmissionvpn/config/
+cp your_pia_netherlands.ovpn /opt/transmissionvpn/config/openvpn/
+
+# 2. New container
+docker run -d \
+  --cap-add=NET_ADMIN \
+  --device=/dev/net/tun \
+  -p 9091:9091 \
+  -p 8118:8118 \
+  -v /opt/transmissionvpn/config:/config \
+  -v /opt/transmissionvpn/downloads:/downloads \
+  -v /opt/transmissionvpn/watch:/watch \
+  -e VPN_CLIENT=openvpn \
+  -e VPN_CONFIG=/config/openvpn/your_pia_netherlands.ovpn \
+  -e VPN_USER=myuser \
+  -e VPN_PASS=mypass \
+  -e LAN_NETWORK=192.168.1.0/24 \
+  -e ENABLE_PRIVOXY=yes \
+  -e PRIVOXY_PORT=8118 \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  magicalyak/transmissionvpn
+```
+
+### ⚠️ **Important Migration Notes**
+
+1. **🔧 Provider Configs:** This image doesn't include built-in provider templates. Download your VPN provider's `.ovpn` files manually.
+
+2. **🌐 Proxy Port Change:** Default HTTP proxy port changed from `8888` to `8118`. Update your applications accordingly.
+
+3. **📂 Volume Structure:** The volume mapping is different - plan your directory migration carefully.
+
+4. **🔐 Auth Files:** If you used `/config/openvpn-credentials.txt` with haugene, rename it to `/config/openvpn/credentials.txt` and ensure it has username on line 1, password on line 2.
+
+5. **🎛️ Transmission Settings:** Your existing `settings.json` should work, but some paths may need adjustment in the UI after first run.
+
+### 💡 **Migration Tips**
+
+- **Test First:** Run the new container with temporary volumes to verify your VPN config works
+- **Keep Backups:** Don't delete your old data until you've verified everything works
+- **Check Logs:** Use `docker logs container_name` to troubleshoot any issues
+- **Port Conflicts:** Stop your old container before starting the new one to avoid port conflicts
+
+### ✨ **New Compatible Features**
+
+We've added several features inspired by haugene for compatibility:
+
+| Feature | Environment Variable | Notes |
+|---------|---------------------|-------|
+| **Alternative Web UIs** | `TRANSMISSION_WEB_UI` | Same as haugene! Supports: `combustion`, `kettu`, `flood-for-transmission`, `transmission-web-control` |
+| **Custom Health Check** | `HEALTH_CHECK_HOST` | Same as haugene! Ping custom host instead of `google.com` |
+| **Docker Logs Support** | `LOG_TO_STDOUT` | Same as haugene! Send Transmission logs to `docker logs` |
+
 ## ⚙️ Environment Variables
 
 | Variable | Purpose | Example | Default |
 |----------|---------|---------|---------|
 | `VPN_CLIENT` | `openvpn` or `wireguard` | `openvpn` | `openvpn` |
-| `VPN_CONFIG` | Path to VPN config file **inside container** | `/config/openvpn/your.ovpn` | (auto-detect) |
-| `VPN_USER` | OpenVPN username | `myuser` | |
-| `VPN_PASS` | OpenVPN password | `mypassword` | |
-| `ENABLE_PRIVOXY` | Enable Privoxy (`yes`/`no`) | `no` | `no` |
-| `PRIVOXY_PORT` | Internal port for Privoxy service | `8118` | `8118` |
-| `PUID` | User ID for Transmission process | `1000` | `911` |
-| `PGID` | Group ID for Transmission process | `1000` | `911` |
-| `TZ` | Your local timezone | `America/New_York` | `Etc/UTC` |
-| `LAN_NETWORK` | Your LAN CIDR to bypass VPN for local access | `192.168.1.0/24` | |
-| `DEBUG` | Enable verbose script logging (`true`/`false`) | `false` | `false` |
-
-### Transmission Specific Settings
-
-- `TRANSMISSION_RPC_AUTHENTICATION_REQUIRED`: (`true`|`false`) - Enable/disable password protection for the Web UI. Default: `false`.
-- `TRANSMISSION_RPC_USERNAME`: Username for Web UI if authentication is enabled.
-- `TRANSMISSION_RPC_PASSWORD`: Password for Web UI if authentication is enabled.
-- `TRANSMISSION_PEER_PORT`: Port for incoming P2P connections. Set this for fixed port forwarding.
-- `TRANSMISSION_BLOCKLIST_ENABLED`: (`true`|`false`) - Enable/disable peer blocklist. Default: `true`.
-
-For a complete list of variables, see [.env.sample](https://github.com/magicalyak/transmissionvpn/blob/main/.env.sample).
-
-### Setting Environment Variables from Files (Docker Secrets)
-
-This image supports setting any environment variable from a file by prepending `FILE__` to the variable name:
-
-```bash
-# Create password file
-echo "your_vpn_password" > ./data/config/vpn_password.txt
-
-# In .env file:
-FILE__VPN_PASS=/config/vpn_password.txt
-```
-
-## 🤔 Troubleshooting Tips
-
-- **Container Exits or VPN Not Connecting?**
-  - `docker logs transmissionvpn` for clues
-  - Check `VPN_CONFIG` path in `.env` (must be container path, e.g., `/config/...`)
-  - Verify credentials and VPN config file contents
-
-- **Transmission UI Not Accessible?**
-  - `docker ps` - is it running?
-  - `docker logs transmissionvpn` - any errors?
-  - Verify `-p` port mappings
-
-- **File Permission Issues?**
-  - Ensure `PUID`/`PGID` in `.env` match the owner of your host data directories
-
-## 🩺 Healthcheck
-
-Verifies Transmission UI and VPN tunnel interface activity. If the container is unhealthy, check logs!
-
-## 🧑‍💻 For Developers / Building from Source
-
-Want to tinker or build it yourself?
-
-```bash
-git clone https://github.com/magicalyak/transmissionvpn.git
-cd transmissionvpn
-cp .env.sample .env && nano .env
-make build && make run
-```
-
-## 📄 License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
-Base image (`lscr.io/linuxserver/transmission`) and bundled software (OpenVPN, WireGuard, Privoxy, Transmission) have their own respective licenses.
-
-## 🙏 Acknowledgements
-
-This project is inspired by the need for a secure, easy-to-use Transmission setup with VPN support. Thanks to the `linuxserver` team for their excellent base image and to the OpenVPN, WireGuard, and Privoxy communities for their contributions to open-source software.
+| `
