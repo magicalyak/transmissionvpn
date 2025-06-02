@@ -1,1 +1,0 @@
-This file prevents permissions from being applied/re-applied to '/config', if you want to reset permissions then please delete this file and restart the container.

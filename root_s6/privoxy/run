@@ -5,7 +5,7 @@
 # Exit if Privoxy is not enabled
 if [[ "${ENABLE_PRIVOXY,,}" != "yes" && "${ENABLE_PRIVOXY,,}" != "true" ]]; then
   echo "[INFO] Privoxy is disabled (ENABLE_PRIVOXY is not 'yes' or 'true'). Exiting privoxy service script."
-  exit 0 # Exit cleanly, service won't start
+  exit 111 # Exit with 111 to tell s6-rc this service is permanently down
 fi
 
 echo "[INFO] Starting Privoxy service..."
@@ -15,7 +15,7 @@ CONFIG_TEMPLATE="/etc/privoxy/config.template"
 ACTUAL_CONFIG="/etc/privoxy/config"
 
 if [ ! -f "$CONFIG_TEMPLATE" ]; then
-  echo "[ERROR] Privoxy config template $CONFIG_TEMPLATE not found! Cannot start Privoxy." | tee -a /var/log/privoxy/error.log # Also log to a persistent file if possible
+  echo "[ERROR] Privoxy config template $CONFIG_TEMPLATE not found! Cannot start Privoxy."
   exit 1
 fi
 
@@ -26,16 +26,34 @@ echo "[INFO] Privoxy will listen on port: $PRIVOXY_PORT"
 sed "s/__PRIVOXY_PORT__/$PRIVOXY_PORT/g" "$CONFIG_TEMPLATE" > "$ACTUAL_CONFIG"
 
 if [ ! -s "$ACTUAL_CONFIG" ]; then # Check if sed failed or template was bad
-    echo "[ERROR] Failed to create $ACTUAL_CONFIG from $CONFIG_TEMPLATE. Check template and sed command." | tee -a /var/log/privoxy/error.log
+    echo "[ERROR] Failed to create $ACTUAL_CONFIG from $CONFIG_TEMPLATE. Check template and sed command."
     exit 1
 fi
 
 # Ensure log directory exists
 mkdir -p /var/log/privoxy
-chown privoxy:privoxy /var/log/privoxy # Use privoxy user if it exists
 
 # Run Privoxy in the foreground, without chroot, with our config file
 # The s6 supervisor will handle daemonizing and restarting.
 # The --no-daemon flag is crucial for s6.
-exec /usr/sbin/privoxy --no-daemon /etc/privoxy/config 
-# exec /usr/sbin/privoxy --no-daemon /etc/privoxy/config >/dev/stdout 2>&1 
+# Redirect output to reduce repeated messages in logs
+exec /usr/sbin/privoxy --no-daemon /etc/privoxy/config 2>&1 | \
+  while IFS= read -r line; do
+    # Filter out repetitive messages to reduce log spam
+    case "$line" in
+      *"Listening for new connections"*) 
+        # Only log this once per startup
+        if [ ! -f /tmp/privoxy_listening_logged ]; then
+          echo "$line"
+          touch /tmp/privoxy_listening_logged
+        fi
+        ;;
+      *"Request received"*|*"Crunch"*|*"Connect"*)
+        # Suppress frequent connection messages
+        ;;
+      *)
+        # Log everything else
+        echo "$line"
+        ;;
+    esac
+  done 

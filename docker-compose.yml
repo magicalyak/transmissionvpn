@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    env_file:
+      - .env # Load environment variables from .env file in the same directory
+    ports:
+      - "9091:9091" # Transmission Web UI
+      # - "8118:8118" # Privoxy - Uncomment if ENABLE_PRIVOXY=yes in .env and you chose port 8118 for host
+                      # Ensure the host port (left side) matches your desired host port and PRIVOXY_PORT in .env if changed
+    volumes:
+      # IMPORTANT: Replace ./data/config and ./data/downloads with the actual paths on your host
+      # where you want to store persistent configuration and downloads.
+      # These paths should match what you'd use for HOST_DATA_DIR in docker run commands.
+      # Example: /opt/transmissionvpn_data/config:/config
+      - ./data/config:/config   # Mount for transmission settings, vpn configs, etc.
+      - ./data/downloads:/downloads # Mount for completed downloads
+      - ./data/watch:/watch     # Mount for watch directory (optional)
+    cap_add:
+      - NET_ADMIN  # Required for VPN interface and routing manipulation
+      - SYS_MODULE # Recommended for WireGuard, may be needed for loading kernel modules
+    sysctls:
+      # Recommended for WireGuard to ensure proper packet marking for routing
+      - net.ipv4.conf.all.src_valid_mark=1
+      # - net.ipv6.conf.all.disable_ipv6=0 # Uncomment if you use IPv6 with WireGuard
+    devices:
+      - /dev/net/tun:/dev/net/tun # Required for VPN tunnel creation
+    restart: unless-stopped
+    # Optional: If you want to ensure this container starts after another (e.g., a base network container)
+    # depends_on:
+    #   - another_service
+
+# Notes on Volumes:
+# The example paths `./data/config` and `./data/downloads` assume you have a 'data' subdirectory
+# in the same directory as this docker-compose.yml file, and inside 'data', you have 'config' and 'downloads'.
+# You MUST adjust these paths to point to the actual locations on your Docker host where you intend
+# to store your persistent data, mirroring the HOST_DATA_DIR concept from the docker run examples.
+# For instance, if your data is in /srv/transmissionvpn_data:
+#   volumes:
+#     - /srv/transmissionvpn_data/config:/config
+#     - /srv/transmissionvpn_data/downloads:/downloads
+#     - /srv/transmissionvpn_data/watch:/watch
+
+# Notes on .env file:
+# This docker-compose.yml relies on a .env file in the same directory to supply
+# all necessary environment variables (PUID, PGID, TZ, VPN_CLIENT, VPN_CONFIG, etc.).
+# Ensure your .env file is correctly configured as per the .env.sample provided
+# in the repository. 

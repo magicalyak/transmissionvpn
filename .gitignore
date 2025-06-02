@@ -5,3 +5,22 @@ config/openvpn/credentials # Or any other path to your actual credentials file
 logs/
 openvpn-credentials.txt
 .github/.DS_Store
+
+# Test data and environment files
+./test_data/
+test.env
+
+# User-specific data directories if mapped to project root
+downloads/
+config/
+watch/
+build/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
