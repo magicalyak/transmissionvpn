@@ -5,38 +5,40 @@
 Supercharge your Transmission downloads with robust VPN security and an optional Privoxy web proxy! This Docker image bundles the latest Transmission (from `lscr.io/linuxserver/transmission`) with OpenVPN & WireGuard clients, all seamlessly managed by s6-overlay.
 
 **➡️ Get it now from Docker Hub:**
+
 ```bash
 docker pull magicalyak/transmissionvpn:latest
 ```
 
 ## ✨ Core Features
 
-*   **🔒 Secure Transmission:** Runs the latest Transmission with all its traffic automatically routed through your chosen VPN.
-*   **🛡️ VPN Freedom:** Supports both **OpenVPN** and **WireGuard** VPN clients. You choose!
-*   **📄 Simplified OpenVPN Credentials:**
-    *   Use environment variables (`VPN_USER`/`VPN_PASS`).
-    *   Or, simply place a `credentials.txt` file (username on line 1, password on L2) at `/config/openvpn/credentials.txt` inside the container. The script auto-detects it!
-*   **🌐 Optional Privoxy:** Includes Privoxy for HTTP proxying. If enabled, Privoxy's traffic also uses the VPN.
-*   **💻 Easy Host Access:** Access the Transmission Web UI (port `9091`) and Privoxy (if enabled, default port `8118`) from your Docker host.
-*   **🗂️ Simple Volume Mounts:** Map `/config` for settings & VPN files, and `/downloads` for your media. Transmission's internal paths are automatically configured for compatibility.
-*   **🔧 Richly Configurable:** A comprehensive set of environment variables to tailor the container.
-*   **🚦 Healthcheck:** Built-in healthcheck to monitor Transmission and VPN operational status.
+- **🔒 Secure Transmission:** Runs the latest Transmission with all its traffic automatically routed through your chosen VPN.
+- **🛡️ VPN Freedom:** Supports both **OpenVPN** and **WireGuard** VPN clients. You choose!
+- **📄 Simplified OpenVPN Credentials:**
+  - Use environment variables (`VPN_USER`/`VPN_PASS`).
+  - Or, simply place a `credentials.txt` file (username on line 1, password on L2) at `/config/openvpn/credentials.txt` inside the container. The script auto-detects it!
+- **🌐 Optional Privoxy:** Includes Privoxy for HTTP proxying. If enabled, Privoxy's traffic also uses the VPN.
+- **💻 Easy Host Access:** Access the Transmission Web UI (port `9091`) and Privoxy (if enabled, default port `8118`) from your Docker host.
+- **🗂️ Simple Volume Mounts:** Map `/config` for settings & VPN files, and `/downloads` for your media. Transmission's internal paths are automatically configured for compatibility.
+- **🔧 Richly Configurable:** A comprehensive set of environment variables to tailor the container.
+- **🚦 Healthcheck:** Built-in healthcheck to monitor Transmission and VPN operational status.
 
 ## 💾 Volume Mapping: Your Data, Your Rules
 
 Properly mapping volumes is crucial for data persistence and custom configurations.
 
-*   **`/config` (Required):** This is the heart of your persistent storage.
-    *   **Transmission Configuration:** Stores `settings.json`, torrent files, resume data, etc.
-    *   **VPN Configuration:**
-        *   Place OpenVPN files (`.ovpn`, certs, keys) in `your_host_config_dir/openvpn/`.
-        *   **OpenVPN Credentials (Optional File):** For file-based auth, put `credentials.txt` (user L1, pass L2) in `your_host_config_dir/openvpn/credentials.txt`.
-        *   Place WireGuard files (`.conf`) in `your_host_config_dir/wireguard/`.
-*   **`/downloads` (Required):** This is where Transmission saves your completed downloads.
-*   **`/watch` (Optional):** Transmission can monitor this directory for new `.torrent` files to add automatically.
+- **`/config` (Required):** This is the heart of your persistent storage.
+  - **Transmission Configuration:** Stores `settings.json`, torrent files, resume data, etc.
+  - **VPN Configuration:**
+    - Place OpenVPN files (`.ovpn`, certs, keys) in `your_host_config_dir/openvpn/`.
+    - **OpenVPN Credentials (Optional File):** For file-based auth, put `credentials.txt` (user L1, pass L2) in `your_host_config_dir/openvpn/credentials.txt`.
+    - Place WireGuard files (`.conf`) in `your_host_config_dir/wireguard/`.
+- **`/downloads` (Required):** This is where Transmission saves your completed downloads.
+- **`/watch` (Optional):** Transmission can monitor this directory for new `.torrent` files to add automatically.
 
 **Example Host Directory Structure 🌳:**
-```
+
+```text
 /opt/transmissionvpn_data/      # Your chosen base directory on the host
 ├── config/                    # Maps to /config in container
 │   ├── settings.json          # (Transmission will create/manage this)
@@ -61,7 +63,7 @@ This guide focuses on running the pre-built `magicalyak/transmissionvpn` image f
 
 ### 🐳 Option 1: Docker Run (Minimal Setup)
 
-**1. Prepare Your Docker Host System 🛠️**
+#### **1. Prepare Your Docker Host System 🛠️**
 
 It's highly recommended to create your host directories *before* running the container:
 
@@ -78,12 +80,14 @@ echo "Host directories created under ${HOST_DATA_DIR}"
 ```
 
 Place your VPN configuration files into the appropriate subfolders:
-*   OpenVPN: `${HOST_DATA_DIR}/config/openvpn/`
-*   WireGuard: `${HOST_DATA_DIR}/config/wireguard/`
 
-**2. Run with Docker 🐳**
+- OpenVPN: `${HOST_DATA_DIR}/config/openvpn/`
+- WireGuard: `${HOST_DATA_DIR}/config/wireguard/`
+
+#### **2. Run with Docker 🐳**
 
 **Minimal OpenVPN Example:**
+
 ```bash
 HOST_DATA_DIR="/opt/transmissionvpn_data" # CHANGEME
 
@@ -107,6 +111,7 @@ docker run -d \
 ```
 
 **Minimal WireGuard Example:**
+
 ```bash
 HOST_DATA_DIR="/opt/transmissionvpn_data" # CHANGEME
 
@@ -131,13 +136,15 @@ docker run -d \
 
 ### 🐙 Option 2: Docker Compose (Recommended)
 
-**1. Create Directory Structure:**
+#### **1. Create Directory Structure:**
+
 ```bash
 mkdir -p transmissionvpn/{data/{config/{openvpn,wireguard},downloads,watch}}
 cd transmissionvpn
 ```
 
-**2. Download Files:**
+#### **2. Download Files:**
+
 ```bash
 # Download docker-compose.yml
 curl -o docker-compose.yml https://raw.githubusercontent.com/magicalyak/transmissionvpn/main/docker-compose.yml
@@ -146,12 +153,14 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/magicalyak/transmis
 curl -o .env https://raw.githubusercontent.com/magicalyak/transmissionvpn/main/.env.sample
 ```
 
-**3. Edit `.env` File:**
+#### **3. Edit `.env` File:**
+
 ```bash
 nano .env  # Edit with your VPN settings
 ```
 
 **Example minimal `.env` for OpenVPN:**
+
 ```ini
 # ---- VPN Settings ----
 VPN_CLIENT=openvpn
@@ -165,21 +174,23 @@ PGID=1000
 TZ=America/New_York
 ```
 
-**4. Place VPN Files:**
+#### **4. Place VPN Files:**
+
 ```bash
 # Copy your VPN config to data/config/openvpn/ or data/config/wireguard/
 cp your_provider.ovpn data/config/openvpn/
 ```
 
-**5. Start Container:**
+#### **5. Start Container:**
+
 ```bash
 docker-compose up -d
 ```
 
 ## 🖥️ Accessing Services
 
-*   **Transmission Web UI:** `http://localhost:9091` or `http://YOUR_DOCKER_HOST_IP:9091`
-*   **🌐 Privoxy HTTP Proxy:** If `ENABLE_PRIVOXY=yes`, server: `localhost`, port: `PRIVOXY_PORT` (default `8118`)
+- **Transmission Web UI:** `http://localhost:9091` or `http://YOUR_DOCKER_HOST_IP:9091`
+- **🌐 Privoxy HTTP Proxy:** If `ENABLE_PRIVOXY=yes`, server: `localhost`, port: `PRIVOXY_PORT` (default `8118`)
 
 ## ⚙️ Environment Variables
 
@@ -199,11 +210,11 @@ docker-compose up -d
 
 ### Transmission Specific Settings
 
-*   `TRANSMISSION_RPC_AUTHENTICATION_REQUIRED`: (`true`|`false`) - Enable/disable password protection for the Web UI. Default: `false`.
-*   `TRANSMISSION_RPC_USERNAME`: Username for Web UI if authentication is enabled.
-*   `TRANSMISSION_RPC_PASSWORD`: Password for Web UI if authentication is enabled.
-*   `TRANSMISSION_PEER_PORT`: Port for incoming P2P connections. Set this for fixed port forwarding.
-*   `TRANSMISSION_BLOCKLIST_ENABLED`: (`true`|`false`) - Enable/disable peer blocklist. Default: `true`.
+- `TRANSMISSION_RPC_AUTHENTICATION_REQUIRED`: (`true`|`false`) - Enable/disable password protection for the Web UI. Default: `false`.
+- `TRANSMISSION_RPC_USERNAME`: Username for Web UI if authentication is enabled.
+- `TRANSMISSION_RPC_PASSWORD`: Password for Web UI if authentication is enabled.
+- `TRANSMISSION_PEER_PORT`: Port for incoming P2P connections. Set this for fixed port forwarding.
+- `TRANSMISSION_BLOCKLIST_ENABLED`: (`true`|`false`) - Enable/disable peer blocklist. Default: `true`.
 
 For a complete list of variables, see [.env.sample](https://github.com/magicalyak/transmissionvpn/blob/main/.env.sample).
 
@@ -221,18 +232,18 @@ FILE__VPN_PASS=/config/vpn_password.txt
 
 ## 🤔 Troubleshooting Tips
 
-*   **Container Exits or VPN Not Connecting?**
-    *   `docker logs transmissionvpn` for clues
-    *   Check `VPN_CONFIG` path in `.env` (must be container path, e.g., `/config/...`)
-    *   Verify credentials and VPN config file contents
+- **Container Exits or VPN Not Connecting?**
+  - `docker logs transmissionvpn` for clues
+  - Check `VPN_CONFIG` path in `.env` (must be container path, e.g., `/config/...`)
+  - Verify credentials and VPN config file contents
 
-*   **Transmission UI Not Accessible?**
-    *   `docker ps` - is it running?
-    *   `docker logs transmissionvpn` - any errors?
-    *   Verify `-p` port mappings
+- **Transmission UI Not Accessible?**
+  - `docker ps` - is it running?
+  - `docker logs transmissionvpn` - any errors?
+  - Verify `-p` port mappings
 
-*   **File Permission Issues?**
-    *   Ensure `PUID`/`PGID` in `.env` match the owner of your host data directories
+- **File Permission Issues?**
+  - Ensure `PUID`/`PGID` in `.env` match the owner of your host data directories
 
 ## 🩺 Healthcheck
 
@@ -252,6 +263,7 @@ make build && make run
 ## 📄 License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
+
 Base image (`lscr.io/linuxserver/transmission`) and bundled software (OpenVPN, WireGuard, Privoxy, Transmission) have their own respective licenses.
 
 ## 🙏 Acknowledgements
