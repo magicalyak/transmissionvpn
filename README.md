@@ -23,6 +23,38 @@ docker pull magicalyak/transmissionvpn:latest
 - **🔧 Richly Configurable:** A comprehensive set of environment variables to tailor the container.
 - **🚦 Healthcheck:** Built-in healthcheck to monitor Transmission and VPN operational status.
 
+## 🚀 New Enterprise Features
+
+### 🔐 Enhanced Security & Secrets Management
+- **Docker Secrets Support:** Secure credential management using `FILE__VPN_USER` and `FILE__VPN_PASS` environment variables
+- **Multi-tier Authentication:** Priority-based credential resolution (Docker secrets → environment variables → credential files)
+- **Leak Detection:** Optional IP and DNS leak monitoring to ensure VPN integrity
+- **Secure File Handling:** Automatic permission management for credential files
+
+### 📊 Advanced Monitoring & Observability
+- **Enhanced Healthchecks:** Comprehensive health monitoring with configurable checks for VPN, Transmission, DNS, and connectivity
+- **Prometheus Metrics:** Built-in metrics endpoint (`/metrics`) for integration with monitoring systems
+- **Real-time Notifications:** Discord, Slack, and webhook notifications for container events and health changes
+- **System Metrics:** CPU, memory, disk, and network statistics collection
+- **Performance Monitoring:** Response time tracking and interface statistics
+
+### 🛠️ Production-Ready Operations
+- **Monitoring Scripts:** External monitoring with `scripts/monitor.sh` for automated health checks and alerting
+- **Metrics Server:** Python-based HTTP server (`scripts/metrics-server.py`) for Prometheus integration
+- **State Tracking:** Persistent monitoring state with rate limiting and change detection
+- **Comprehensive Logging:** Structured logging with configurable levels and automatic log rotation
+
+### 📚 Complete Documentation Suite
+- **[VPN Provider Guides](docs/VPN_PROVIDERS.md):** Step-by-step setup for NordVPN, ExpressVPN, Surfshark, ProtonVPN, Mullvad, PIA, and more
+- **[Docker Secrets Guide](docs/DOCKER_SECRETS.md):** Complete guide for Docker Swarm, Compose, and Kubernetes secret management
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md):** Comprehensive diagnostic commands and common issue resolution
+- **GitHub Templates:** Professional issue templates, PR templates, and community guidelines
+
+### 🔧 Developer Experience
+- **GitHub Issue Templates:** Structured bug reports, feature requests, and support templates
+- **Pull Request Templates:** Comprehensive PR guidelines with testing checklists
+- **Community Support:** Enhanced documentation and examples for all skill levels
+
 ## 💾 Volume Mapping: Your Data, Your Rules
 
 Properly mapping volumes is crucial for data persistence and custom configurations.
@@ -326,9 +358,136 @@ We've added several features inspired by haugene for compatibility:
 | **Custom Health Check** | `HEALTH_CHECK_HOST` | Same as haugene! Ping custom host instead of `google.com` |
 | **Docker Logs Support** | `LOG_TO_STDOUT` | Same as haugene! Send Transmission logs to `docker logs` |
 
+## 📊 Monitoring & Observability Quick Reference
+
+### 🔍 Enhanced Health Monitoring
+
+The container includes comprehensive health monitoring with configurable options:
+
+```bash
+# Enable advanced health features
+-e METRICS_ENABLED=true          # Enable metrics collection
+-e CHECK_DNS_LEAK=true          # Monitor for DNS leaks
+-e CHECK_IP_LEAK=true           # Monitor for IP leaks
+-e HEALTH_CHECK_HOST=1.1.1.1    # Custom connectivity test host
+```
+
+### 📈 Prometheus Metrics Endpoint
+
+Access real-time metrics for monitoring integration:
+
+```bash
+# Enable metrics server (runs on port 8080 by default)
+docker exec transmissionvpn python3 /scripts/metrics-server.py &
+
+# Access metrics
+curl http://localhost:8080/metrics     # Prometheus format
+curl http://localhost:8080/health      # JSON health status
+curl http://localhost:8080/            # Web interface
+```
+
+**Available Metrics:**
+- Container health and uptime
+- VPN interface status and traffic
+- Transmission daemon status and torrent counts
+- System resources (CPU, memory, disk)
+- Network connectivity and response times
+
+### 🔔 Real-time Notifications
+
+Monitor your container with external notifications:
+
+```bash
+# Download monitoring script
+curl -o monitor.sh https://raw.githubusercontent.com/magicalyak/transmissionvpn/main/scripts/monitor.sh
+chmod +x monitor.sh
+
+# Discord notifications
+./monitor.sh --discord "https://discord.com/api/webhooks/YOUR_WEBHOOK"
+
+# Slack notifications  
+./monitor.sh --slack "https://hooks.slack.com/services/YOUR_WEBHOOK"
+
+# Multiple notification types with custom interval
+./monitor.sh --discord "DISCORD_URL" --slack "SLACK_URL" --interval 30 --level warn
+```
+
+**Notification Events:**
+- Container start/stop
+- Health check failures
+- VPN connection issues
+- IP address changes
+- Transmission daemon status
+
+### 🔐 Docker Secrets Integration
+
+Secure credential management for production deployments:
+
+```yaml
+# Docker Compose with secrets
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    environment:
+      - FILE__VPN_USER=/run/secrets/vpn_username
+      - FILE__VPN_PASS=/run/secrets/vpn_password
+    secrets:
+      - vpn_username
+      - vpn_password
+
+secrets:
+  vpn_username:
+    file: ./secrets/vpn_username.txt
+  vpn_password:
+    file: ./secrets/vpn_password.txt
+```
+
+### 📋 Health Check Commands
+
+Manual health verification commands:
+
+```bash
+# Check overall container health
+docker exec transmissionvpn /root/healthcheck.sh
+
+# View detailed health logs
+docker exec transmissionvpn cat /tmp/healthcheck.log
+
+# Check VPN connectivity
+docker exec transmissionvpn ping -c 3 -I tun0 google.com
+
+# Verify external IP (should be VPN IP)
+docker exec transmissionvpn curl -s ifconfig.me
+
+# Check Transmission status
+docker exec transmissionvpn transmission-remote localhost:9091 -si
+```
+
+### 📚 Documentation Links
+
+- **[Complete VPN Provider Setup](docs/VPN_PROVIDERS.md)** - Detailed guides for major VPN providers
+- **[Docker Secrets Guide](docs/DOCKER_SECRETS.md)** - Comprehensive secret management documentation  
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and diagnostic commands
+- **[Examples](EXAMPLES.md)** - Configuration examples and use cases
+
 ## ⚙️ Environment Variables
 
 | Variable | Purpose | Example | Default |
 |----------|---------|---------|---------|
 | `VPN_CLIENT` | `openvpn` or `wireguard` | `openvpn` | `openvpn` |
-| `
+| `VPN_CONFIG` | Full path to VPN configuration file | `/config/openvpn/your_provider.ovpn` |
+| `VPN_USER` | VPN username | `your_vpn_username` |
+| `VPN_PASS` | VPN password | `your_vpn_password` |
+| `LAN_NETWORK` | Local network CIDR | `192.168.1.0/24` |
+| `TRANSMISSION_PEER_PORT` | Transmission peer port | `9091` |
+| `TRANSMISSION_DOWNLOAD_DIR` | Transmission download directory | `/downloads` |
+| `TRANSMISSION_INCOMPLETE_DIR` | Transmission incomplete download directory | `/downloads/incomplete` |
+| `TRANSMISSION_WATCH_DIR` | Transmission watch directory | `/watch` |
+| `ENABLE_PRIVOXY` | Enable Privoxy | `yes` |
+| `PRIVOXY_PORT` | Privoxy port | `8118` |
+| `PUID` | User ID | `1000` |
+| `PGID` | Group ID | `1000` |
+| `TZ` | Timezone | `America/New_York` |
+| `HEALTH_CHECK_HOST` | Health check host | `google.com` |
+| `LOG_TO_STDOUT` | Log to stdout | `yes` |
