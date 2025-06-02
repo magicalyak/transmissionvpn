@@ -250,6 +250,7 @@ EOF
   echo "[INFO] Starting OpenVPN client..."
   # Using exec to replace the shell process with openvpn is not suitable here as we need to run commands after it.
   # Run OpenVPN in the background. s6 will manage its lifecycle if needed as part of this init script.
+  # shellcheck disable=SC2086 # Word splitting is intentional for VPN_OPTIONS
   openvpn --config "$TEMP_OVPN_CONFIG" \
           --dev "$(cat $VPN_INTERFACE_FILE)" \
           ${VPN_OPTIONS} > /tmp/openvpn.log 2>&1 &
@@ -303,7 +304,7 @@ start_wireguard() {
           WG_CONFIG="$WG_CONF_FOUND"
           echo "[INFO] Automatically selected WireGuard config: $WG_CONFIG"
           # Update VPN_INTERFACE_FILE based on found config, if VPN_CONFIG was not explicitly set
-          echo "$(basename "$WG_CONFIG" .conf)" > "$VPN_INTERFACE_FILE"
+          basename "$WG_CONFIG" .conf > "$VPN_INTERFACE_FILE"
       fi
   fi
   INTERFACE_NAME=$(cat "$VPN_INTERFACE_FILE")
