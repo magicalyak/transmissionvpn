@@ -7,26 +7,46 @@ openvpn-credentials.txt
 
 # Test data and environment files
 ./test_data/
+test_data/
+**/test_data/
 test.env
 .env.local
 .env.production
+.env.development
+.env.test
+.env.*.local
 
 # User-specific data directories if mapped to project root
 downloads/
 config/
 watch/
 build/
+data/
+media/
+share/
+home/
+tmp/
 
 # Build artifacts and temporary files
 dist/
+target/
+out/
+bin/
+obj/
 *.log
 *.pid
 *.tar
 *.tar.gz
+*.tar.bz2
+*.tar.xz
 *.zip
+*.7z
+*.rar
 node_modules/
 .npm/
 .cache/
+.temp/
+.temporary/
 
 # Downloaded web UI files (these should be mounted from host)
 flood-for-transmission/
@@ -34,20 +54,33 @@ combustion/
 kettu/
 transmission-web-control/
 *.zip.tmp
+web-ui/
+webui/
 
 # Docker-related files
 .docker/
 docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yml
 *.dockerfile.bak
+.dockerignore.bak
 
 # IDE and editor files
 .vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
 *~
 .project
 .settings/
+*.sublime-project
+*.sublime-workspace
+.vim/
+.netrwhist
 
 # macOS
 .DS_Store
@@ -57,24 +90,63 @@ docker-compose.override.yml
 .LSOverride
 .Spotlight-V100
 .Trashes
+Icon?
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.apdisk
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
 
 # Windows
 ehthumbs.db
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
 *.lnk
 
 # Linux
 *~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
 
 # Backup files
 *.bak
 *.backup
 *.tmp
 *.old
+*.orig
+*.rej
+*~
 
 # Development files
 .cursorignore
 .github/.DS_Store
+*.patch
+*.diff
+
+# Runtime and system files
+*.pid
+*.seed
+*.pid.lock
+*.sock
+.nyc_output/
+coverage/
+.coverage
+.pytest_cache/
+*.cover
+.hypothesis/
 
 # VPN provider specific files (these contain credentials)
 config/wireguard/*.conf
@@ -82,14 +154,93 @@ config/openvpn/*.ovpn
 config/openvpn/*.key
 config/openvpn/*.crt
 config/openvpn/*.pem
+config/openvpn/*.ca
+config/openvpn/*.p12
+config/openvpn/*.pfx
+*.key
+*.crt
+*.pem
+*.ca
+*.p12
+*.pfx
+credentials.txt
+auth.txt
+login.txt
 
 # Transmission data
 config/settings.json.backup
 config/torrents/
 config/resume/
 config/blocklists/
+config/dht.dat
+config/bandwidth-groups.json
+config/stats.json
 
 # Logs
 logs/
 *.log
+**/log/
+**/logs/
 config/log/
+transmission.log
+privoxy.log
+vpn.log
+openvpn.log
+wireguard.log
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# SSL/TLS certificates
+*.cert
+*.csr
+server.key
+server.crt
+ca.crt
+ca.key
+
+# Package manager files
+package-lock.json
+yarn.lock
+Pipfile.lock
+poetry.lock
+Gemfile.lock
+composer.lock
+
+# Testing artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Misc
+*.swp
+*.swo
+.sass-cache/
+.connect.lock
+.typings/
+.nyc_output/
