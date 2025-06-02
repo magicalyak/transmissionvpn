@@ -49,11 +49,60 @@ find_vpn_credentials() {
   # Clear any stale credentials file
   rm -f /tmp/vpn-credentials
 
-  # Priority 1: VPN_USER and VPN_PASS from environment.
+  # Priority 1: Check for Docker secrets using FILE__ prefix convention
+  # This supports both FILE__VPN_USER and FILE__VPN_PASS
+  VPN_USER_FROM_FILE=""
+  VPN_PASS_FROM_FILE=""
+  
+  if [ -n "$FILE__VPN_USER" ] && [ -f "$FILE__VPN_USER" ] && [ -r "$FILE__VPN_USER" ]; then
+    echo "[INFO] Reading VPN username from Docker secret: $FILE__VPN_USER"
+    VPN_USER_FROM_FILE=$(head -n 1 "$FILE__VPN_USER" | tr -d '\n\r')
+    if [ -n "$VPN_USER_FROM_FILE" ]; then
+      echo "[INFO] VPN username successfully read from Docker secret."
+    else
+      echo "[WARN] Docker secret file $FILE__VPN_USER is empty."
+    fi
+  fi
+  
+  if [ -n "$FILE__VPN_PASS" ] && [ -f "$FILE__VPN_PASS" ] && [ -r "$FILE__VPN_PASS" ]; then
+    echo "[INFO] Reading VPN password from Docker secret: $FILE__VPN_PASS"
+    VPN_PASS_FROM_FILE=$(head -n 1 "$FILE__VPN_PASS" | tr -d '\n\r')
+    if [ -n "$VPN_PASS_FROM_FILE" ]; then
+      echo "[INFO] VPN password successfully read from Docker secret."
+    else
+      echo "[WARN] Docker secret file $FILE__VPN_PASS is empty."
+    fi
+  fi
+  
+  # Use Docker secrets if both are available
+  if [ -n "$VPN_USER_FROM_FILE" ] && [ -n "$VPN_PASS_FROM_FILE" ]; then
+    echo "[INFO] Using VPN credentials from Docker secrets."
+    echo "$VPN_USER_FROM_FILE" > /tmp/vpn-credentials
+    echo "$VPN_PASS_FROM_FILE" >> /tmp/vpn-credentials
+    
+    # Secure the credentials file
+    chmod 600 /tmp/vpn-credentials
+    
+    if [ -s /tmp/vpn-credentials ] && [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
+      echo "[INFO] Credentials successfully written to /tmp/vpn-credentials from Docker secrets."
+      return 0
+    else
+      echo "[WARN] Docker secrets were provided but resulted in an empty or incomplete credential file. Clearing."
+      rm -f /tmp/vpn-credentials
+    fi
+  elif [ -n "$VPN_USER_FROM_FILE" ] || [ -n "$VPN_PASS_FROM_FILE" ]; then
+    echo "[WARN] Only one of FILE__VPN_USER or FILE__VPN_PASS was provided. Both are required for Docker secrets authentication."
+  fi
+
+  # Priority 2: VPN_USER and VPN_PASS from environment.
   if [ -n "$VPN_USER" ] && [ -n "$VPN_PASS" ]; then
-    echo "[INFO] Using VPN_USER and VPN_PASS from environment."
+    echo "[INFO] Using VPN_USER and VPN_PASS from environment variables."
     echo "$VPN_USER" > /tmp/vpn-credentials
     echo "$VPN_PASS" >> /tmp/vpn-credentials
+    
+    # Secure the credentials file
+    chmod 600 /tmp/vpn-credentials
+    
     if [ -s /tmp/vpn-credentials ] && [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
         echo "[INFO] Credentials successfully written to /tmp/vpn-credentials from environment variables."
         return 0
@@ -63,7 +112,7 @@ find_vpn_credentials() {
     fi
   fi
 
-  # Priority 2: Fixed credentials file path /config/openvpn/credentials.txt
+  # Priority 3: Fixed credentials file path /config/openvpn/credentials.txt
   FIXED_CRED_PATH="/config/openvpn/credentials.txt"
   if [ -f "$FIXED_CRED_PATH" ] && [ -r "$FIXED_CRED_PATH" ]; then
     echo "[INFO] Checking for credentials file at fixed path: $FIXED_CRED_PATH"
@@ -71,6 +120,10 @@ find_vpn_credentials() {
     if [ -s "$FIXED_CRED_PATH" ] && [ "$(wc -l < "$FIXED_CRED_PATH")" -ge 2 ]; then
       echo "[INFO] Using OpenVPN credentials from $FIXED_CRED_PATH."
       cp "$FIXED_CRED_PATH" /tmp/vpn-credentials
+      
+      # Secure the credentials file
+      chmod 600 /tmp/vpn-credentials
+      
       # Double check copy success and content
       if [ -s /tmp/vpn-credentials ] && [ "$(wc -l < /tmp/vpn-credentials)" -ge 2 ]; then
         echo "[INFO] Credentials successfully copied to /tmp/vpn-credentials from $FIXED_CRED_PATH."
@@ -83,11 +136,11 @@ find_vpn_credentials() {
       echo "[WARN] Credentials file $FIXED_CRED_PATH was found but is empty or does not contain at least two lines. Ignoring."
     fi
   else
-    echo "[INFO] No credentials file found at $FIXED_CRED_PATH (this is okay if using VPN_USER/PASS or if your VPN config doesn't need separate auth)."
+    echo "[INFO] No credentials file found at $FIXED_CRED_PATH (this is okay if using VPN_USER/PASS or Docker secrets, or if your VPN config doesn't need separate auth)."
   fi
   
-  # If neither method yielded credentials
-  echo "[WARN] No valid VPN credentials provided via VPN_USER/VPN_PASS or at $FIXED_CRED_PATH."
+  # If no method yielded credentials
+  echo "[WARN] No valid VPN credentials provided via Docker secrets (FILE__VPN_USER/FILE__VPN_PASS), environment variables (VPN_USER/VPN_PASS), or at $FIXED_CRED_PATH."
   echo "[INFO] If your OpenVPN configuration requires username/password authentication and doesn't embed them, connection may fail."
   return 1 
 }

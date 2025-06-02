@@ -1,0 +1,161 @@
+name: 🐛 Bug Report
+description: Report a bug to help us improve transmissionvpn
+title: "[BUG] "
+labels: 
+  - bug
+  - triage
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible to help us diagnose the issue.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Prerequisites
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported before
+          required: true
+        - label: I have read the README.md and EXAMPLES.md documentation
+          required: true
+        - label: I am using the latest version of the image
+          required: true
+
+  - type: input
+    id: image-version
+    attributes:
+      label: Image Version
+      description: What version of magicalyak/transmissionvpn are you using?
+      placeholder: "latest, v4.0.6-1, sha-abc123, etc."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: vpn-type
+    attributes:
+      label: VPN Type
+      description: Which VPN client are you using?
+      options:
+        - OpenVPN
+        - WireGuard
+        - Not using VPN (testing)
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: vpn-provider
+    attributes:
+      label: VPN Provider
+      description: Which VPN provider are you using?
+      placeholder: "NordVPN, ExpressVPN, Surfshark, Custom, etc."
+
+  - type: dropdown
+    id: host-os
+    attributes:
+      label: Host Operating System
+      description: What OS is running Docker?
+      options:
+        - Linux (Ubuntu/Debian)
+        - Linux (CentOS/RHEL/Fedora)
+        - Linux (Other)
+        - macOS
+        - Windows
+        - Synology DSM
+        - QNAP
+        - Unraid
+        - Other NAS
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment-method
+    attributes:
+      label: Deployment Method
+      description: How are you running the container?
+      options:
+        - Docker Compose
+        - Docker Run
+        - Portainer
+        - Kubernetes
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: Describe the expected behavior...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened? Include error messages if any.
+      placeholder: Describe what actually happened...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to Reproduce
+      description: Provide step-by-step instructions to reproduce the issue
+      placeholder: |
+        1. Run container with...
+        2. Navigate to...
+        3. Click on...
+        4. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: docker-config
+    attributes:
+      label: Docker Configuration
+      description: Please share your docker-compose.yml or docker run command
+      placeholder: |
+        ```yaml
+        # Your docker-compose.yml or docker run command
+        ```
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Container Logs
+      description: Include relevant container logs (use `docker logs transmissionvpn`)
+      placeholder: |
+        ```
+        # Paste your container logs here
+        # Remove sensitive information like passwords/keys
+        ```
+      render: shell
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or information that might help
+      placeholder: Any additional information that might be helpful...
+
+  - type: checkboxes
+    id: troubleshooting
+    attributes:
+      label: Troubleshooting Attempted
+      description: What troubleshooting steps have you already tried?
+      options:
+        - label: Checked container logs for errors
+        - label: Verified VPN configuration files are correct
+        - label: Tested VPN connection outside of container
+        - label: Checked firewall/port settings
+        - label: Tried recreating the container
+        - label: Checked file permissions (PUID/PGID) 
