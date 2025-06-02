@@ -1,94 +1,97 @@
-IMAGE_NAME ?= transmissionvpn
-CONTAINER_NAME ?= transmissionvpn-container
+# TransmissionVPN Makefile
+# Simple commands to help you get started
 
-# Attempt to read PRIVOXY_PORT from .env file, default to 8118 if not found or .env is missing
-# This ensures PRIVOXY_HOST_PORT aligns with the internal PRIVOXY_PORT set in .env
-PRIVOXY_PORT_FROM_ENV := $(shell if [ -f .env ]; then grep '^PRIVOXY_PORT=' .env | cut -d= -f2; fi)
-PRIVOXY_HOST_PORT ?= $(PRIVOXY_PORT_FROM_ENV)
-PRIVOXY_HOST_PORT ?= 8118 # Fallback if not in .env or .env doesn't exist
+.PHONY: help setup start stop logs clean build
 
-.PHONY: all build run run-openvpn run-wireguard logs stop shell clean help
-
-all: build
-
+# Default target
 help:
-	@echo "Usage: make [target]"
+	@echo "TransmissionVPN Docker Container"
 	@echo ""
-	@echo "Targets:"
-	@echo "  all                Build the Docker image (default)."
-	@echo "  build              Build the Docker image."
-	@echo "  run                Run the Docker container with OpenVPN (example, edit .env first)."
-	@echo "  run-openvpn        Alias for 'run'."
-	@echo "  run-wireguard      Run the Docker container with WireGuard (example, edit .env and WireGuard config)."
-	@echo "  logs               Follow logs of the running container."
-	@echo "  stop               Stop and remove the running container."
-	@echo "  shell              Get a shell inside the running container."
-	@echo "  clean              Remove stopped containers and the Docker image."
+	@echo "Available commands:"
+	@echo "  setup     - Create directories and copy sample files"
+	@echo "  start     - Start the container with docker-compose"
+	@echo "  stop      - Stop the container"
+	@echo "  restart   - Restart the container"
+	@echo "  logs      - Show container logs"
+	@echo "  shell     - Open shell in running container"
+	@echo "  status    - Show container status and health"
+	@echo "  clean     - Stop and remove container"
+	@echo "  build     - Build the Docker image locally"
+	@echo ""
+	@echo "Quick start:"
+	@echo "  1. make setup"
+	@echo "  2. Edit .env file with your VPN settings"
+	@echo "  3. Add your VPN config to config/openvpn/"
+	@echo "  4. make start"
 
-build:
-	@echo "Building Docker image $(IMAGE_NAME)..."
-	docker build -t $(IMAGE_NAME) .
+# Setup directories and files
+setup:
+	@echo "Setting up TransmissionVPN..."
+	@mkdir -p config/openvpn config/wireguard downloads watch
+	@if [ ! -f .env ]; then cp .env.sample .env; echo "Created .env file - please edit it with your settings"; fi
+	@echo "Setup complete!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "1. Edit .env file with your VPN credentials"
+	@echo "2. Copy your VPN config file to config/openvpn/ or config/wireguard/"
+	@echo "3. Run 'make start' to start the container"
 
-run: run-openvpn
+# Start container
+start:
+	@echo "Starting TransmissionVPN..."
+	@docker-compose up -d
+	@echo "Container started!"
+	@echo "Web UI: http://localhost:9091"
+	@echo "Logs: make logs"
 
-run-openvpn:
-	@echo "Running container $(CONTAINER_NAME) with OpenVPN..."
-	@echo "Ensure your .env file has VPN_USER, VPN_PASS, and VPN_CONFIG set correctly."
-	@echo "VPN_CONFIG should point to an .ovpn file in ./config/openvpn/"
-	docker run -d \
-		--name $(CONTAINER_NAME) \
-		--rm \
-		--cap-add=NET_ADMIN \
-		--device=/dev/net/tun \
-		-p 9091:9091 \
-		-p $(PRIVOXY_HOST_PORT):$(PRIVOXY_HOST_PORT) \
-		-v "$(shell pwd)/config:/config" \
-		-v "$(shell pwd)/downloads:/downloads" \
-		-v "$(shell pwd)/watch:/watch" \
-		--env-file .env \
-		-e VPN_CLIENT=openvpn \
-		$(IMAGE_NAME)
-
-run-wireguard:
-	@echo "Running container $(CONTAINER_NAME) with WireGuard..."
-	@echo "Ensure your .env file has VPN_CONFIG set (e.g., /config/wireguard/wg0.conf)."
-	@echo "And that the actual WireGuard config (e.g., wg0.conf) exists in ./config/wireguard/"
-	docker run -d \
-		--name $(CONTAINER_NAME) \
-		--rm \
-		--cap-add=NET_ADMIN \
-		--cap-add=SYS_MODULE \
-		--sysctl="net.ipv4.conf.all.src_valid_mark=1" \
-		--sysctl="net.ipv6.conf.all.disable_ipv6=0" \
-		--device=/dev/net/tun \
-		-p 9091:9091 \
-		-p $(PRIVOXY_HOST_PORT):$(PRIVOXY_HOST_PORT) \
-		-v "$(shell pwd)/config:/config" \
-		-v "$(shell pwd)/downloads:/downloads" \
-		-v "$(shell pwd)/watch:/watch" \
-		--env-file .env \
-		-e VPN_CLIENT=wireguard \
-		$(IMAGE_NAME)
-
-logs:
-	@echo "Following logs for $(CONTAINER_NAME)..."
-	docker logs -f $(CONTAINER_NAME)
-
+# Stop container
 stop:
-	@echo "Stopping and removing $(CONTAINER_NAME)..."
-	docker stop $(CONTAINER_NAME) || true
-	docker rm -f $(CONTAINER_NAME) || true
+	@echo "Stopping TransmissionVPN..."
+	@docker-compose down
 
+# Restart container
+restart: stop start
+
+# Show logs
+logs:
+	@docker-compose logs -f
+
+# Open shell in container
 shell:
-	@echo "Opening shell in $(CONTAINER_NAME)..."
-	docker exec -it $(CONTAINER_NAME) /bin/bash
+	@docker exec -it transmissionvpn /bin/bash
 
+# Show status
+status:
+	@echo "=== Container Status ==="
+	@docker ps | grep transmissionvpn || echo "Container not running"
+	@echo ""
+	@echo "=== Health Check ==="
+	@docker exec transmissionvpn /root/healthcheck.sh 2>/dev/null || echo "Health check failed or container not running"
+	@echo ""
+	@echo "=== External IP ==="
+	@docker exec transmissionvpn curl -s ifconfig.me 2>/dev/null || echo "Cannot check IP - container not running or no internet"
+
+# Clean up
 clean:
-	@echo "Cleaning up..."
-	docker stop $(CONTAINER_NAME) || true 
-	# docker rm $(CONTAINER_NAME) || true # Not needed due to --rm
-	@read -p "Remove Docker image $(IMAGE_NAME)? [y/N] " choice; \
-	case "$$choice" in \
-	  y|Y ) docker rmi $(IMAGE_NAME) || true;; \
-	  * ) echo "Skipping image removal.";; \
-	esac
+	@echo "Cleaning up TransmissionVPN..."
+	@docker-compose down -v
+	@docker image prune -f
+
+# Build image locally
+build:
+	@echo "Building TransmissionVPN image..."
+	@docker build -t magicalyak/transmissionvpn:local .
+	@echo "Build complete! Use 'magicalyak/transmissionvpn:local' as image in docker-compose.yml"
+
+# Development helpers
+dev-logs:
+	@docker-compose logs -f --tail=100
+
+dev-shell:
+	@docker exec -it transmissionvpn /bin/bash
+
+dev-health:
+	@docker exec transmissionvpn /root/healthcheck.sh
+
+dev-ip:
+	@docker exec transmissionvpn curl ifconfig.me

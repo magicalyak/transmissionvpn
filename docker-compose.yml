@@ -4,53 +4,57 @@ services:
   transmissionvpn:
     image: magicalyak/transmissionvpn:latest
     container_name: transmissionvpn
+    
+    # Load environment variables from .env file
     env_file:
-      - .env # Load environment variables from .env file in the same directory
-    ports:
-      - "9091:9091" # Transmission Web UI
-      - "8118:8118" # Privoxy HTTP proxy (if enabled)
-      # - "8118:8118" # Privoxy - Uncomment if ENABLE_PRIVOXY=yes in .env and you chose port 8118 for host
-                      # Ensure the host port (left side) matches your desired host port and PRIVOXY_PORT in .env if changed
-    volumes:
-      # IMPORTANT: Replace ./data/config and ./data/downloads with the actual paths on your host
-      # where you want to store persistent configuration and downloads.
-      # These paths should match what you'd use for HOST_DATA_DIR in docker run commands.
-      # Example: /opt/transmissionvpn_data/config:/config
-      - ./data/config:/config   # Mount for transmission settings, vpn configs, etc.
-      - ./data/downloads:/downloads # Mount for completed downloads
-      - ./data/watch:/watch     # Mount for watch directory (optional)
-      # Alternative Web UI Examples (uncomment one):
-      # - ./flood-for-transmission:/web-ui:ro  # For Flood UI
-      # - ./combustion:/web-ui:ro              # For Combustion UI
+      - .env
+    
+    # Required capabilities for VPN functionality
     cap_add:
-      - NET_ADMIN  # Required for VPN interface and routing manipulation
-      - SYS_MODULE # Recommended for WireGuard, may be needed for loading kernel modules
+      - NET_ADMIN      # Required for VPN interface and routing
+      - SYS_MODULE     # Required for WireGuard (optional for OpenVPN)
+    
+    # Required for WireGuard (optional for OpenVPN)
     sysctls:
-      # Recommended for WireGuard to ensure proper packet marking for routing
       - net.ipv4.conf.all.src_valid_mark=1
       - net.ipv6.conf.all.disable_ipv6=0
-    devices:
-      - /dev/net/tun:/dev/net/tun # Required for VPN tunnel creation
-    restart: unless-stopped
-    # Optional: If you want to ensure this container starts after another (e.g., a base network container)
-    # depends_on:
-    #   - another_service
     
-    # ---- LinuxServer.io Docker Mods Examples ----
-    # Uncomment and add to your .env file as needed:
-    # 
-    # Theme.park - Beautiful dark themes:
-    # DOCKER_MODS=ghcr.io/gilbn/theme.park:transmission
-    # TP_THEME=hotline
-    # 
-    # Package Install - Add useful utilities:
-    # DOCKER_MODS=lscr.io/linuxserver/mods:universal-package-install
-    # INSTALL_PACKAGES=unrar|p7zip|mediainfo|curl
-    # 
-    # Multiple Mods - Combine theme + packages + troubleshooting:
-    # DOCKER_MODS=ghcr.io/gilbn/theme.park:transmission|lscr.io/linuxserver/mods:universal-package-install|lscr.io/linuxserver/mods:universal-tshoot
-    # TP_THEME=hotline
-    # INSTALL_PACKAGES=unrar|mediainfo|curl
+    # Required device for VPN tunnel
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    
+    # Port mappings
+    ports:
+      - "9091:9091"    # Transmission Web UI
+      - "8118:8118"    # Privoxy HTTP proxy (if enabled)
+    
+    # Volume mappings
+    volumes:
+      - ./config:/config           # Transmission settings and VPN configs
+      - ./downloads:/downloads     # Completed downloads
+      - ./watch:/watch            # Watch folder for .torrent files
+      
+      # Uncomment for alternative web UIs:
+      # - ./flood-for-transmission:/web-ui:ro    # Flood UI
+      # - ./combustion:/web-ui:ro                # Combustion UI
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Optional: Health check
+    healthcheck:
+      test: ["CMD", "/root/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# Uncomment for Docker secrets (production deployments)
+# secrets:
+#   vpn_username:
+#     file: ./secrets/vpn_username.txt
+#   vpn_password:
+#     file: ./secrets/vpn_password.txt
 
 # Notes on Volumes:
 # The example paths `./data/config` and `./data/downloads` assume you have a 'data' subdirectory
