@@ -255,41 +255,82 @@ ports:
 
 ## 🎨 Alternative Web UIs
 
-### Flood for Transmission
+### Automatic Installation (Recommended)
 
-1. Download Flood:
-   ```bash
-   curl -OL https://github.com/johman10/flood-for-transmission/releases/download/latest/flood-for-transmission.zip
-   unzip flood-for-transmission.zip
-   ```
+The easiest way to use alternative web UIs - they're automatically downloaded and configured:
 
-2. Docker Compose:
+#### Flood for Transmission
+```yaml
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+      - ./watch:/watch
+    environment:
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/provider.ovpn
+      - VPN_USER=username
+      - VPN_PASS=password
+      - TRANSMISSION_WEB_UI_AUTO=flood  # Automatically downloads Flood UI
+      - PUID=1000
+      - PGID=1000
+    restart: unless-stopped
+```
+
+#### Kettu UI
+```yaml
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=kettu  # Clean, responsive interface
+```
+
+#### Combustion UI
+```yaml
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=combustion  # Sleek, mobile-friendly design
+```
+
+#### Transmission Web Control
+```yaml
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=transmission-web-control  # Enhanced control panel
+```
+
+### Switching Between UIs
+
+1. **Change the UI:**
    ```yaml
-   volumes:
-     - ./config:/config
-     - ./downloads:/downloads
-     - ./watch:/watch
-     - ./flood-for-transmission:/web-ui:ro  # Mount Flood UI
    environment:
-     - TRANSMISSION_WEB_HOME=/web-ui  # Use Flood UI
+     - TRANSMISSION_WEB_UI_AUTO=kettu  # Switch to Kettu
    ```
 
-### Combustion UI
-
-1. Download Combustion:
+2. **Force re-download (if needed):**
    ```bash
-   curl -OL https://github.com/secretmapper/combustion/archive/release.zip
-   unzip release.zip
-   mv combustion-release combustion
+   # Remove cached UI to force fresh download
+   docker exec transmissionvpn rm -rf /config/web-ui/kettu
+   docker restart transmissionvpn
    ```
 
-2. Mount and configure:
+3. **Disable automatic UI:**
    ```yaml
-   volumes:
-     - ./combustion:/web-ui:ro
    environment:
-     - TRANSMISSION_WEB_HOME=/web-ui
+     - TRANSMISSION_WEB_UI_AUTO=false  # Use default Transmission UI
    ```
+
+### Manual Installation (Legacy Method)
+
+For custom UIs or if you prefer manual control:
+
+### Flood for Transmission (Manual)
 
 ## 🏠 Media Server Integration
 

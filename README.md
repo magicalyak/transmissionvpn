@@ -80,6 +80,7 @@ services:
 | `LAN_NETWORK` | Local network CIDR | (none) | `192.168.1.0/24` |
 | `ENABLE_PRIVOXY` | Enable HTTP proxy | `no` | `yes` |
 | `DEBUG` | Enable debug logging | `false` | `true` |
+| `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) | `flood` |
 
 ## 📁 Volumes
 
@@ -134,6 +135,42 @@ This container works with any OpenVPN or WireGuard provider:
 - **Mullvad** - Generate configs from account page
 
 📖 **Provider-specific guides**: [VPN Setup Documentation](docs/VPN_PROVIDERS.md)
+
+## 🎨 Alternative Web UIs
+
+Enhance your Transmission experience with modern, feature-rich web interfaces:
+
+### Automatic Installation (Recommended)
+
+Set `TRANSMISSION_WEB_UI_AUTO` to automatically download and configure popular UIs:
+
+```yaml
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=flood  # Downloads Flood for Transmission
+```
+
+**Supported UIs:**
+- **`flood`** - Modern, feature-rich UI based on Flood ([Preview](https://github.com/johman10/flood-for-transmission))
+- **`kettu`** - Clean, responsive interface ([Preview](https://github.com/endor/kettu))
+- **`combustion`** - Sleek, mobile-friendly design ([Preview](https://github.com/secretmapper/combustion))
+- **`transmission-web-control`** - Enhanced control panel ([Preview](https://github.com/ronggang/transmission-web-control))
+
+### Benefits:
+- ✅ **Automatic download** during container startup
+- ✅ **Persistent storage** in `/config/web-ui/`
+- ✅ **Easy switching** between UIs
+- ✅ **No manual setup** required
+
+### Manual Installation
+
+For custom UIs, mount your files and use `TRANSMISSION_WEB_HOME`:
+
+```yaml
+volumes:
+  - ./my-custom-ui:/web-ui:ro
+environment:
+  - TRANSMISSION_WEB_HOME=/web-ui
+```
 
 ## 🔍 OpenVPN Setup
 

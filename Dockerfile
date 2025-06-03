@@ -39,6 +39,7 @@ ARG TRANSMISSION_WATCH_DIR_ENABLED
 ARG TRANSMISSION_BLOCKLIST_ENABLED
 ARG TRANSMISSION_BLOCKLIST_URL
 ARG TRANSMISSION_WEB_UI
+ARG TRANSMISSION_WEB_UI_AUTO
 ARG HEALTH_CHECK_HOST
 ARG LOG_TO_STDOUT
 
@@ -82,17 +83,19 @@ ENV TRANSMISSION_BLOCKLIST_URL=${TRANSMISSION_BLOCKLIST_URL:-}
 
 # Additional features from haugene compatibility
 ENV TRANSMISSION_WEB_UI=${TRANSMISSION_WEB_UI:-}
+ENV TRANSMISSION_WEB_UI_AUTO=${TRANSMISSION_WEB_UI_AUTO:-}
 ENV HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
 ENV LOG_TO_STDOUT=${LOG_TO_STDOUT:-false}
 
 # Install OpenVPN, WireGuard, Privoxy and tools
-RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip && \
+RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip git && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
 
 # Copy s6-overlay init scripts
 COPY root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
 COPY root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
 COPY root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
+COPY root/etc/cont-init.d/04-setup-web-ui-auto-download.sh /etc/cont-init.d/04-setup-web-ui-auto-download
 COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 
 # Copy healthcheck script

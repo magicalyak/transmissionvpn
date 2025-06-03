@@ -358,6 +358,138 @@ environment:
   - TRANSMISSION_SPEED_LIMIT_UP=100     # KB/s
 ```
 
+## Alternative Web UI Issues
+
+### 🎨 Web UI Auto-Download Failed
+
+**Symptoms:**
+- Container logs show web UI download errors
+- Default Transmission web UI appears instead of chosen alternative
+- `/config/web-ui/` directory is empty or missing files
+
+**Diagnosis:**
+```bash
+# Check if web UI was downloaded
+docker exec transmissionvpn ls -la /config/web-ui/
+
+# Check current UI setting
+docker exec transmissionvpn cat /config/web-ui/.current-ui
+
+# Check download logs
+docker logs transmissionvpn | grep -i "web.*ui\|download\|flood\|kettu"
+
+# Check TRANSMISSION_WEB_HOME setting
+docker exec transmissionvpn printenv | grep TRANSMISSION_WEB
+```
+
+**Solutions:**
+
+1. **Network/Download Issues:**
+```bash
+# Test internet connectivity in container
+docker exec transmissionvpn curl -I https://github.com
+
+# Force re-download by removing cached UI
+docker exec transmissionvpn rm -rf /config/web-ui/flood
+docker restart transmissionvpn
+```
+
+2. **Supported UI Names:**
+```yaml
+# Ensure you're using a supported UI name
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=flood                    # ✅ Correct
+  - TRANSMISSION_WEB_UI_AUTO=kettu                    # ✅ Correct  
+  - TRANSMISSION_WEB_UI_AUTO=combustion               # ✅ Correct
+  - TRANSMISSION_WEB_UI_AUTO=transmission-web-control # ✅ Correct
+  - TRANSMISSION_WEB_UI_AUTO=invalid-ui-name          # ❌ Will fail
+```
+
+3. **Permissions Issues:**
+```bash
+# Check directory permissions
+docker exec transmissionvpn ls -la /config/
+
+# Fix permissions if needed
+sudo chown -R 1000:1000 ./config/web-ui/
+```
+
+### 🔄 Switching Between Web UIs
+
+**To change UI:**
+```yaml
+# Update docker-compose.yml
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=kettu  # Switch to Kettu
+
+# Restart container
+docker-compose restart transmissionvpn
+```
+
+**To force fresh download:**
+```bash
+# Remove cached UI files
+docker exec transmissionvpn rm -rf /config/web-ui/flood
+docker restart transmissionvpn
+```
+
+**To disable automatic UI:**
+```yaml
+environment:
+  - TRANSMISSION_WEB_UI_AUTO=false  # Use default UI
+```
+
+### 📱 Web UI Not Loading Properly
+
+**Symptoms:**
+- Blank page or loading errors
+- JavaScript errors in browser console
+- UI appears but doesn't connect to Transmission
+
+**Solutions:**
+
+1. **Clear Browser Cache:**
+```bash
+# Hard refresh: Ctrl+F5 (Windows/Linux) or Cmd+Shift+R (Mac)
+# Or clear browser cache completely
+```
+
+2. **Check Network Access:**
+```bash
+# Test if Transmission RPC is accessible
+curl -f http://localhost:9091/transmission/rpc/
+
+# Check from within container
+docker exec transmissionvpn curl -f http://localhost:9091/transmission/rpc/
+```
+
+3. **Verify UI Files:**
+```bash
+# Check if index.html exists and is valid
+docker exec transmissionvpn ls -la /config/web-ui/flood/index.html
+docker exec transmissionvpn head -10 /config/web-ui/flood/index.html
+```
+
+### 🔧 Manual Web UI Setup
+
+If automatic download fails, you can manually install UIs:
+
+```bash
+# Download and extract manually
+mkdir -p ./config/web-ui/flood
+cd ./config/web-ui/flood
+curl -OL https://github.com/johman10/flood-for-transmission/releases/download/latest/flood-for-transmission.zip
+unzip flood-for-transmission.zip --strip-components=1
+rm flood-for-transmission.zip
+```
+
+```yaml
+# Use manual installation
+environment:
+  - TRANSMISSION_WEB_HOME=/config/web-ui/flood
+  # Don't set TRANSMISSION_WEB_UI_AUTO when using manual setup
+```
+
 ## Network & Connectivity
 
 ### 🔗 DNS Resolution Problems
