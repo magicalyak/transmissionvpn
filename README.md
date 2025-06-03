@@ -2,32 +2,23 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/magicalyak/transmissionvpn)](https://hub.docker.com/r/magicalyak/transmissionvpn) [![Docker Stars](https://img.shields.io/docker/stars/magicalyak/transmissionvpn)](https://hub.docker.com/r/magicalyak/transmissionvpn) [![Build Status](https://github.com/magicalyak/transmissionvpn/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/magicalyak/transmissionvpn/actions/workflows/build-and-publish.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Transmission BitTorrent client with VPN protection. All traffic is automatically routed through your VPN connection with a kill switch to prevent IP leaks.
+**Docker container which runs Transmission with an optional OpenVPN or WireGuard connection**
+
+Transmission BitTorrent client with VPN protection and kill switch to prevent IP leaks when the tunnel goes down.
 
 ## 🚀 Quick Start
 
-### 1. Create directories
-
-```bash
-mkdir -p transmissionvpn/{config/openvpn,downloads,watch}
-cd transmissionvpn
-```
-
-### 2. Add your VPN config
-
-Place your VPN provider's `.ovpn` file in the `config/openvpn/` directory.
-
-### 3. Run with Docker
+Run the container with this command:
 
 ```bash
 docker run -d \
-  --name transmissionvpn \
   --cap-add=NET_ADMIN \
   --device=/dev/net/tun \
+  --name=transmissionvpn \
   -p 9091:9091 \
-  -v "$(pwd)/config:/config" \
-  -v "$(pwd)/downloads:/downloads" \
-  -v "$(pwd)/watch:/watch" \
+  -v ./config:/config \
+  -v ./downloads:/downloads \
+  -v ./watch:/watch \
   -e VPN_CLIENT=openvpn \
   -e VPN_CONFIG=/config/openvpn/your_provider.ovpn \
   -e VPN_USER=your_vpn_username \
@@ -38,19 +29,7 @@ docker run -d \
   magicalyak/transmissionvpn:latest
 ```
 
-### 4. Access Transmission
-
-Open <http://localhost:9091> in your browser.
-
-## 📋 What You Need
-
-- **VPN Configuration**: `.ovpn` file from your VPN provider
-- **VPN Credentials**: Username and password for your VPN service
-- **Docker**: With `--cap-add=NET_ADMIN` and `/dev/net/tun` access
-
 ## 🐙 Docker Compose (Recommended)
-
-Create a `docker-compose.yml` file:
 
 ```yaml
 version: "3.8"
@@ -70,119 +49,104 @@ services:
       - ./watch:/watch
     environment:
       - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/your_provider.ovpn
-      - VPN_USER=your_vpn_username
-      - VPN_PASS=your_vpn_password
+      - VPN_CONFIG=/config/openvpn/provider.ovpn
+      - VPN_USER=your_username
+      - VPN_PASS=your_password
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      - LAN_NETWORK=192.168.1.0/24
     restart: unless-stopped
 ```
 
-Then run:
+## 📋 Environment Variables
+
+### Required Variables
+
+| Variable | Function | Example |
+|----------|----------|---------|
+| `VPN_CLIENT` | VPN type (openvpn/wireguard) | `openvpn` |
+| `VPN_CONFIG` | Path to VPN config file | `/config/openvpn/provider.ovpn` |
+| `VPN_USER` | VPN username (OpenVPN only) | `your_username` |
+| `VPN_PASS` | VPN password (OpenVPN only) | `your_password` |
+
+### Optional Variables
+
+| Variable | Function | Default | Example |
+|----------|----------|---------|---------|
+| `PUID` | User ID for file permissions | `1000` | `1000` |
+| `PGID` | Group ID for file permissions | `1000` | `1000` |
+| `TZ` | Timezone | `UTC` | `America/New_York` |
+| `LAN_NETWORK` | Local network CIDR | (none) | `192.168.1.0/24` |
+| `ENABLE_PRIVOXY` | Enable HTTP proxy | `no` | `yes` |
+| `DEBUG` | Enable debug logging | `false` | `true` |
+
+## 📁 Volumes
+
+| Volume | Function | Example |
+|--------|----------|---------|
+| `/config` | Configuration files and VPN configs | `./config:/config` |
+| `/downloads` | Completed downloads | `./downloads:/downloads` |
+| `/watch` | Auto-add torrent files | `./watch:/watch` |
+
+## 🌐 Ports
+
+| Port | Function | Required |
+|------|----------|----------|
+| `9091` | Transmission Web UI | Yes |
+| `8118` | Privoxy HTTP proxy | No |
+
+## 🔧 Setup Instructions
+
+### 1. Create Directory Structure
+
+```bash
+mkdir -p transmissionvpn/{config/openvpn,downloads,watch}
+cd transmissionvpn
+```
+
+### 2. Add VPN Configuration
+
+Place your VPN provider's `.ovpn` file in `config/openvpn/` directory.
+
+**Note:** The container will fail to start if `VPN_CLIENT` is set and no valid config file is present.
+
+### 3. Start Container
 
 ```bash
 docker-compose up -d
 ```
 
-## 🔧 Basic Configuration
+### 4. Access Transmission
 
-### Required Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `VPN_CLIENT` | VPN type: `openvpn` or `wireguard` | `openvpn` |
-| `VPN_CONFIG` | Path to VPN config file | `/config/openvpn/provider.ovpn` |
-| `VPN_USER` | VPN username | `your_username` |
-| `VPN_PASS` | VPN password | `your_password` |
-
-### Optional Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PUID` | User ID for file permissions | `1000` |
-| `PGID` | Group ID for file permissions | `1000` |
-| `TZ` | Timezone | `UTC` |
-| `LAN_NETWORK` | Local network CIDR (e.g., `192.168.1.0/24`) | (none) |
-
-## 📁 Directory Structure
-
-```text
-transmissionvpn/
-├── config/
-│   ├── openvpn/
-│   │   └── your_provider.ovpn    # Your VPN config file
-│   └── settings.json             # Transmission settings (auto-created)
-├── downloads/                    # Completed downloads
-└── watch/                        # Drop .torrent files here for auto-add
-```
+Open http://localhost:9091 in your browser.
 
 ## 🛡️ VPN Providers
 
-This container works with any OpenVPN or WireGuard provider. Popular choices:
+This container works with any OpenVPN or WireGuard provider:
 
-- **NordVPN**: Download `.ovpn` files from your account
-- **ExpressVPN**: Get OpenVPN configs from setup page
-- **Surfshark**: Download from manual setup section
-- **ProtonVPN**: Get configs from downloads page
-- **Private Internet Access**: Download from client support
-- **Mullvad**: Generate configs from account page
+- **NordVPN** - Download configs from account dashboard
+- **ExpressVPN** - Get configs from manual setup page  
+- **Surfshark** - Download from manual setup section
+- **ProtonVPN** - Get configs from downloads page
+- **Private Internet Access** - Download from client support
+- **PrivadoVPN** - Generate configs from account dashboard
+- **Mullvad** - Generate configs from account page
 
-📖 **Detailed setup guides**: [VPN Provider Documentation](docs/VPN_PROVIDERS.md)
+📖 **Provider-specific guides**: [VPN Setup Documentation](docs/VPN_PROVIDERS.md)
 
-## 🔍 Troubleshooting
+## 🔍 OpenVPN Setup
 
-### Container won't start
+1. **Download** your provider's `.ovpn` file
+2. **Place** it in `config/openvpn/` directory
+3. **Set** `VPN_CLIENT=openvpn`
+4. **Provide** your credentials via `VPN_USER` and `VPN_PASS`
 
-```bash
-# Check logs
-docker logs transmissionvpn
+**Tip:** You can also use `auth-user-pass credentials.txt` in your `.ovpn` file.
 
-# Common issues:
-# - Missing VPN config file
-# - Incorrect VPN credentials
-# - Missing --cap-add=NET_ADMIN
-# - Missing --device=/dev/net/tun
-```
+## 🔒 WireGuard Setup
 
-### Can't access Transmission UI
-
-```bash
-# Check if container is running
-docker ps | grep transmissionvpn
-
-# Check if port is accessible
-curl http://localhost:9091
-```
-
-### VPN not working
-
-```bash
-# Check external IP (should be VPN IP, not your real IP)
-docker exec transmissionvpn curl ifconfig.me
-
-# Check VPN connection
-docker exec transmissionvpn ping -c 3 google.com
-```
-
-📖 **Complete troubleshooting guide**: [Troubleshooting Documentation](docs/TROUBLESHOOTING.md)
-
----
-
-## 🚀 Advanced Features
-
-### WireGuard Support
-
-For WireGuard VPN configs:
-
-```yaml
-environment:
-  - VPN_CLIENT=wireguard
-  - VPN_CONFIG=/config/wireguard/wg0.conf
-# Note: No VPN_USER/VPN_PASS needed for WireGuard
-```
-
-Additional requirements for WireGuard:
+For WireGuard, additional requirements apply:
 
 ```yaml
 cap_add:
@@ -190,177 +154,103 @@ cap_add:
   - SYS_MODULE
 sysctls:
   - net.ipv4.conf.all.src_valid_mark=1
-```
-
-### HTTP Proxy (Privoxy)
-
-Enable optional HTTP proxy that also routes through VPN:
-
-```yaml
 environment:
-  - ENABLE_PRIVOXY=yes
-  - PRIVOXY_PORT=8118
-ports:
-  - "8118:8118"
+  - VPN_CLIENT=wireguard
+  - VPN_CONFIG=/config/wireguard/wg0.conf
 ```
 
-### Alternative Web UIs
+**Note:** No username/password needed for WireGuard.
 
-Replace the default Transmission web interface:
+## 🚦 Health Checks
 
-1. Download your preferred UI (e.g., Flood):
+The container includes automatic health monitoring:
 
-   ```bash
-   curl -OL https://github.com/johman10/flood-for-transmission/releases/download/latest/flood-for-transmission.zip
-   unzip flood-for-transmission.zip
-   ```
+- **VPN Connectivity** - Verifies tunnel is active
+- **IP Leak Protection** - Blocks traffic if VPN fails
+- **DNS Leak Prevention** - Routes DNS through VPN
 
-2. Mount and configure:
-
-   ```yaml
-   volumes:
-     - ./flood-for-transmission:/web-ui:ro
-   environment:
-     - TRANSMISSION_WEB_HOME=/web-ui
-   ```
-
-### Docker Secrets
-
-For production deployments, use Docker secrets instead of environment variables:
-
-```yaml
-environment:
-  - FILE__VPN_USER=/run/secrets/vpn_username
-  - FILE__VPN_PASS=/run/secrets/vpn_password
-secrets:
-  - vpn_username
-  - vpn_password
-
-secrets:
-  vpn_username:
-    file: ./secrets/vpn_username.txt
-  vpn_password:
-    file: ./secrets/vpn_password.txt
-```
-
-📖 **Complete secrets guide**: [Docker Secrets Documentation](docs/DOCKER_SECRETS.md)
-
-### Monitoring & Metrics
-
-Enable comprehensive monitoring:
-
-```yaml
-environment:
-  - METRICS_ENABLED=true
-  - CHECK_DNS_LEAK=true
-  - CHECK_IP_LEAK=true
-```
-
-External monitoring with notifications:
-
+Check container health:
 ```bash
-# Download monitoring script
-curl -o monitor.sh https://raw.githubusercontent.com/magicalyak/transmissionvpn/main/scripts/monitor.sh
-chmod +x monitor.sh
-
-# Run with Discord notifications
-./monitor.sh --discord "https://discord.com/api/webhooks/YOUR_WEBHOOK"
+docker exec transmissionvpn /root/healthcheck.sh
 ```
 
-Prometheus metrics endpoint:
+## 🔧 Troubleshooting
 
+### Container Won't Start
 ```bash
-# Start metrics server
-docker exec transmissionvpn python3 /scripts/metrics-server.py &
+# Check logs
+docker logs transmissionvpn
 
-# Access metrics
-curl http://localhost:8080/metrics
+# Common issues:
+# - Missing VPN config file
+# - Incorrect credentials
+# - Missing NET_ADMIN capability
 ```
 
-### LinuxServer.io Mods
+### VPN Not Working
+```bash
+# Check external IP
+docker exec transmissionvpn curl ifconfig.me
 
-Extend functionality with community mods:
-
-```yaml
-environment:
-  # Beautiful themes
-  - DOCKER_MODS=ghcr.io/gilbn/theme.park:transmission
-  - TP_THEME=hotline
-  
-  # Additional packages
-  - DOCKER_MODS=lscr.io/linuxserver/mods:universal-package-install
-  - INSTALL_PACKAGES=unrar|p7zip|mediainfo
+# Verify VPN connection
+docker exec transmissionvpn ping -c 3 8.8.8.8
 ```
 
-## 📚 Complete Documentation
+📖 **Complete troubleshooting**: [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 
-- **[Examples & Use Cases](EXAMPLES.md)** - Detailed configuration examples
+## 📚 Documentation
+
+- **[Configuration Examples](EXAMPLES.md)** - Real-world usage examples
 - **[VPN Provider Setup](docs/VPN_PROVIDERS.md)** - Provider-specific guides
 - **[Docker Secrets](docs/DOCKER_SECRETS.md)** - Secure credential management
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## 🔄 Migration from haugene/transmission-openvpn
 
-| haugene Variable | transmissionvpn Equivalent |
-|------------------|---------------------------|
-| `OPENVPN_PROVIDER` | Use `VPN_CONFIG` with your `.ovpn` file |
-| `OPENVPN_CONFIG` | `VPN_CONFIG` |
+| haugene | transmissionvpn |
+|---------|-----------------|
+| `OPENVPN_PROVIDER` | Use `VPN_CONFIG` with `.ovpn` file |
 | `OPENVPN_USERNAME` | `VPN_USER` |
 | `OPENVPN_PASSWORD` | `VPN_PASS` |
 | `LOCAL_NETWORK` | `LAN_NETWORK` |
-| `WEBPROXY_ENABLED` | `ENABLE_PRIVOXY` |
 
-**Volume changes:**
+## 🆘 Support
 
-- `/data` → `/downloads` (for downloads)
-- `/data/transmission-home` → `/config` (for settings)
-
-## 🆘 Getting Help
-
-1. **Check the logs**: `docker logs transmissionvpn`
-2. **Read the docs**: Links above for detailed guides
+1. **Check logs**: `docker logs transmissionvpn`
+2. **Read docs**: Complete guides linked above
 3. **Search issues**: [GitHub Issues](https://github.com/magicalyak/transmissionvpn/issues)
-4. **Create an issue**: Use our [issue templates](.github/ISSUE_TEMPLATE/)
+4. **Create issue**: Use our [templates](.github/ISSUE_TEMPLATE/)
 
-## ⚙️ All Environment Variables
+## ⚙️ Advanced Configuration
 
 <details>
-<summary>Click to expand complete variable list</summary>
+<summary>Click to expand all environment variables</summary>
 
 ### VPN Configuration
-
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VPN_CLIENT` | `openvpn` or `wireguard` | `openvpn` |
 | `VPN_CONFIG` | Path to VPN config file | (required) |
 | `VPN_USER` | VPN username | (required for OpenVPN) |
 | `VPN_PASS` | VPN password | (required for OpenVPN) |
-| `VPN_OPTIONS` | Additional VPN client options | (none) |
-| `FILE__VPN_USER` | Path to file containing VPN username | (none) |
-| `FILE__VPN_PASS` | Path to file containing VPN password | (none) |
+| `VPN_OPTIONS` | Additional VPN options | (none) |
 
 ### Network Configuration
-
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LAN_NETWORK` | Local network CIDR | (none) |
-| `NAME_SERVERS` | Comma-separated DNS servers | (auto) |
-| `ADDITIONAL_PORTS` | Extra ports to allow through VPN | (none) |
+| `NAME_SERVERS` | DNS servers | (auto) |
+| `ADDITIONAL_PORTS` | Extra ports | (none) |
 
 ### Transmission Settings
-
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TRANSMISSION_PEER_PORT` | P2P port | (random) |
 | `TRANSMISSION_DOWNLOAD_DIR` | Download directory | `/downloads` |
-| `TRANSMISSION_INCOMPLETE_DIR` | Incomplete downloads | `/downloads/incomplete` |
 | `TRANSMISSION_WATCH_DIR` | Watch directory | `/watch` |
-| `TRANSMISSION_WEB_HOME` | Alternative web UI path | (none) |
-| `TRANSMISSION_RPC_USERNAME` | Web UI username | (none) |
-| `TRANSMISSION_RPC_PASSWORD` | Web UI password | (none) |
+| `TRANSMISSION_WEB_HOME` | Alternative web UI | (none) |
 
 ### System Settings
-
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PUID` | User ID | `1000` |
@@ -369,16 +259,10 @@ environment:
 | `UMASK` | File creation mask | `002` |
 
 ### Optional Features
-
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ENABLE_PRIVOXY` | Enable HTTP proxy | `no` |
-| `PRIVOXY_PORT` | Privoxy port | `8118` |
-| `LOG_TO_STDOUT` | Log to Docker logs | `false` |
-| `DEBUG` | Enable debug logging | `false` |
-| `HEALTH_CHECK_HOST` | Health check target | `google.com` |
-| `METRICS_ENABLED` | Enable metrics collection | `false` |
-| `CHECK_DNS_LEAK` | Monitor DNS leaks | `false` |
-| `CHECK_IP_LEAK` | Monitor IP leaks | `false` |
+| `ENABLE_PRIVOXY` | HTTP proxy | `no` |
+| `DEBUG` | Debug logging | `false` |
+| `METRICS_ENABLED` | Metrics collection | `false` |
 
 </details>

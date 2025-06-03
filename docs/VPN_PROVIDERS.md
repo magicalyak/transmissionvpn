@@ -10,6 +10,7 @@ This document provides specific setup instructions for popular VPN providers wit
 - [ProtonVPN](#protonvpn)
 - [Mullvad](#mullvad)
 - [Private Internet Access (PIA)](#private-internet-access-pia)
+- [PrivadoVPN](#privadovpn)
 - [CyberGhost](#cyberghost)
 - [IPVanish](#ipvanish)
 - [Custom/Self-hosted](#customself-hosted)
@@ -378,6 +379,81 @@ services:
     environment:
       - VPN_CLIENT=wireguard
       - VPN_CONFIG=/config/wireguard/pia-us.conf
+      - PUID=1000
+      - PGID=1000
+    restart: unless-stopped
+```
+
+## PrivadoVPN
+
+### OpenVPN Setup
+
+1. **Download Configuration:**
+   - Log in to PrivadoVPN account
+   - Go to Downloads → OpenVPN configuration files
+   - Select your preferred servers and download
+
+2. **Docker Compose Example:**
+```yaml
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+    environment:
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/privado.ams-026.tcp.1194.ovpn
+      - VPN_USER=your_privadovpn_username
+      - VPN_PASS=your_privadovpn_password
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    restart: unless-stopped
+```
+
+3. **Important Notes:**
+   - Use your PrivadoVPN username (not email) for authentication
+   - Manual configuration is available to Premium users only
+   - Configuration files use airport codes to shorten file names
+   - Both TCP and UDP protocols are available
+
+### WireGuard Setup
+
+1. **Generate WireGuard Config:**
+   - Use PrivadoVPN's WireGuard config generator
+   - Download the configuration file
+
+2. **Docker Compose Example:**
+```yaml
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+    environment:
+      - VPN_CLIENT=wireguard
+      - VPN_CONFIG=/config/wireguard/privadovpn-us.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
