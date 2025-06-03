@@ -214,6 +214,79 @@ docker exec transmissionvpn ping -c 3 8.8.8.8
 | `OPENVPN_PASSWORD` | `VPN_PASS` |
 | `LOCAL_NETWORK` | `LAN_NETWORK` |
 
+### Important Directory Structure Changes
+
+**haugene/docker-transmission-openvpn** uses different paths than the LinuxServer.io base:
+
+| Directory Purpose | haugene Path | transmissionvpn Path |
+|------------------|--------------|---------------------|
+| **Main Volume** | `/data` | `/downloads` |
+| **Completed Downloads** | `/data/completed/` | `/downloads/complete/` |
+| **Incomplete Downloads** | `/data/incomplete/` | `/downloads/incomplete/` |
+
+### Automatic Compatibility (New!)
+
+**transmissionvpn v4.0.6-2+** automatically creates compatibility symlinks during container startup:
+
+- `/downloads/completed` → `/downloads/complete` 
+- `/data` → `/downloads`
+
+This means **both directory structures work simultaneously** without requiring configuration changes! Your existing Sonarr/Radarr setup should continue working after migration.
+
+### Migration Options
+
+#### Option 1: Use Automatic Compatibility (Recommended)
+```yaml
+# No changes needed! The container creates symlinks automatically
+volumes:
+  - /your/downloads:/downloads        # Works with both /downloads/complete/ and /downloads/completed/
+```
+
+#### Option 2: Update Your Volume Mappings
+```yaml
+# NEW: LinuxServer.io compatible structure
+volumes:
+  - /your/downloads:/downloads        # Downloads go to /your/downloads/complete/
+  - /your/incomplete:/downloads/incomplete
+```
+
+#### Option 3: Maintain haugene Directory Structure  
+```yaml
+# ALTERNATIVE: Map to match haugene's structure
+volumes:
+  - /your/downloads:/downloads/completed    # Downloads go directly to /your/downloads/
+  - /your/incomplete:/downloads/incomplete
+```
+
+### Sonarr/Radarr Integration Fix
+
+If you're getting "*directory does not appear to exist inside the container*" errors:
+
+1. **Check Download Client Settings:**
+   - **Host:** `transmissionvpn` (or your container name)
+   - **Port:** `9091`
+   - **Category:** Set appropriate category for TV/Movies
+   - **Directory:** Leave empty or use `/downloads/complete/`
+
+2. **Configure Remote Path Mappings:**
+   ```
+   Host: transmissionvpn  
+   Remote Path: /downloads/
+   Local Path: /media/downloads/  (or your host path)
+   ```
+
+3. **Ensure Consistent Volume Mapping:**
+   ```yaml
+   # Both containers must see the same paths
+   transmissionvpn:
+     volumes:
+       - /media/downloads:/downloads
+   
+   sonarr:
+     volumes:
+       - /media/downloads:/media/downloads
+   ```
+
 ## 🆘 Support
 
 1. **Check logs**: `docker logs transmissionvpn`

@@ -13,6 +13,7 @@ This document helps you diagnose and resolve common issues with transmissionvpn.
 - [File Permissions](#file-permissions)
 - [Security & Privacy](#security--privacy)
 - [Advanced Debugging](#advanced-debugging)
+- [Sonarr/Radarr Integration Issues](#sonarr-radarr-integration-issues)
 
 ## Quick Diagnostic Commands
 
@@ -132,6 +133,132 @@ curl ifconfig.me
 # Test DNS leak
 docker exec transmissionvpn nslookup google.com
 ```
+
+## Sonarr/Radarr Integration Issues
+
+### 📂 "Directory does not appear to exist inside the container"
+
+**Symptoms:**
+- Sonarr/Radarr shows error: "download client transmission places downloads in /downloads/complete/Series but this directory does not appear to exist inside the container"
+- Downloads complete but Sonarr/Radarr can't find them
+
+**Root Cause:**
+Directory structure mismatch between haugene/docker-transmission-openvpn and LinuxServer.io transmission base image:
+
+| Container | Complete Downloads | Incomplete Downloads |
+|-----------|-------------------|---------------------|
+| **haugene/docker-transmission-openvpn** | `/data/completed/` | `/data/incomplete/` |
+| **LinuxServer.io transmission** | `/downloads/complete/` | `/downloads/incomplete/` |
+
+**Automatic Fix (v4.0.6-2+):**
+
+**transmissionvpn** now automatically creates compatibility symlinks during startup:
+- `/downloads/completed` → `/downloads/complete` 
+- `/data` → `/downloads`
+
+This should **automatically resolve** the directory mismatch for most users! Check if the symlinks are working:
+
+```bash
+# Verify automatic compatibility symlinks
+docker exec transmissionvpn ls -la /downloads/
+docker exec transmissionvpn ls -la / | grep "data ->"
+
+# Test both paths work
+docker exec transmissionvpn ls -la /downloads/complete/
+docker exec transmissionvpn ls -la /downloads/completed/  # Should show same content
+```
+
+**Manual Fix - Option 1 (if automatic doesn't work):**
+
+Update your Sonarr/Radarr download client settings:
+
+1. **Download Client Settings:**
+   ```
+   Host: transmissionvpn
+   Port: 9091
+   Category: (leave empty or set to tv/movies)
+   Directory: (leave empty)
+   ```
+
+2. **Remote Path Mappings:**
+   ```
+   Host: transmissionvpn
+   Remote Path: /downloads/
+   Local Path: /media/downloads/  (your host path)
+   ```
+
+3. **Volume Mapping (both containers):**
+   ```yaml
+   transmissionvpn:
+     volumes:
+       - /media/downloads:/downloads
+   
+   sonarr:
+     volumes:
+       - /media/downloads:/media/downloads
+   ```
+
+**Quick Fix - Option 2 (haugene compatibility):**
+
+Change your transmissionvpn volume mapping:
+```yaml
+transmissionvpn:
+  volumes:
+    - ./config:/config
+    - /media/downloads:/downloads/completed    # Map host to completed subdirectory
+    - /media/incomplete:/downloads/incomplete
+    - ./watch:/watch
+```
+
+**Verification:**
+```bash
+# Check if directories exist in container
+docker exec transmissionvpn ls -la /downloads/
+
+# Check if Sonarr can see the path  
+docker exec sonarr ls -la /media/downloads/
+```
+
+### 🔗 Container Communication Issues
+
+**Symptoms:**
+- Sonarr/Radarr can't connect to Transmission
+- "Unable to connect to Transmission" errors
+
+**Solutions:**
+
+1. **Network Configuration:**
+   ```yaml
+   # Ensure containers can communicate
+   version: "3.8"
+   services:
+     transmissionvpn:
+       container_name: transmissionvpn  # Use this name in Sonarr/Radarr
+       networks:
+         - media
+     
+     sonarr:
+       container_name: sonarr
+       networks:
+         - media
+   
+   networks:
+     media:
+       driver: bridge
+   ```
+
+2. **Firewall/LAN Network:**
+   ```yaml
+   transmissionvpn:
+     environment:
+       - LAN_NETWORK=172.18.0.0/16  # Docker network range
+   ```
+
+3. **Test Connection:**
+   ```bash
+   # From Sonarr container to Transmission
+   docker exec sonarr curl -f http://transmissionvpn:9091
+   ```
 
 ## Transmission Problems
 

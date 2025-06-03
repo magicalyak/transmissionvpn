@@ -22,6 +22,7 @@ ARG VPN_OPTIONS
 ARG LAN_NETWORK
 ARG ADDITIONAL_PORTS
 ARG PRIVOXY_PORT
+ARG DISABLE_HAUGENE_COMPATIBILITY
 
 # Add ARG for Transmission configuration variables
 ARG TRANSMISSION_RPC_AUTHENTICATION_REQUIRED
@@ -58,6 +59,7 @@ ENV VPN_OPTIONS=${VPN_OPTIONS:-}
 ENV LAN_NETWORK=${LAN_NETWORK:-}
 ENV ADDITIONAL_PORTS=${ADDITIONAL_PORTS:-}
 ENV PRIVOXY_PORT=${PRIVOXY_PORT:-8118}
+ENV DISABLE_HAUGENE_COMPATIBILITY=${DISABLE_HAUGENE_COMPATIBILITY:-false}
 
 # Transmission Specific Settings (picked up by linuxserver.io base image init scripts)
 ENV TRANSMISSION_RPC_AUTHENTICATION_REQUIRED=${TRANSMISSION_RPC_AUTHENTICATION_REQUIRED:-false}
@@ -90,6 +92,7 @@ RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privo
 # Copy s6-overlay init scripts
 COPY root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
 COPY root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
+COPY root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
 COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 
 # Copy healthcheck script

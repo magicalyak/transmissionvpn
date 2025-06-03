@@ -335,6 +335,69 @@ services:
     restart: unless-stopped
 ```
 
+### Directory Structure & Sonarr/Radarr Compatibility
+
+**Important:** The LinuxServer.io transmission image (which transmissionvpn is based on) uses a different directory structure than haugene/docker-transmission-openvpn:
+
+#### Directory Differences:
+| Container | Complete Downloads | Incomplete Downloads |
+|-----------|-------------------|---------------------|
+| **haugene/docker-transmission-openvpn** | `/data/completed/` | `/data/incomplete/` |
+| **LinuxServer.io transmission** | `/downloads/complete/` | `/downloads/incomplete/` |
+| **magicalyak/transmissionvpn** | `/downloads/complete/` | `/downloads/incomplete/` |
+
+#### Automatic Compatibility (v4.0.6-2+)
+
+**transmissionvpn** automatically creates compatibility symlinks during startup:
+- `/downloads/completed` → `/downloads/complete` 
+- `/data` → `/downloads`
+
+This means **your existing haugene-based Sonarr/Radarr configuration should work without changes!**
+
+#### Sonarr/Radarr Configuration:
+
+1. **Download Client Settings in Sonarr/Radarr:**
+   ```
+   Host: transmissionvpn
+   Port: 9091
+   Category: tv  (for Sonarr) or movies (for Radarr)
+   Directory: leave empty or use /downloads/complete/
+   ```
+
+2. **Remote Path Mappings:**
+   ```
+   Host: transmissionvpn
+   Remote Path: /downloads/
+   Local Path: /media/downloads/
+   ```
+
+3. **Volume Mapping:**
+   ```yaml
+   # Both containers must see the same paths
+   transmissionvpn:
+     volumes:
+       - /media/downloads:/downloads    # Host path must match Sonarr/Radarr
+   
+   sonarr:
+     volumes:
+       - /media/downloads:/media/downloads  # Same host path
+   ```
+
+### Alternative Volume Mapping (haugene compatibility)
+
+If you prefer the haugene directory structure, use these volume mappings:
+
+```yaml
+transmissionvpn:
+  volumes:
+    - ./config:/config
+    - /media/downloads:/downloads/completed    # Map to completed subdirectory
+    - /media/incomplete:/downloads/incomplete  # Separate incomplete volume
+    - ./watch:/watch
+```
+
+This makes completed downloads appear in `/media/downloads/` on your host, matching haugene's behavior.
+
 ## 🔧 Development & Debugging
 
 ### Debug Configuration
