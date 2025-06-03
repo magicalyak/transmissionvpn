@@ -29,7 +29,7 @@ body:
     attributes:
       label: Image Version
       description: What version of magicalyak/transmissionvpn are you using?
-      placeholder: "latest, v4.0.6-1, sha-abc123, etc."
+      placeholder: "latest, v4.0.6-2, sha-abc123, etc."
     validations:
       required: true
 
