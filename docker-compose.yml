@@ -49,6 +49,20 @@ services:
       retries: 3
       start_period: 60s
 
+  transmission-exporter:
+    image: sandrotosi/simple_transmission_exporter:latest
+    container_name: transmission-exporter
+    depends_on:
+      - transmissionvpn
+    ports:
+      - "29091:29091" # Prometheus metrics endpoint
+    environment:
+      - TRANSMISSION_HOST=transmissionvpn
+      - TRANSMISSION_PORT=9091
+      - TRANSMISSION_USERNAME=${TRANSMISSION_RPC_USERNAME}
+      - TRANSMISSION_PASSWORD=${TRANSMISSION_RPC_PASSWORD}
+    restart: unless-stopped
+
 # Uncomment for Docker secrets (production deployments)
 # secrets:
 #   vpn_username:
@@ -72,3 +86,21 @@ services:
 # all necessary environment variables (PUID, PGID, TZ, VPN_CLIENT, VPN_CONFIG, etc.).
 # Ensure your .env file is correctly configured as per the .env.sample provided
 # in the repository. 
+
+# Notes on Metrics Integration:
+# The `transmission-exporter` service exposes Transmission metrics in a Prometheus-compatible
+# format on port 29091. To visualize these metrics, you will need to:
+#
+# 1. Set up a Prometheus instance to scrape metrics from this endpoint.
+#    Add the following scrape configuration to your 'prometheus.yml':
+#
+#    scrape_configs:
+#      - job_name: 'transmission'
+#        static_configs:
+#          - targets: ['<your_docker_host_ip>:29091']
+#
+# 2. Set up a Grafana instance and connect it to your Prometheus data source.
+#
+# 3. Import the pre-built Grafana dashboard for this exporter. You can find it
+#    at https://grafana.com/grafana/dashboards/13265-transmission-by-simple-exporter/
+#    or use the dashboard ID 13265. 
