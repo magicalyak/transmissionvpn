@@ -260,6 +260,7 @@ ports:
 The easiest way to use alternative web UIs - they're automatically downloaded and configured:
 
 #### Flood for Transmission
+
 ```yaml
 version: "3.8"
 services:
@@ -288,18 +289,21 @@ services:
 ```
 
 #### Kettu UI
+
 ```yaml
 environment:
   - TRANSMISSION_WEB_UI_AUTO=kettu  # Clean, responsive interface
 ```
 
 #### Combustion UI
+
 ```yaml
 environment:
   - TRANSMISSION_WEB_UI_AUTO=combustion  # Sleek, mobile-friendly design
 ```
 
 #### Transmission Web Control
+
 ```yaml
 environment:
   - TRANSMISSION_WEB_UI_AUTO=transmission-web-control  # Enhanced control panel
@@ -308,12 +312,14 @@ environment:
 ### Switching Between UIs
 
 1. **Change the UI:**
+
    ```yaml
    environment:
      - TRANSMISSION_WEB_UI_AUTO=kettu  # Switch to Kettu
    ```
 
 2. **Force re-download (if needed):**
+
    ```bash
    # Remove cached UI to force fresh download
    docker exec transmissionvpn rm -rf /config/web-ui/kettu
@@ -321,6 +327,7 @@ environment:
    ```
 
 3. **Disable automatic UI:**
+
    ```yaml
    environment:
      - TRANSMISSION_WEB_UI_AUTO=false  # Use default Transmission UI
@@ -380,7 +387,8 @@ services:
 
 **Important:** The LinuxServer.io transmission image (which transmissionvpn is based on) uses a different directory structure than haugene/docker-transmission-openvpn:
 
-#### Directory Differences:
+#### Directory Differences
+
 | Container | Complete Downloads | Incomplete Downloads |
 |-----------|-------------------|---------------------|
 | **haugene/docker-transmission-openvpn** | `/data/completed/` | `/data/incomplete/` |
@@ -390,14 +398,16 @@ services:
 #### Automatic Compatibility (v4.0.6-2+)
 
 **transmissionvpn** automatically creates compatibility symlinks during startup:
-- `/downloads/completed` → `/downloads/complete` 
+
+- `/downloads/completed` → `/downloads/complete`
 - `/data` → `/downloads`
 
 This means **your existing haugene-based Sonarr/Radarr configuration should work without changes!**
 
-#### Sonarr/Radarr Configuration:
+#### Sonarr/Radarr Configuration
 
 1. **Download Client Settings in Sonarr/Radarr:**
+
    ```
    Host: transmissionvpn
    Port: 9091
@@ -406,6 +416,7 @@ This means **your existing haugene-based Sonarr/Radarr configuration should work
    ```
 
 2. **Remote Path Mappings:**
+
    ```
    Host: transmissionvpn
    Remote Path: /downloads/
@@ -413,6 +424,7 @@ This means **your existing haugene-based Sonarr/Radarr configuration should work
    ```
 
 3. **Volume Mapping:**
+
    ```yaml
    # Both containers must see the same paths
    transmissionvpn:
@@ -519,6 +531,7 @@ services:
 ```
 
 **Migration Steps:**
+
 1. Download PIA Netherlands config to `./config/openvpn/pia-netherlands.ovpn`
 2. Move downloads: `cp -r /opt/transmission/completed/* ./downloads/`
 3. Move settings: `cp /opt/transmission/transmission-home/settings.json ./config/`
@@ -582,4 +595,89 @@ docker exec transmissionvpn ip route
 
 # Test DNS resolution
 docker exec transmissionvpn nslookup google.com
-``` 
+```
+
+## 📜 Full Examples
+
+### Basic Docker Compose
+
+```yaml
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+      - ./watch:/watch
+    environment:
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/provider.ovpn
+      - VPN_USER=username
+      - VPN_PASS=password
+      - LAN_NETWORK=192.168.1.0/24
+      - PUID=1000
+      - PGID=1000
+    restart: unless-stopped
+```
+
+### Docker Compose with Sonarr/Radarr
+
+```yaml
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+      - ./watch:/watch
+    environment:
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/provider.ovpn
+      - VPN_USER=username
+      - VPN_PASS=password
+      - LAN_NETWORK=192.168.1.0/24
+      - PUID=1000
+      - PGID=1000
+    restart: unless-stopped
+
+  sonarr:
+    image: linuxserver/sonarr
+    container_name: sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./sonarr-config:/config
+      - /media:/media
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+
+  radarr:
+    image: linuxserver/radarr
+    container_name: radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./radarr-config:/config
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+```

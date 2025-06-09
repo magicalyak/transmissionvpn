@@ -1,126 +1,123 @@
-name: ❓ Support & Questions
-description: Get help with configuration or ask questions about transmissionvpn
-title: "[SUPPORT] "
-labels:
-  - question
-  - support
-
+---
+name: "🔎 Support Request"
+description: >-
+  Get help with container startup, VPN issues, or general questions.
+labels: ["support", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Need help with transmissionvpn? Please provide details about your setup and what you're trying to achieve.
+        Welcome! Please provide the following details to help us resolve
+        your issue.
 
+        - **Is this a bug or a feature request?**
+          Please use the appropriate form for those.
+        - **Have you checked the documentation?**
+          The [README](https://github.com/magicalyak/transmissionvpn) and
+          [troubleshooting guide](https://github.com/magicalyak/transmissionvpn/blob/main/docs/TROUBLESHOOTING.md)
+          have answers to common questions.
   - type: checkboxes
     id: prerequisites
     attributes:
-      label: Prerequisites
-      description: Please confirm before asking for support
+      label: "Prerequisites"
+      description: "Please confirm you've completed these steps."
       options:
-        - label: I have read the README.md and EXAMPLES.md documentation
+        - label: >-
+            I have checked the [troubleshooting
+            guide](https://github.com/magicalyak/transmissionvpn/blob/main/docs/TROUBLESHOOTING.md)
+            for a solution.
           required: true
-        - label: I have searched existing issues for similar questions
+        - label: >-
+            I have searched for similar issues and found none that are open
+            or closed.
           required: true
-
-  - type: dropdown
-    id: question-type
+        - label: >-
+            I am running the latest version of the container.
+          required: true
+  - type: textarea
+    id: problem-description
     attributes:
-      label: Question Type
-      description: What kind of help do you need?
-      options:
-        - Configuration Help
-        - VPN Setup Issues
-        - Performance Questions
-        - Integration with Other Services
-        - Best Practices
-        - Other
+      label: "Problem Description"
+      description: >-
+        Please provide a clear and concise description of the problem.
+      placeholder: |
+        e.g.,
+        - The container fails to start with the error message "..."
+        - I'm unable to connect to the web UI.
+        - My external IP address is not my VPN's IP.
     validations:
       required: true
-
   - type: textarea
-    id: what-trying-to-achieve
+    id: docker-config
     attributes:
-      label: What are you trying to achieve?
-      description: Describe your goal or what you want to accomplish
-      placeholder: "I want to... I'm trying to set up..."
-    validations:
-      required: true
-
-  - type: textarea
-    id: current-setup
-    attributes:
-      label: Current Setup
-      description: Share your current docker-compose.yml or docker run command
+      label: "Docker Configuration"
+      description: |
+        Please share your `docker-compose.yml` or `docker run` command.
+        **IMPORTANT:** Redact any sensitive information like passwords.
       placeholder: |
         ```yaml
-        # Your current configuration
+        version: "3.8"
+        services:
+          transmissionvpn:
+            image: magicalyak/transmissionvpn:latest
+            ...
         ```
       render: yaml
-
-  - type: dropdown
-    id: vpn-provider
-    attributes:
-      label: VPN Provider
-      description: Which VPN service are you using?
-      options:
-        - NordVPN
-        - ExpressVPN
-        - Surfshark
-        - ProtonVPN
-        - Mullvad
-        - Private Internet Access (PIA)
-        - CyberGhost
-        - IPVanish
-        - Custom/Self-hosted
-        - Other
-        - Not using VPN
-
-  - type: textarea
-    id: specific-problem
-    attributes:
-      label: Specific Problem or Question
-      description: What specific issue are you encountering or question do you have?
-      placeholder: "When I try to... I get... How do I..."
     validations:
       required: true
-
-  - type: textarea
-    id: what-tried
-    attributes:
-      label: What have you tried?
-      description: What troubleshooting steps or configurations have you already attempted?
-      placeholder: |
-        1. I tried...
-        2. I also attempted...
-        3. I checked...
-
-  - type: textarea
-    id: environment-details
-    attributes:
-      label: Environment Details
-      description: Please share relevant system information
-      placeholder: |
-        - OS: (e.g., Ubuntu 22.04, macOS Monterey, Windows 11)
-        - Docker version: 
-        - Docker Compose version: 
-        - Architecture: (e.g., x86_64, arm64)
-        - NAS/Platform: (e.g., Synology, QNAP, Unraid)
-
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs (if applicable)
-      description: Include any error messages or relevant logs
+      label: "Container Logs"
+      description: |
+        Please provide the full container logs.
+        Run `docker logs transmissionvpn` to get the logs.
       placeholder: |
         ```
-        # Paste relevant logs here
-        # Remove sensitive information
+        <PASTE LOGS HERE>
         ```
       render: shell
-
-  - type: textarea
-    id: additional-context
+    validations:
+      required: true
+  - type: input
+    id: image-version
     attributes:
-      label: Additional Context
-      description: Any other information that might be helpful
-      placeholder: "Network setup, firewall rules, other services running..." 
+      label: "Image Version"
+      description: "What version of the Docker image are you using?"
+      placeholder: "e.g., latest, 4.0.5-r0"
+    validations:
+      required: true
+  - type: dropdown
+    id: vpn-provider
+    attributes:
+      label: "VPN Provider"
+      description: "Which VPN provider are you using?"
+      options:
+        - "NordVPN"
+        - "ExpressVPN"
+        - "Surfshark"
+        - "ProtonVPN"
+        - "Private Internet Access"
+        - "PrivadoVPN"
+        - "Mullvad"
+        - "Other"
+    validations:
+      required: true
+  - type: dropdown
+    id: vpn-client
+    attributes:
+      label: "VPN Client"
+      description: "Which VPN client are you using?"
+      options:
+        - "OpenVPN"
+        - "WireGuard"
+      default: 0
+    validations:
+      required: true
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: "Additional Information"
+      description: >-
+        Is there anything else we should know?
+        (e.g., host OS, Docker version, network setup) 

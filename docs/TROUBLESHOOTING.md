@@ -14,6 +14,8 @@ This document helps you diagnose and resolve common issues with transmissionvpn.
 - [Security & Privacy](#security--privacy)
 - [Advanced Debugging](#advanced-debugging)
 - [Sonarr/Radarr Integration Issues](#sonarr-radarr-integration-issues)
+- [Web UI Issues](#web-ui-issues)
+- [Performance Problems](#performance-problems)
 
 ## Quick Diagnostic Commands
 
@@ -104,6 +106,7 @@ docker exec transmissionvpn ping -c 10 your-vpn-server.com
 ```
 
 **Solutions:**
+
 1. **Add Connection Keep-alive:**
 
 ```bash
@@ -139,6 +142,7 @@ docker exec transmissionvpn nslookup google.com
 ### 📂 "Directory does not appear to exist inside the container"
 
 **Symptoms:**
+
 - Sonarr/Radarr shows error: "download client transmission places downloads in /downloads/complete/Series but this directory does not appear to exist inside the container"
 - Downloads complete but Sonarr/Radarr can't find them
 
@@ -153,7 +157,8 @@ Directory structure mismatch between haugene/docker-transmission-openvpn and Lin
 **Automatic Fix (v4.0.6-2+):**
 
 **transmissionvpn** now automatically creates compatibility symlinks during startup:
-- `/downloads/completed` → `/downloads/complete` 
+
+- `/downloads/completed` → `/downloads/complete`
 - `/data` → `/downloads`
 
 This should **automatically resolve** the directory mismatch for most users! Check if the symlinks are working:
@@ -173,6 +178,7 @@ docker exec transmissionvpn ls -la /downloads/completed/  # Should show same con
 Update your Sonarr/Radarr download client settings:
 
 1. **Download Client Settings:**
+
    ```
    Host: transmissionvpn
    Port: 9091
@@ -181,6 +187,7 @@ Update your Sonarr/Radarr download client settings:
    ```
 
 2. **Remote Path Mappings:**
+
    ```
    Host: transmissionvpn
    Remote Path: /downloads/
@@ -188,6 +195,7 @@ Update your Sonarr/Radarr download client settings:
    ```
 
 3. **Volume Mapping (both containers):**
+
    ```yaml
    transmissionvpn:
      volumes:
@@ -201,6 +209,7 @@ Update your Sonarr/Radarr download client settings:
 **Quick Fix - Option 2 (haugene compatibility):**
 
 Change your transmissionvpn volume mapping:
+
 ```yaml
 transmissionvpn:
   volumes:
@@ -211,6 +220,7 @@ transmissionvpn:
 ```
 
 **Verification:**
+
 ```bash
 # Check if directories exist in container
 docker exec transmissionvpn ls -la /downloads/
@@ -222,12 +232,14 @@ docker exec sonarr ls -la /media/downloads/
 ### 🔗 Container Communication Issues
 
 **Symptoms:**
+
 - Sonarr/Radarr can't connect to Transmission
 - "Unable to connect to Transmission" errors
 
 **Solutions:**
 
 1. **Network Configuration:**
+
    ```yaml
    # Ensure containers can communicate
    version: "3.8"
@@ -248,6 +260,7 @@ docker exec sonarr ls -la /media/downloads/
    ```
 
 2. **Firewall/LAN Network:**
+
    ```yaml
    transmissionvpn:
      environment:
@@ -255,6 +268,7 @@ docker exec sonarr ls -la /media/downloads/
    ```
 
 3. **Test Connection:**
+
    ```bash
    # From Sonarr container to Transmission
    docker exec sonarr curl -f http://transmissionvpn:9091
@@ -270,6 +284,7 @@ docker exec sonarr ls -la /media/downloads/
 - Transmission interface doesn't load
 
 **Diagnosis:**
+
 ```bash
 # Check if Transmission is running
 docker exec transmissionvpn ps aux | grep transmission
@@ -363,11 +378,13 @@ environment:
 ### 🎨 Web UI Auto-Download Failed
 
 **Symptoms:**
+
 - Container logs show web UI download errors
 - Default Transmission web UI appears instead of chosen alternative
 - `/config/web-ui/` directory is empty or missing files
 
 **Diagnosis:**
+
 ```bash
 # Check if web UI was downloaded
 docker exec transmissionvpn ls -la /config/web-ui/
@@ -385,6 +402,7 @@ docker exec transmissionvpn printenv | grep TRANSMISSION_WEB
 **Solutions:**
 
 1. **Network/Download Issues:**
+
 ```bash
 # Test internet connectivity in container
 docker exec transmissionvpn curl -I https://github.com
@@ -395,6 +413,7 @@ docker restart transmissionvpn
 ```
 
 2. **Supported UI Names:**
+
 ```yaml
 # Ensure you're using a supported UI name
 environment:
@@ -406,6 +425,7 @@ environment:
 ```
 
 3. **Permissions Issues:**
+
 ```bash
 # Check directory permissions
 docker exec transmissionvpn ls -la /config/
@@ -417,6 +437,7 @@ sudo chown -R 1000:1000 ./config/web-ui/
 ### 🔄 Switching Between Web UIs
 
 **To change UI:**
+
 ```yaml
 # Update docker-compose.yml
 environment:
@@ -427,6 +448,7 @@ docker-compose restart transmissionvpn
 ```
 
 **To force fresh download:**
+
 ```bash
 # Remove cached UI files
 docker exec transmissionvpn rm -rf /config/web-ui/flood
@@ -434,6 +456,7 @@ docker restart transmissionvpn
 ```
 
 **To disable automatic UI:**
+
 ```yaml
 environment:
   - TRANSMISSION_WEB_UI_AUTO=false  # Use default UI
@@ -442,6 +465,7 @@ environment:
 ### 📱 Web UI Not Loading Properly
 
 **Symptoms:**
+
 - Blank page or loading errors
 - JavaScript errors in browser console
 - UI appears but doesn't connect to Transmission
@@ -449,12 +473,14 @@ environment:
 **Solutions:**
 
 1. **Clear Browser Cache:**
+
 ```bash
 # Hard refresh: Ctrl+F5 (Windows/Linux) or Cmd+Shift+R (Mac)
 # Or clear browser cache completely
 ```
 
 2. **Check Network Access:**
+
 ```bash
 # Test if Transmission RPC is accessible
 curl -f http://localhost:9091/transmission/rpc/
@@ -464,6 +490,7 @@ docker exec transmissionvpn curl -f http://localhost:9091/transmission/rpc/
 ```
 
 3. **Verify UI Files:**
+
 ```bash
 # Check if index.html exists and is valid
 docker exec transmissionvpn ls -la /config/web-ui/flood/index.html
@@ -582,6 +609,7 @@ docker exec transmissionvpn iftop -i tun0
 **Solutions:**
 
 1. **Optimize Transmission Settings:**
+
 ```yaml
 environment:
   - TRANSMISSION_PEER_LIMIT_GLOBAL=200
@@ -590,11 +618,13 @@ environment:
 ```
 
 2. **VPN Optimization:**
+
 - Switch to WireGuard if using OpenVPN
 - Try different VPN server locations
 - Use UDP protocol for OpenVPN
 
 3. **Container Resources:**
+
 ```yaml
 # Add resource limits
 deploy:
@@ -607,6 +637,7 @@ deploy:
 ### 💾 High Memory Usage
 
 **Diagnosis:**
+
 ```bash
 # Check memory usage
 docker exec transmissionvpn free -h
@@ -619,12 +650,14 @@ docker stats --no-stream transmissionvpn
 **Solutions:**
 
 1. **Limit Cache Size:**
+
 ```yaml
 environment:
   - TRANSMISSION_CACHE_SIZE_MB=32  # Default is 4MB
 ```
 
 2. **Reduce Active Torrents:**
+
 ```yaml
 environment:
   - TRANSMISSION_DOWNLOAD_QUEUE_SIZE=5
@@ -636,6 +669,7 @@ environment:
 ### 🐳 Container Won't Start
 
 **Diagnosis:**
+
 ```bash
 # Check container status
 docker ps -a | grep transmissionvpn
@@ -650,6 +684,7 @@ netstat -tulpn | grep :9091
 **Common Solutions:**
 
 1. **Port Conflicts:**
+
 ```bash
 # Find process using port 9091
 sudo lsof -i :9091
@@ -658,6 +693,7 @@ sudo lsof -i :9091
 ```
 
 2. **Permission Issues:**
+
 ```bash
 # Fix ownership of config directory
 sudo chown -R 1000:1000 ./config
@@ -666,6 +702,7 @@ sudo chown -R 1000:1000 ./config
 ```
 
 3. **Volume Mount Problems:**
+
 ```bash
 # Verify volume paths exist
 ls -la ./config ./downloads ./watch
@@ -677,6 +714,7 @@ docker inspect transmissionvpn | grep -A 10 Mounts
 ### 🔄 Container Restarts Constantly
 
 **Diagnosis:**
+
 ```bash
 # Check restart count
 docker ps | grep transmissionvpn
@@ -692,6 +730,7 @@ free -h  # Memory
 **Solutions:**
 
 1. **Health Check Issues:**
+
 ```bash
 # Test health check manually
 docker exec transmissionvpn curl -f http://localhost:9091/transmission/web/
@@ -701,6 +740,7 @@ docker exec transmissionvpn curl -f http://localhost:9091/transmission/web/
 ```
 
 2. **Resource Exhaustion:**
+
 ```bash
 # Clear log files
 docker exec transmissionvpn find /var/log -name "*.log" -exec truncate -s 0 {} \;
@@ -714,10 +754,12 @@ docker exec transmissionvpn rm -rf /downloads/incomplete/*
 ### 📁 Permission Denied Errors
 
 **Symptoms:**
+
 - Cannot write to download directory
 - Configuration changes not saved
 
 **Diagnosis:**
+
 ```bash
 # Check file ownership
 ls -la config/ downloads/ watch/
@@ -732,6 +774,7 @@ docker exec transmissionvpn ls -la /config /downloads /watch
 **Solutions:**
 
 1. **Fix Directory Ownership:**
+
 ```bash
 # Set correct ownership (use your PUID/PGID)
 sudo chown -R 1000:1000 config downloads watch
@@ -741,6 +784,7 @@ chmod -R 755 config downloads watch
 ```
 
 2. **Configure PUID/PGID:**
+
 ```yaml
 environment:
   - PUID=1000  # Your user ID
@@ -748,6 +792,7 @@ environment:
 ```
 
 3. **Check User ID:**
+
 ```bash
 # Find your user/group ID
 id $USER
@@ -758,6 +803,7 @@ id $USER
 ### 🕵️ IP/DNS Leak Detection
 
 **Test for Leaks:**
+
 ```bash
 # Check external IP (should be VPN IP)
 docker exec transmissionvpn curl ifconfig.me
@@ -772,12 +818,14 @@ docker exec transmissionvpn curl https://www.dnsleaktest.com/
 **Solutions:**
 
 1. **Enable Kill Switch:**
+
 ```yaml
 environment:
   - KILL_SWITCH=on
 ```
 
 2. **Custom DNS:**
+
 ```yaml
 dns:
   - 9.9.9.9   # Quad9
@@ -785,6 +833,7 @@ dns:
 ```
 
 3. **Disable IPv6:**
+
 ```yaml
 sysctls:
   - net.ipv6.conf.all.disable_ipv6=1
@@ -793,6 +842,7 @@ sysctls:
 ### 🔒 VPN Kill Switch Not Working
 
 **Test Kill Switch:**
+
 ```bash
 # Temporarily disconnect VPN and test
 docker exec transmissionvpn pkill openvpn  # or wg-quick down wg0
@@ -804,12 +854,14 @@ docker exec transmissionvpn curl --connect-timeout 5 ifconfig.me
 **Solutions:**
 
 1. **Verify iptables Rules:**
+
 ```bash
 # Check firewall rules
 docker exec transmissionvpn iptables -L -n
 ```
 
 2. **Manual Kill Switch Test:**
+
 ```bash
 # Stop VPN manually and verify no connectivity
 docker exec transmissionvpn systemctl stop openvpn
@@ -821,6 +873,7 @@ docker exec transmissionvpn ping -c 3 8.8.8.8  # Should fail
 ### 📊 Enable Debug Logging
 
 **Enable Verbose Logging:**
+
 ```yaml
 environment:
   - LOG_TO_STDOUT=true
@@ -828,6 +881,7 @@ environment:
 ```
 
 **Monitor Real-time Logs:**
+
 ```bash
 # Follow all logs
 docker logs -f transmissionvpn
@@ -839,6 +893,7 @@ docker logs -f transmissionvpn 2>&1 | grep -i "vpn\|transmission\|error"
 ### 🔍 Network Traffic Analysis
 
 **Monitor Network Traffic:**
+
 ```bash
 # Install network tools in container
 docker exec transmissionvpn apt-get update && apt-get install -y tcpdump iftop
@@ -853,6 +908,7 @@ docker exec transmissionvpn iftop
 ### 🧪 Test Environment
 
 **Create Test Setup:**
+
 ```yaml
 # Minimal test configuration
 version: "3.8"
@@ -879,6 +935,7 @@ services:
 ### 🔧 Manual Configuration Override
 
 **Direct Container Access:**
+
 ```bash
 # Enter container for manual debugging
 docker exec -it transmissionvpn bash
@@ -896,6 +953,7 @@ transmission-daemon --foreground --config-dir /config
 ### 📝 Collect Debug Information
 
 **Gather System Information:**
+
 ```bash
 #!/bin/bash
 # Debug info collection script
@@ -936,8 +994,169 @@ If you're still having issues after trying these solutions:
 4. **Check Documentation:** Review [README.md](../README.md) and [EXAMPLES.md](../EXAMPLES.md)
 
 When reporting issues, please include:
+
 - Container logs (`docker logs transmissionvpn`)
 - Your docker-compose.yml (remove sensitive info)
 - Host OS and Docker version
 - VPN provider and configuration type
-- Steps to reproduce the issue 
+- Steps to reproduce the issue
+
+## 📺 Sonarr/Radarr Integration
+
+- **Symptom:** Sonarr/Radarr can't connect to Transmission.
+- **Symptom:** Sonarr/Radarr shows error: "Unable to communicate with Transmission."
+- **Symptom:** Downloads are not being imported automatically.
+
+### ✅ Solution
+
+1. **Network Configuration:**
+
+   ```yaml
+   # Ensure containers can communicate
+   version: "3.8"
+   services:
+     transmissionvpn:
+       container_name: transmissionvpn  # Use this name in Sonarr/Radarr
+       networks:
+         - media
+     
+     sonarr:
+       container_name: sonarr
+       networks:
+         - media
+   
+   networks:
+     media:
+       driver: bridge
+   ```
+
+2. **Firewall/LAN Network:**
+
+   ```yaml
+   transmissionvpn:
+     environment:
+       - LAN_NETWORK=172.18.0.0/16  # Docker network range
+   ```
+
+3. **Test Connection:**
+
+   ```bash
+   # From Sonarr container to Transmission
+   docker exec sonarr curl -f http://transmissionvpn:9091
+   ```
+
+## 🐢 Slow Speeds or High CPU Usage
+
+- **Symptom:** Download/upload speeds are much lower than expected.
+- **Symptom:** The container is using a high amount of CPU.
+
+### ✅ Solution
+
+1. **Optimize Transmission Settings:**
+
+    - In `settings.json` or via environment variables, adjust:
+      - `cache-size-mb`: `16` or `32` can help with I/O.
+      - `peer-limit-global`: Lower if you have many torrents.
+      - `peer-limit-per-torrent`: Lower to reduce CPU usage.
+
+2. **VPN Optimization:**
+
+    - Switch to WireGuard if using OpenVPN; it's often faster.
+    - Try different VPN servers or protocols.
+    - Ensure your VPN provider is not throttling your connection.
+
+3. **Container Resources:**
+
+    - If running on a low-power device, limit the number of active torrents.
+    - Use `docker stats` to monitor resource usage.
+
+## 🧠 High Memory Usage
+
+- **Symptom:** The container is consuming a large amount of RAM.
+- **Symptom:** `docker stats` shows high memory usage.
+
+### ✅ Solution
+
+1. **Limit Cache Size:**
+
+    - Set `TRANSMISSION_CACHE_SIZE_MB` to a lower value (e.g., `4`).
+
+2. **Reduce Active Torrents:**
+
+    - Limit the number of simultaneous downloads/uploads.
+
+## 🔑 Permissions & File Access
+
+- **Symptom:** "Permission denied" errors in the logs.
+- **Symptom:** Cannot write to download directories.
+- **Symptom:** `settings.json` is not being saved.
+
+### ✅ Solution
+
+1. **Fix Directory Ownership:**
+
+    - Ensure the user running the container (`PUID`/`PGID`) owns the config and download directories.
+    - `sudo chown -R 1000:1000 ./config ./downloads`
+
+2. **Configure PUID/PGID:**
+
+    - Set `PUID` and `PGID` in your `.env` file to match your user's ID.
+    - Use `id $(whoami)` to find your user ID.
+
+3. **Check User ID:**
+
+    - Verify the user ID inside the container.
+    - `docker exec -it transmissionvpn id`
+
+## 🛡️ IP Leaks & Kill Switch
+
+- **Symptom:** My real IP address is being exposed.
+- **Symptom:** The kill switch is not working as expected.
+
+### ✅ Solution
+
+1. **Enable Kill Switch:**
+
+    - Ensure `ENABLE_KILLSWITCH` is set to `true` (it is by default).
+
+2. **Custom DNS:**
+
+    - Use a trusted DNS provider via the `NAME_SERVERS` variable.
+
+3. **Disable IPv6:**
+
+    - If you don't use IPv6, you can disable it in the container for added security.
+    - Set `DISABLE_IPV6` to `true`.
+
+## 🐛 Other Common Issues
+
+### Container Restarts Randomly
+
+1. **Health Check Issues:**
+
+    - The health check might be failing, causing restarts. Check the logs for `unhealthy`.
+    - Increase the `HEALTH_CHECK_INTERVAL` if needed.
+
+2. **Resource Exhaustion:**
+
+    - Monitor CPU and memory usage with `docker stats`.
+    - The container might be OOM-killed if it exceeds memory limits.
+
+### Cannot Access Web UI
+
+- **Symptom:** Blank page or loading errors.
+- **Symptom:** "403: Forbidden" error.
+
+1. **Clear Browser Cache:**
+
+    - Your browser might have cached an old version of the UI.
+
+2. **Check Network Access:**
+
+    - Ensure you are on the same network as the Docker host.
+    - Try accessing `http://<docker_host_ip>:9091`.
+
+3. **Verify UI Files:**
+
+    - If using a custom UI, ensure the files are correctly mounted.
+    - Check the container logs for any UI-related errors.

@@ -22,8 +22,12 @@ Docker secrets provide a secure way to store sensitive data like passwords, API 
 - Not visible in `docker inspect` or process lists
 
 The transmissionvpn container supports Docker secrets using the `FILE__` prefix convention:
+
 - `FILE__VPN_USER` - Path to file containing VPN username
 - `FILE__VPN_PASS` - Path to file containing VPN password
+- `FILE__VPN_CONFIG` - Path to file containing the VPN configuration name
+- `FILE__TRANSMISSION_RPC_USERNAME` - Path to file containing the Transmission username
+- `FILE__TRANSMISSION_RPC_PASSWORD` - Path to file containing the Transmission password
 
 ## Docker Swarm Secrets
 
@@ -399,6 +403,7 @@ tar czf - secrets/ | gpg --symmetric --cipher-algo AES256 > secrets_backup.tar.g
 ### Common Issues
 
 1. **Secret file not found:**
+
 ```bash
 # Check if secret is mounted correctly
 docker exec transmissionvpn ls -la /run/secrets/
@@ -406,6 +411,7 @@ docker exec transmissionvpn cat /run/secrets/vpn_username
 ```
 
 2. **Permission denied:**
+
 ```bash
 # Check file permissions
 docker exec transmissionvpn ls -la /run/secrets/vpn_username
@@ -413,6 +419,7 @@ docker exec transmissionvpn ls -la /run/secrets/vpn_username
 ```
 
 3. **Empty credentials:**
+
 ```bash
 # Check secret content
 docker exec transmissionvpn head -1 /run/secrets/vpn_username
@@ -420,6 +427,7 @@ docker exec transmissionvpn head -1 /run/secrets/vpn_username
 ```
 
 4. **VPN connection still fails:**
+
 ```bash
 # Check container logs
 docker logs transmissionvpn
@@ -556,4 +564,70 @@ vault kv put secret/transmissionvpn username="$VPN_USER" password="$VPN_PASS"
 # Retrieve and create Docker secret
 vault kv get -field=username secret/transmissionvpn | docker secret create vpn_username -
 vault kv get -field=password secret/transmissionvpn | docker secret create vpn_password -
-``` 
+```
+
+## ✅ Prerequisites
+
+1. **Docker Secrets Enabled:** Your Docker environment must support secrets. This is native in Swarm mode and can be used with `docker-compose`.
+2. **Secret Files Created:** You must create the secret files on the Docker host before starting the container.
+3. **Correct Permissions:** The secret files must be readable by the user running the Docker daemon.
+
+## 🔑 Create Your Secret Files
+
+Create files on your Docker host containing the credentials.
+
+### Example
+
+1. **VPN Username:**
+
+    ```bash
+    echo "my_vpn_user" > /path/to/secrets/vpn_username
+    ```
+
+2. **VPN Password:**
+
+    ```bash
+    echo "my_super_secret_password" > /path/to/secrets/vpn_password
+    ```
+
+## 🐳 Docker Compose Example
+
+### 2. **Permission denied:**
+
+   ```bash
+   /etc/cont-init.d/99-run.sh: line 12: /run/secrets/vpn_username: Permission denied
+   ```
+
+   **Solution:** Ensure the secret files have the correct read permissions for the Docker user.
+
+   ```bash
+   chmod 644 /path/to/secrets/*
+   ```
+
+### 3. **Empty credentials:**
+
+   ```bash
+   /etc/cont-init.d/99-run.sh: line 15: VPN_USER: parameter not set
+   ```
+
+   **Solution:** The secret file is empty. Verify that the file contains the correct value.
+
+   ```bash
+   cat /path/to/secrets/vpn_username
+   ```
+
+### 4. **VPN connection still fails:**
+
+   ```bash
+   /etc/cont-init.d/99-run.sh: line 20: openvpn: command not found
+   ```
+
+   **Solution:** Even with correct secrets, the VPN connection might fail for other reasons. Check the container logs for more details.
+
+   ```bash
+   docker logs transmissionvpn
+   ```
+
+## 🔐 Security Best Practices
+
+- **Limit Permissions:** Only give read access to secret files.

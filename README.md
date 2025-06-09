@@ -2,9 +2,15 @@
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/magicalyak/transmissionvpn)](https://hub.docker.com/r/magicalyak/transmissionvpn) [![Docker Stars](https://img.shields.io/docker/stars/magicalyak/transmissionvpn)](https://hub.docker.com/r/magicalyak/transmissionvpn) [![Build Status](https://github.com/magicalyak/transmissionvpn/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/magicalyak/transmissionvpn/actions/workflows/build-and-publish.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Docker container which runs Transmission with an optional OpenVPN or WireGuard connection**
+An all-in-one Docker container that provides an Alpine-based Transmission Bittorrent client with an OpenVPN or WireGuard connection, plus Privoxy, and DNS-over-HTTPS. It includes a health check to monitor the VPN connection and restart the container if it fails.
 
-Transmission BitTorrent client with VPN protection and kill switch to prevent IP leaks when the tunnel goes down.
+## ✨ Key Features
+
+* **🛡️ Secure & Private:** All traffic is routed through a kill-switch enabled VPN.
+* **⚡ Lightweight:** Built on Alpine Linux for a minimal footprint.
+* **🧩 Extensible:** Supports custom scripts and alternative web UIs.
+* **ጤ Health Checked:** Automatically restarts if the VPN connection drops.
+* **dns Over-HTTPS:** Encrypts DNS queries to prevent snooping.
 
 ## 🚀 Quick Start
 
@@ -120,46 +126,91 @@ docker-compose up -d
 
 ### 4. Access Transmission
 
-Open http://localhost:9091 in your browser.
+Open <http://localhost:9091> in your browser.
+
+## 📊 Monitoring and Metrics
+
+This project includes a built-in Prometheus exporter to expose Transmission metrics, allowing you to monitor your instance using modern observability platforms. The `transmission-exporter` service is defined in the `docker-compose.yml` and can be enabled by simply running `docker-compose up -d`.
+
+The metrics endpoint will be available at `http://<your_docker_host_ip>:29091/metrics`.
+
+### 1. Prometheus Integration
+
+Prometheus is an open-source monitoring system that collects metrics from configured targets at specified intervals.
+
+**Configuration:**
+
+To get started, add the following scrape configuration to your `prometheus.yml` file. This tells Prometheus where to find the `transmission-exporter`.
+
+```yaml
+scrape_configs:
+  - job_name: 'transmissionvpn'
+    static_configs:
+      - targets: ['<your_docker_host_ip>:29091']
+```
+
+Replace `<your_docker_host_ip>` with the actual IP address of the machine running Docker.
+
+### 2. Grafana Dashboards
+
+Grafana is a popular open-source platform for visualizing and analyzing metrics. You can create rich, interactive dashboards to monitor your Transmission instance in real-time.
+
+**Steps:**
+
+1. **Set up Grafana:** Install and configure a Grafana instance.
+2. **Add Prometheus Data Source:** In Grafana, add your Prometheus instance as a new data source.
+3. **Import Dashboard:** The recommended exporter `sandrotosi/simple-transmission-exporter` has a pre-built Grafana dashboard available. You can import it easily:
+    * Go to **Dashboards** -> **Import**.
+    * Enter the dashboard ID `13265` or upload the JSON file from [here](https://grafana.com/grafana/dashboards/13265-transmission-by-simple-exporter/).
+    * Select your Prometheus data source and click **Import**.
+
+You will now have a comprehensive dashboard showing your Transmission stats.
+
+### 3. InfluxDB Integration
+
+InfluxDB is a time-series database designed to handle high write and query loads. You can configure InfluxDB to scrape the Prometheus endpoint directly.
+
+**Configuration (InfluxDB v2):**
+
+1. **Open the InfluxDB UI.**
+2. Navigate to **Data** -> **Scrapers**.
+3. Click **Create Scraper**.
+4. **Name:** Give your scraper a name (e.g., "TransmissionVPN").
+5. **Bucket:** Choose the bucket where you want to store the metrics.
+6. **Target URL:** Enter the URL of the exporter: `http://<your_docker_host_ip>:29091/metrics`.
+7. **Schedule:** Set how often you want to scrape the metrics (e.g., every `1m`).
+
+InfluxDB will now automatically collect the metrics from the exporter. You can then build dashboards and alerts within the InfluxDB UI or connect it to Grafana as a data source.
 
 ## 🛡️ VPN Providers
 
 This container works with any OpenVPN or WireGuard provider:
 
-- **NordVPN** - Download configs from account dashboard
-- **ExpressVPN** - Get configs from manual setup page  
-- **Surfshark** - Download from manual setup section
-- **ProtonVPN** - Get configs from downloads page
-- **Private Internet Access** - Download from client support
-- **PrivadoVPN** - Generate configs from account dashboard
-- **Mullvad** - Generate configs from account page
+* **NordVPN** - Download configs from account dashboard
+* **ExpressVPN** - Get configs from manual setup page  
+* **Surfshark** - Download from manual setup section
+* **ProtonVPN** - Get configs from downloads page
+* **Private Internet Access** - Download from client support
+* **PrivadoVPN** - Generate configs from account dashboard
+* **Mullvad** - Generate configs from account page
 
 📖 **Provider-specific guides**: [VPN Setup Documentation](docs/VPN_PROVIDERS.md)
 
 ## 🎨 Alternative Web UIs
 
-Enhance your Transmission experience with modern, feature-rich web interfaces:
+This image supports several alternative web UIs for Transmission. To use one, set the `TRANSMISSION_WEB_UI` environment variable to one of the following values:
 
-### Automatic Installation (Recommended)
+* **`flood`** - Modern, feature-rich UI for torrent management.
+* **`kettu`** - Clean and responsive web interface.
+* **`combustion`** - Sleek, modern, and mobile-friendly.
+* **`transmission-web-control`** - A popular alternative with more advanced features.
 
-Set `TRANSMISSION_WEB_UI_AUTO` to automatically download and configure popular UIs:
+### Benefits
 
-```yaml
-environment:
-  - TRANSMISSION_WEB_UI_AUTO=flood  # Downloads Flood for Transmission
-```
-
-**Supported UIs:**
-- **`flood`** - Modern, feature-rich UI based on Flood ([Preview](https://github.com/johman10/flood-for-transmission))
-- **`kettu`** - Clean, responsive interface ([Preview](https://github.com/endor/kettu))
-- **`combustion`** - Sleek, mobile-friendly design ([Preview](https://github.com/secretmapper/combustion))
-- **`transmission-web-control`** - Enhanced control panel ([Preview](https://github.com/ronggang/transmission-web-control))
-
-### Benefits:
-- ✅ **Automatic download** during container startup
-- ✅ **Persistent storage** in `/config/web-ui/`
-- ✅ **Easy switching** between UIs
-- ✅ **No manual setup** required
+* ✅ **Automatic download** during the build process.
+* ✅ **No additional volumes** or configuration is required.
+* ✅ **Seamless integration** with the base image.
+* ✅ **Always up-to-date** with the latest version of the UI.
 
 ### Manual Installation
 
@@ -202,11 +253,12 @@ environment:
 
 The container includes automatic health monitoring:
 
-- **VPN Connectivity** - Verifies tunnel is active
-- **IP Leak Protection** - Blocks traffic if VPN fails
-- **DNS Leak Prevention** - Routes DNS through VPN
+* **VPN Connectivity** - Verifies tunnel is active
+* **IP Leak Protection** - Blocks traffic if VPN fails
+* **DNS Leak Prevention** - Routes DNS through VPN
 
 Check container health:
+
 ```bash
 docker exec transmissionvpn /root/healthcheck.sh
 ```
@@ -214,6 +266,7 @@ docker exec transmissionvpn /root/healthcheck.sh
 ## 🔧 Troubleshooting
 
 ### Container Won't Start
+
 ```bash
 # Check logs
 docker logs transmissionvpn
@@ -225,6 +278,7 @@ docker logs transmissionvpn
 ```
 
 ### VPN Not Working
+
 ```bash
 # Check external IP
 docker exec transmissionvpn curl ifconfig.me
@@ -237,10 +291,10 @@ docker exec transmissionvpn ping -c 3 8.8.8.8
 
 ## 📚 Documentation
 
-- **[Configuration Examples](EXAMPLES.md)** - Real-world usage examples
-- **[VPN Provider Setup](docs/VPN_PROVIDERS.md)** - Provider-specific guides
-- **[Docker Secrets](docs/DOCKER_SECRETS.md)** - Secure credential management
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+* **[Configuration Examples](EXAMPLES.md)** - Real-world usage examples
+* **[VPN Provider Setup](docs/VPN_PROVIDERS.md)** - Provider-specific guides
+* **[Docker Secrets](docs/DOCKER_SECRETS.md)** - Secure credential management
+* **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ## 🔄 Migration from haugene/transmission-openvpn
 
@@ -265,21 +319,19 @@ docker exec transmissionvpn ping -c 3 8.8.8.8
 
 **transmissionvpn v4.0.6-2+** automatically creates compatibility symlinks during container startup:
 
-- `/downloads/completed` → `/downloads/complete` 
-- `/data` → `/downloads`
+* `/downloads/completed` → `/downloads/complete`
+* `/data` → `/downloads`
 
 This means **both directory structures work simultaneously** without requiring configuration changes! Your existing Sonarr/Radarr setup should continue working after migration.
 
 ### Migration Options
 
 #### Option 1: Use Automatic Compatibility (Recommended)
-```yaml
-# No changes needed! The container creates symlinks automatically
-volumes:
-  - /your/downloads:/downloads        # Works with both /downloads/complete/ and /downloads/completed/
-```
+
+This image includes a compatibility layer that automatically maps many of `haugene`'s environment variables to the new ones. For most users, this will be enough.
 
 #### Option 2: Update Your Volume Mappings
+
 ```yaml
 # NEW: LinuxServer.io compatible structure
 volumes:
@@ -288,6 +340,7 @@ volumes:
 ```
 
 #### Option 3: Maintain haugene Directory Structure  
+
 ```yaml
 # ALTERNATIVE: Map to match haugene's structure
 volumes:
@@ -300,12 +353,13 @@ volumes:
 If you're getting "*directory does not appear to exist inside the container*" errors:
 
 1. **Check Download Client Settings:**
-   - **Host:** `transmissionvpn` (or your container name)
-   - **Port:** `9091`
-   - **Category:** Set appropriate category for TV/Movies
-   - **Directory:** Leave empty or use `/downloads/complete/`
+   * **Host:** `transmissionvpn` (or your container name)
+   * **Port:** `9091`
+   * **Category:** Set appropriate category for TV/Movies
+   * **Directory:** Leave empty or use `/downloads/complete/`
 
 2. **Configure Remote Path Mappings:**
+
    ```
    Host: transmissionvpn  
    Remote Path: /downloads/
@@ -313,6 +367,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
    ```
 
 3. **Ensure Consistent Volume Mapping:**
+
    ```yaml
    # Both containers must see the same paths
    transmissionvpn:
@@ -334,9 +389,10 @@ If you're getting "*directory does not appear to exist inside the container*" er
 ## ⚙️ Advanced Configuration
 
 <details>
-<summary>Click to expand all environment variables</summary>
+<summary>Click to expand for a full list of environment variables</summary>
 
 ### VPN Configuration
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `VPN_CLIENT` | `openvpn` or `wireguard` | `openvpn` |
@@ -346,6 +402,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `VPN_OPTIONS` | Additional VPN options | (none) |
 
 ### Network Configuration
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LAN_NETWORK` | Local network CIDR | (none) |
@@ -353,6 +410,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `ADDITIONAL_PORTS` | Extra ports | (none) |
 
 ### Transmission Settings
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TRANSMISSION_PEER_PORT` | P2P port | (random) |
@@ -361,6 +419,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `TRANSMISSION_WEB_HOME` | Alternative web UI | (none) |
 
 ### System Settings
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PUID` | User ID | `1000` |
@@ -369,10 +428,14 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `UMASK` | File creation mask | `002` |
 
 ### Optional Features
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ENABLE_PRIVOXY` | HTTP proxy | `no` |
 | `DEBUG` | Debug logging | `false` |
 | `METRICS_ENABLED` | Metrics collection | `false` |
+| `TRANSMISSION_WEB_UI` | Alternative web UI to use | `default` |
 
 </details>
+
+A huge thank you to the developers of `haugene/transmission-openvpn` for their incredible work over the years. This project would not be possible without their efforts.

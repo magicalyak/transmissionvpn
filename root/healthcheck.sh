@@ -180,19 +180,16 @@ check_vpn_connectivity() {
 
 # Function to check DNS resolution
 check_dns() {
-    local vpn_if="$1"
-    
-    log "DEBUG" "Testing DNS resolution through VPN"
-    
-    # Test DNS resolution
-    local dns_start_time=$(date +%s%N)
-    if nslookup "$HEALTH_CHECK_HOST" > /dev/null 2>&1; then
-        local dns_end_time=$(date +%s%N)
-        local dns_time=$(((dns_end_time - dns_start_time) / 1000000))
-        
-        log "INFO" "DNS resolution successful (${dns_time}ms)"
+    log_info "Checking DNS resolution..."
+    local dns_start_time
+    dns_start_time=$(date +%s%N)
+    if getent hosts "$HEALTH_CHECK_HOST" >/dev/null; then
+        local dns_end_time
+        dns_end_time=$(date +%s%N)
+        local dns_duration=$(( (dns_end_time - dns_start_time) / 1000000 ))
+        log_success "DNS resolution for $HEALTH_CHECK_HOST is working (${dns_duration}ms)."
         record_metric "dns_resolution_status" "1"
-        record_metric "dns_resolution_time_ms" "$dns_time"
+        record_metric "dns_resolution_time_ms" "$dns_duration"
         return 0
     else
         log "ERROR" "DNS resolution failed"
@@ -330,7 +327,7 @@ main() {
             fi
             
             # Optional DNS check
-            if ! check_dns "$vpn_if"; then
+            if ! check_dns; then
                 log "ERROR" "DNS healthcheck failed"
                 if [ $exit_code -eq 0 ]; then
                     exit_code=5

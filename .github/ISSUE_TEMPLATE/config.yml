@@ -1,14 +1,15 @@
+---
 blank_issues_enabled: false
 contact_links:
-  - name: 📚 Documentation
-    url: https://github.com/magicalyak/transmissionvpn/blob/main/README.md
-    about: Read the documentation for setup and configuration help
-  - name: 📋 Examples
-    url: https://github.com/magicalyak/transmissionvpn/blob/main/EXAMPLES.md
-    about: Check out configuration examples for common use cases
-  - name: 🐳 Docker Hub
-    url: https://hub.docker.com/r/magicalyak/transmissionvpn
-    about: View the Docker Hub page with tags and download information
-  - name: 💬 Discussions
-    url: https://github.com/magicalyak/transmissionvpn/discussions
-    about: Ask questions and discuss with the community 
+  - name: "💬 Discussions"
+    url: "https://github.com/magicalyak/transmissionvpn/discussions"
+    about: "Please use GitHub Discussions for questions and support requests."
+  - name: "📚 Documentation"
+    url: "https://github.com/magicalyak/transmissionvpn/blob/main/README.md"
+    about: "Check the documentation for setup and configuration guides."
+  - name: "📋 Examples"
+    url: "https://github.com/magicalyak/transmissionvpn/blob/main/EXAMPLES.md"
+    about: "Find real-world configuration examples."
+  - name: "🐳 Docker Hub"
+    url: "https://hub.docker.com/r/magicalyak/transmissionvpn"
+    about: "View the Docker Hub page with tags and download information." 
