@@ -18,14 +18,14 @@ This document provides specific setup instructions for popular VPN providers wit
 
 ## NordVPN
 
-### OpenVPN Setup
+### NordVPN OpenVPN Setup
 
-1. **Download Configuration Files:**
-   - Log in to your NordVPN account
-   - Go to [NordVPN Downloads](https://nordvpn.com/ovpn/)
-   - Download individual `.ovpn` files for your preferred servers
+1. **Download OpenVPN Configuration Files:**
+   - Download the configuration files from the [NordVPN website](https://nordvpn.com/ovpn/).
+   - Unzip the files into your `./config/openvpn/` directory.
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -41,60 +41,23 @@ services:
     volumes:
       - ./config:/config
       - ./downloads:/downloads
-      - ./watch:/watch
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
-      - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/us8923.nordvpn.com.udp.ovpn
+      - VPN_PROVIDER=nordvpn
+      - VPN_CONFIG=us9999.nordvpn.com.udp.ovpn
       - VPN_USER=your_nordvpn_username
       - VPN_PASS=your_nordvpn_password
-      - LAN_NETWORK=192.168.1.0/24
-    restart: unless-stopped
-```
-
-3. **File Structure:**
-```
-./config/openvpn/
-├── us8923.nordvpn.com.udp.ovpn
-└── credentials.txt  # Optional: username on line 1, password on line 2
-```
-
-### WireGuard Setup
-
-1. **Get WireGuard Configuration:**
-   - Install NordVPN app on your device
-   - Enable WireGuard in settings
-   - Export configuration or use NordLynx
-
-2. **Docker Compose Example:**
-```yaml
-version: "3.8"
-services:
-  transmissionvpn:
-    image: magicalyak/transmissionvpn:latest
-    container_name: transmissionvpn
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    ports:
-      - "9091:9091"
-    volumes:
-      - ./config:/config
-      - ./downloads:/downloads
-    environment:
-      - VPN_CLIENT=wireguard
-      - VPN_CONFIG=/config/wireguard/nordvpn-us.conf
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
     restart: unless-stopped
 ```
+
+### NordVPN WireGuard (NordLynx) Setup
+
+NordVPN uses a custom WireGuard implementation called NordLynx, which requires manual configuration.
+
+1. **Follow a community guide** to extract the necessary information.
+2. Create a `nordlynx.conf` file in `./config/wireguard/`.
 
 ## ExpressVPN
 
@@ -106,6 +69,7 @@ services:
    - Download `.ovpn` files for your preferred locations
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -140,14 +104,14 @@ services:
 
 ## Surfshark
 
-### OpenVPN Setup
+### Surfshark OpenVPN Setup
 
-1. **Get Configuration Files:**
-   - Log in to Surfshark account
-   - Go to Manual Setup → OpenVPN
-   - Download configuration files for your preferred locations
+1. **Download OpenVPN Configuration Files:**
+   - Download the configuration files from your [Surfshark account page](https://my.surfshark.com/vpn/manual-setup/main/openvpn).
+   - Unzip the files into your `./config/openvpn/` directory.
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -164,8 +128,8 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/us-nyc.prod.surfshark.com_udp.ovpn
+      - VPN_PROVIDER=surfshark
+      - VPN_CONFIG=us-dal.prod.surfshark.com_udp.ovpn
       - VPN_USER=your_surfshark_username
       - VPN_PASS=your_surfshark_password
       - PUID=1000
@@ -174,13 +138,14 @@ services:
     restart: unless-stopped
 ```
 
-### WireGuard Setup
+### Surfshark WireGuard Setup
 
-1. **Get WireGuard Configuration:**
-   - Use Surfshark's WireGuard configuration generator
-   - Download the `.conf` file
+1. **Generate WireGuard Configuration:**
+   - Follow the instructions on the [Surfshark website](https://support.surfshark.com/hc/en-us/articles/360018115799-How-to-set-up-WireGuard-on-a-router) to get your private key.
+   - Create a `.conf` file in `./config/wireguard/`.
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -201,7 +166,8 @@ services:
       - ./downloads:/downloads
     environment:
       - VPN_CLIENT=wireguard
-      - VPN_CONFIG=/config/wireguard/surfshark-us.conf
+      - VPN_PROVIDER=surfshark
+      - VPN_CONFIG=surfshark.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
@@ -217,6 +183,7 @@ services:
    - Select your preferred servers and download
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -250,14 +217,14 @@ services:
 
 ## Mullvad
 
-### OpenVPN Setup
+### Mullvad OpenVPN Setup
 
-1. **Generate Configuration:**
-   - Log in to Mullvad account
-   - Go to OpenVPN config generator
-   - Select platform: Linux, servers, and download
+1. **Download OpenVPN Configuration Files:**
+   - Download the configuration files from the [Mullvad website](https://mullvad.net/en/download/openvpn-config).
+   - Unzip the files into your `./config/openvpn/` directory.
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -274,22 +241,23 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/mullvad_us_all.conf
+      - VPN_PROVIDER=mullvad
+      - VPN_CONFIG=mullvad_us-ny.ovpn
       - VPN_USER=your_mullvad_account_number
-      - VPN_PASS=m  # Mullvad uses 'm' as password
+      - VPN_PASS=m
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
 ```
 
-### WireGuard Setup
+### Mullvad WireGuard Setup
 
-1. **Generate WireGuard Config:**
-   - Use Mullvad's WireGuard config generator
-   - Download the configuration file
+1. **Generate WireGuard Configuration:**
+   - Generate a WireGuard key on the [Mullvad website](https://mullvad.net/en/account/#/wireguard-config/).
+   - Download the configuration file and place it in `./config/wireguard/`.
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -310,7 +278,8 @@ services:
       - ./downloads:/downloads
     environment:
       - VPN_CLIENT=wireguard
-      - VPN_CONFIG=/config/wireguard/mullvad-us.conf
+      - VPN_PROVIDER=mullvad
+      - VPN_CONFIG=mullvad.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
@@ -320,12 +289,13 @@ services:
 
 ### OpenVPN Setup
 
-1. **Download Configuration:**
-   - Log in to PIA account
-   - Go to Client Support → OpenVPN/L2TP/PPTP/IPSec Setup
-   - Download configuration files
+1. **Download OpenVPN Configuration Files:**
+   - Download the "OpenVPN Configuration Files (Default)" from the [PIA website](https://www.privateinternetaccess.com/pages/ovpn-config-generator).
+   - Unzip the files into your `./config/openvpn/` directory.
+   - Your `VPN_CONFIG` will be the name of the `.ovpn` file (e.g., `us_east.ovpn`).
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -342,10 +312,10 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/us_new_york_city.ovpn
-      - VPN_USER=your_pia_username
-      - VPN_PASS=your_pia_password
+      - VPN_PROVIDER=pia
+      - VPN_CONFIG=us_east.ovpn
+      - VPN_USER=p1234567
+      - VPN_PASS=supersecret
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
@@ -353,11 +323,13 @@ services:
 
 ### WireGuard Setup
 
-1. **Generate WireGuard Config:**
-   - Use PIA's WireGuard configuration generator
-   - Download configuration file
+1. **Generate WireGuard Configuration:**
+   - Use the [PIA WireGuard Config Generator](https://www.privateinternetaccess.com/pages/wireguard-config-generator).
+   - Save the generated `.conf` file to `./config/wireguard/`.
+   - Your `VPN_CONFIG` will be the name of the `.conf` file (e.g., `pia.conf`).
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -378,7 +350,8 @@ services:
       - ./downloads:/downloads
     environment:
       - VPN_CLIENT=wireguard
-      - VPN_CONFIG=/config/wireguard/pia-us.conf
+      - VPN_PROVIDER=pia
+      - VPN_CONFIG=pia.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
@@ -394,6 +367,7 @@ services:
    - Select your preferred servers and download
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -433,6 +407,7 @@ services:
    - Download the configuration file
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -469,6 +444,7 @@ services:
    - Download OpenVPN configuration files
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -504,6 +480,7 @@ services:
    - Download OpenVPN configuration files
 
 2. **Docker Compose Example:**
+
 ```yaml
 version: "3.8"
 services:
@@ -660,4 +637,5 @@ docker exec transmissionvpn ping 8.8.8.8
 - **Mullvad:** Privacy-focused with no logging
 - **PIA:** Port forwarding available on most servers
 - **CyberGhost:** Optimized servers for torrenting
-- **IPVanish:** SOCKS5 proxy also available 
+- **IPVanish:** SOCKS5 proxy also available
+ 

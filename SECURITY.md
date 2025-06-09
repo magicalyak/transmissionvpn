@@ -1,6 +1,7 @@
 # Security Policy
 
 ## Supported Versions
+
 Currently supported versions for security updates:
 
 | Version | Supported          |
@@ -9,9 +10,11 @@ Currently supported versions for security updates:
 | < 4.0   | :x:                |
 
 ## Reporting a Vulnerability
+
 Please report security vulnerabilities by opening a GitHub issue with the "security" label, or contact the maintainers directly if the issue is sensitive.
 
 ## VPN Security Considerations
+
 - Always use strong, unique credentials for your VPN provider
 - Regularly update your VPN configuration files
 - Monitor logs for any suspicious activity

@@ -1,161 +1,117 @@
-name: 🐛 Bug Report
-description: Report a bug to help us improve transmissionvpn
-title: "[BUG] "
-labels: 
-  - bug
-  - triage
-
+---
+name: "🐛 Bug Report"
+description: "Submit a bug report to help us improve."
+labels: ["bug", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible to help us diagnose the issue.
+        Thank you for contributing to this project!
 
+        - **Are you having an issue with the container not starting, VPN connection, or IP leaks?**
+          Please use the 🔎 **Support Request** form instead.
+        - **Have you checked for similar issues?**
+          There might be an existing solution.
+
+        Please be as detailed as possible in your report.
   - type: checkboxes
-    id: terms
+    id: prerequisites
     attributes:
-      label: Prerequisites
-      description: Please confirm the following before submitting
+      label: "Prerequisites"
+      description: "Please confirm the following before submitting a new issue."
       options:
-        - label: I have searched existing issues to ensure this bug hasn't been reported before
+        - label: >-
+            I have checked the [troubleshooting
+            guide](https://github.com/magicalyak/transmissionvpn/blob/main/docs/TROUBLESHOOTING.md)
+            and known issues.
           required: true
-        - label: I have read the README.md and EXAMPLES.md documentation
+        - label: >-
+            I have searched for similar issues and have not found an existing
+            solution.
           required: true
-        - label: I am using the latest version of the image
-          required: true
-
-  - type: input
-    id: image-version
-    attributes:
-      label: Image Version
-      description: What version of magicalyak/transmissionvpn are you using?
-      placeholder: "latest, v4.0.6-2, sha-abc123, etc."
-    validations:
-      required: true
-
-  - type: dropdown
-    id: vpn-type
-    attributes:
-      label: VPN Type
-      description: Which VPN client are you using?
-      options:
-        - OpenVPN
-        - WireGuard
-        - Not using VPN (testing)
-      default: 0
-    validations:
-      required: true
-
-  - type: input
-    id: vpn-provider
-    attributes:
-      label: VPN Provider
-      description: Which VPN provider are you using?
-      placeholder: "NordVPN, ExpressVPN, Surfshark, Custom, etc."
-
-  - type: dropdown
-    id: host-os
-    attributes:
-      label: Host Operating System
-      description: What OS is running Docker?
-      options:
-        - Linux (Ubuntu/Debian)
-        - Linux (CentOS/RHEL/Fedora)
-        - Linux (Other)
-        - macOS
-        - Windows
-        - Synology DSM
-        - QNAP
-        - Unraid
-        - Other NAS
-        - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: deployment-method
-    attributes:
-      label: Deployment Method
-      description: How are you running the container?
-      options:
-        - Docker Compose
-        - Docker Run
-        - Portainer
-        - Kubernetes
-        - Other
-    validations:
-      required: true
-
   - type: textarea
-    id: expected-behavior
+    id: description
     attributes:
-      label: Expected Behavior
-      description: What did you expect to happen?
-      placeholder: Describe the expected behavior...
+      label: "Bug Description"
+      description: >-
+        A clear and concise description of what the bug is.
+      placeholder: >-
+        e.g., "The container fails to start when using PIA and WireGuard."
     validations:
       required: true
-
   - type: textarea
-    id: actual-behavior
+    id: steps
     attributes:
-      label: Actual Behavior
-      description: What actually happened? Include error messages if any.
-      placeholder: Describe what actually happened...
-    validations:
-      required: true
-
-  - type: textarea
-    id: reproduction-steps
-    attributes:
-      label: Steps to Reproduce
-      description: Provide step-by-step instructions to reproduce the issue
+      label: "Steps to Reproduce"
+      description: "Please provide the exact steps to reproduce the behavior."
       placeholder: |
-        1. Run container with...
-        2. Navigate to...
-        3. Click on...
-        4. See error...
+        1. Set `VPN_PROVIDER` to `pia`.
+        2. Set `VPN_CLIENT` to `wireguard`.
+        3. Run `docker-compose up`.
+        4. See error in logs.
     validations:
       required: true
-
-  - type: textarea
-    id: docker-config
-    attributes:
-      label: Docker Configuration
-      description: Please share your docker-compose.yml or docker run command
-      placeholder: |
-        ```yaml
-        # Your docker-compose.yml or docker run command
-        ```
-      render: yaml
-
   - type: textarea
     id: logs
     attributes:
-      label: Container Logs
-      description: Include relevant container logs (use `docker logs transmissionvpn`)
+      label: "Container Logs"
+      description: >-
+        Please provide the full, unredacted container logs.
       placeholder: |
-        ```
-        # Paste your container logs here
-        # Remove sensitive information like passwords/keys
-        ```
-      render: shell
+        <details>
+        <summary>Click to expand</summary>
 
+        ```
+        <your logs here>
+        ```
+        </details>
+      render: bash
+    validations:
+      required: true
   - type: textarea
-    id: additional-context
+    id: env
     attributes:
-      label: Additional Context
-      description: Add any other context, screenshots, or information that might help
-      placeholder: Any additional information that might be helpful...
+      label: "Environment"
+      description: >-
+        Please provide your `.env` file, with any sensitive information
+        redacted.
+      placeholder: |
+        <details>
+        <summary>Click to expand</summary>
 
-  - type: checkboxes
-    id: troubleshooting
+        ```
+        VPN_PROVIDER=pia
+        VPN_CLIENT=wireguard
+        # ...
+        ```
+        </details>
+      render: bash
+    validations:
+      required: true
+  - type: input
+    id: version
     attributes:
-      label: Troubleshooting Attempted
-      description: What troubleshooting steps have you already tried?
+      label: "Container Version"
+      description: "What version of the container are you running?"
+      placeholder: "e.g., `latest` or `4.0.5-1`"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Operating System"
+      description: "What operating system is your Docker host running on?"
       options:
-        - label: Checked container logs for errors
-        - label: Verified VPN configuration files are correct
-        - label: Tested VPN connection outside of container
-        - label: Checked firewall/port settings
-        - label: Tried recreating the container
-        - label: Checked file permissions (PUID/PGID) 
+        - "Linux"
+        - "macOS"
+        - "Windows"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional Context"
+      description: >-
+        Add any other context about the problem here (e.g., screenshots,
+        related issues). 

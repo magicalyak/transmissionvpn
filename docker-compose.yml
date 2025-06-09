@@ -1,3 +1,4 @@
+---
 version: "3.8"
 
 services:
@@ -48,6 +49,24 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  transmission-exporter:
+    image: sandrotosi/simple_transmission_exporter:latest
+    container_name: transmission-exporter
+    depends_on:
+      - transmissionvpn
+    ports:
+      - "29091:29091" # Prometheus metrics endpoint
+    environment:
+      - TRANSMISSION_HOST=transmissionvpn
+      - TRANSMISSION_PORT=9091
+      - TRANSMISSION_USERNAME=${TRANSMISSION_RPC_USERNAME}
+      - TRANSMISSION_PASSWORD=${TRANSMISSION_RPC_PASSWORD}
+    restart: unless-stopped
+
+# Notes on Metrics Integration:
+# The `transmission-exporter` service exposes metrics for Prometheus.
+# See the "Monitoring and Metrics" section in README.md for configuration details.
 
 # Uncomment for Docker secrets (production deployments)
 # secrets:

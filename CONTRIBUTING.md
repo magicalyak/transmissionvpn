@@ -13,21 +13,25 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
 ## 📋 Ways to Contribute
 
 ### 🐛 Bug Reports
+
 - Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)
 - Include system information, steps to reproduce, and expected vs actual behavior
 - Check existing issues to avoid duplicates
 
 ### ✨ Feature Requests
+
 - Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.yml)
 - Describe the problem you're trying to solve
 - Explain your proposed solution and alternatives considered
 
 ### 📚 Documentation
+
 - Fix typos, improve clarity, or add missing information
 - Update examples and configuration guides
 - Enhance troubleshooting documentation
 
 ### 🛠️ Code Contributions
+
 - Bug fixes and feature implementations
 - Performance improvements
 - Security enhancements
@@ -36,6 +40,7 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
 ## 🔧 Development Setup
 
 ### Prerequisites
+
 - Docker and Docker Compose
 - Git
 - Text editor or IDE
@@ -44,12 +49,14 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
 ### Local Development
 
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/magicalyak/transmissionvpn.git
    cd transmissionvpn
    ```
 
 2. **Set up development environment:**
+
    ```bash
    make setup
    cp .env.sample .env
@@ -57,6 +64,7 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
    ```
 
 3. **Build and test locally:**
+
    ```bash
    make build
    make start
@@ -64,6 +72,7 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
    ```
 
 4. **Run tests:**
+
    ```bash
    # Test container startup
    docker exec transmissionvpn /root/healthcheck.sh
@@ -78,24 +87,28 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
 ## 📝 Code Standards
 
 ### Shell Scripts
+
 - Use `#!/bin/bash` for bash scripts
 - Follow [ShellCheck](https://www.shellcheck.net/) recommendations
 - Use meaningful variable names with proper quoting
 - Include error handling and logging
 
 ### Docker
+
 - Multi-stage builds when appropriate
 - Minimize layer count and image size
 - Use specific base image tags (not `latest`)
 - Follow security best practices
 
 ### Documentation
+
 - Use clear, concise language
 - Include practical examples
 - Test all code snippets
 - Update relevant sections when making changes
 
 ### Commit Messages
+
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
@@ -107,15 +120,18 @@ type(scope): description
 ```
 
 **Types:**
+
 - `feat`: New features
 - `fix`: Bug fixes
 - `docs`: Documentation changes
 - `style`: Formatting, missing semicolons, etc.
 - `refactor`: Code restructuring without functionality changes
-- `test`: Adding or updating tests
+- `test`: Add or update tests
 - `chore`: Maintenance tasks
+- `ci`: CI/CD improvements
 
 **Examples:**
+
 ```
 feat(vpn): add WireGuard support for new providers
 fix(healthcheck): improve VPN connectivity detection
@@ -125,150 +141,141 @@ docs(readme): update quick start guide with Docker Compose
 ## 🧪 Testing Guidelines
 
 ### Manual Testing
+
+Before submitting, manually test your changes to ensure they work as expected.
+
 1. **VPN Connectivity:**
-   ```bash
-   # Test different VPN providers
-   # Verify IP address changes
-   # Check DNS leak prevention
-   ```
 
-2. **Container Health:**
-   ```bash
-   # Test startup/shutdown cycles
-   # Verify health checks pass
-   # Monitor resource usage
-   ```
+    ```bash
+    docker-compose up -d
+    docker-compose logs -f | grep "VPN is connected"
+    ```
 
-3. **Feature Testing:**
-   ```bash
-   # Test new features thoroughly
-   # Verify backward compatibility
-   # Check edge cases
-   ```
+2. **IP Address Check:**
+
+    ```bash
+    docker-compose exec transmissionvpn curl -s https://ipinfo.io/ip
+    ```
+
+3. **Application Functionality:**
+
+    - Access the Transmission UI at `http://localhost:9091`.
+    - Add a torrent and verify it downloads correctly.
+
+4. **Cleanup:**
+
+    ```bash
+    docker-compose down
+    ```
 
 ### Test Scenarios
-- Fresh installation with minimal configuration
-- Migration from haugene/transmission-openvpn
-- Different VPN providers (OpenVPN and WireGuard)
-- Various Docker environments (Linux, macOS, Windows)
-- Network edge cases (DNS issues, connection drops)
 
-## 📦 Pull Request Process
+- Fresh installation with minimal configuration.
+- Upgrading from a previous version.
+- All supported VPN providers (if applicable).
+- Both OpenVPN and WireGuard connections.
+- Sonarr/Radarr integration.
+- Alternative web UI functionality.
 
 ### Before Submitting
-1. **Test your changes** thoroughly
-2. **Update documentation** if needed
-3. **Check for breaking changes**
-4. **Ensure code follows our standards**
-5. **Rebase on latest main** branch
+
+1. **Test your changes** thoroughly.
+2. **Update documentation** if you've added or changed functionality.
+3. **Follow the coding style** and linting rules.
+4. **Write a clear pull request** description.
 
 ### Pull Request Template
-Use our [PR template](.github/pull_request_template.md) and include:
+
 - Clear description of changes
-- Testing performed
-- Breaking changes (if any)
-- Related issues
+- Link to the relevant issue (if any)
+- Summary of testing performed
+- Any necessary follow-up actions
 
 ### Review Process
-1. **Automated checks** must pass (GitHub Actions)
-2. **Maintainer review** for code quality and functionality
-3. **Testing verification** on different environments
-4. **Documentation review** for user-facing changes
 
-## 🏗️ Project Structure
+1. **Automated checks** must pass (linting, tests, etc.).
+2. **At least one maintainer** will review your PR.
+3. **Address any feedback** or requested changes.
+4. **Once approved**, your PR will be merged.
 
-```
-transmissionvpn/
-├── .github/                    # GitHub templates and workflows
-├── config/                     # Sample configurations
-├── docs/                       # Detailed documentation
-├── root/                       # Container initialization scripts
-├── scripts/                    # Monitoring and utility scripts
-├── Dockerfile                  # Container definition
-├── docker-compose.yml          # Docker Compose setup
-├── .env.sample                 # Environment configuration template
-└── README.md                   # Main documentation
+## Style Guide
+
+```text
+Style guides and best practices for this project.
 ```
 
 ### Key Files
-- **Dockerfile**: Container build instructions
-- **root/vpn-setup.sh**: VPN configuration and startup
-- **root/healthcheck.sh**: Container health monitoring
-- **scripts/monitor.sh**: External monitoring script
-- **scripts/metrics-server.py**: Prometheus metrics endpoint
 
-## 🔒 Security Considerations
+- **Dockerfile**: Container build definition.
+- **docker-compose.yml**: Local development and testing.
+- **.github/workflows**: CI/CD pipelines.
+- **root/**: S6-overlay services and scripts.
+- **scripts/**: Helper scripts.
+- **docs/**: Project documentation.
 
 ### Sensitive Information
-- Never commit real VPN credentials
-- Use placeholder values in examples
-- Be cautious with log output
-- Review changes for information disclosure
+
+- Never commit real VPN credentials, passwords, or API keys.
+- Use environment variables or Docker secrets for sensitive data.
+- Sanitize logs and command output before sharing.
 
 ### Security Reviews
-- VPN configuration handling
-- Network isolation and kill switch
-- File permissions and access
-- Container security practices
 
-## 🤝 Community Guidelines
+- VPN configuration handling
+- Kill switch implementation
+- Firewall rules
+- Web UI authentication
+- Dependency scanning
 
 ### Code of Conduct
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help newcomers learn and contribute
-- Maintain a welcoming environment
+
+- Be respectful and inclusive.
+- Provide constructive feedback.
+- Report any inappropriate behavior.
+- See the full [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ### Communication
-- Use GitHub issues for bug reports and feature requests
-- Participate in discussions respectfully
-- Provide helpful and detailed responses
-- Share knowledge and experience
 
-## 📚 Resources
+- Use GitHub issues for bug reports and feature requests.
+- Use GitHub discussions for questions and general conversation.
+- Join our Discord server for real-time chat.
 
-### Documentation
-- [Docker Documentation](https://docs.docker.com/)
-- [OpenVPN Documentation](https://openvpn.net/community-resources/)
-- [WireGuard Documentation](https://www.wireguard.com/quickstart/)
-- [LinuxServer.io Documentation](https://docs.linuxserver.io/)
+### Documentation Style
+
+- [Docker Documentation](https://docs.docker.com/get-started/overview/)
+- [OpenVPN Documentation](https://openvpn.net/community-resources/reference-manual-for-openvpn-2-4/)
+- [WireGuard Documentation](https://www.wireguard.com/documentation/)
+- [Transmission Documentation](https://transmissionbt.com/about/)
 
 ### Tools
-- [ShellCheck](https://www.shellcheck.net/) - Shell script analysis
-- [Hadolint](https://github.com/hadolint/hadolint) - Dockerfile linting
-- [Docker Bench](https://github.com/docker/docker-bench-security) - Security scanning
 
-## 🏷️ Release Process
+- [ShellCheck](https://www.shellcheck.net/)
+- [Hadolint](https://github.com/hadolint/hadolint)
+- [markdownlint](https://github.com/DavidAnson/markdownlint)
 
 ### Versioning
-We follow [Semantic Versioning](https://semver.org/):
-- `MAJOR.MINOR.PATCH-BUILD`
-- Major: Breaking changes
-- Minor: New features (backward compatible)
-- Patch: Bug fixes
-- Build: Container build number
+
+Follow `MAJOR.MINOR.PATCH-BUILD`.
+
+- `MAJOR`: Breaking changes.
+- `MINOR`: New features.
+- `PATCH`: Bug fixes.
+- `BUILD`: Docker image build number.
 
 ### Release Checklist
-1. Update version in relevant files
-2. Update CHANGELOG.md
-3. Test release candidate
-4. Create GitHub release
-5. Trigger Docker Hub build
-6. Update documentation
 
-## ❓ Getting Help
+1. Update version in relevant files.
+2. Run all tests and checks.
+3. Draft release notes.
+4. Create a Git tag.
+5. Publish the release.
+6. Announce on relevant channels.
 
-- **Questions**: Use [GitHub Discussions](https://github.com/magicalyak/transmissionvpn/discussions)
-- **Support**: Use our [support template](.github/ISSUE_TEMPLATE/support.yml)
-- **Chat**: Join our community discussions
-- **Documentation**: Check our [comprehensive docs](docs/)
+## Attribution
 
-## 🙏 Recognition
+- Code contributions are recognized in release notes.
+- GitHub contributor graphs.
+- Special thanks in the README for significant contributions.
 
-Contributors are recognized through:
-- GitHub contributor graphs
-- Release notes acknowledgments
-- Community shout-outs
-- Maintainer recommendations
-
-Thank you for contributing to TransmissionVPN! Your efforts help make secure torrenting accessible to everyone. 
+Thank you for contributing! Your support helps make this project better for everyone.
+ 
