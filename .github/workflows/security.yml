@@ -21,9 +21,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['go', 'javascript', 'python', 'ruby']
-        # CodeQL supports more languages, but these are the most common for this project.
-        # It will also automatically detect shell scripts.
+        language: ['python']
+        # Only analyzing languages that are actually present in the repository.
+        # CodeQL will automatically detect and analyze shell scripts.
 
     steps:
       - name: "Checkout Repository"
