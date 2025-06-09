@@ -278,3 +278,4 @@ Follow `MAJOR.MINOR.PATCH-BUILD`.
 - Special thanks in the README for significant contributions.
 
 Thank you for contributing! Your support helps make this project better for everyone.
+ 
