@@ -24,10 +24,6 @@ jobs:
 
       - name: "Initialize CodeQL"
         uses: github/codeql-action/init@v3
-        with:
-          languages: python
-          # Uncomment the following line if you want to use custom queries.
-          # queries: security-extended,security-and-quality
 
       - name: "Autobuild"
         uses: github/codeql-action/autobuild@v3
