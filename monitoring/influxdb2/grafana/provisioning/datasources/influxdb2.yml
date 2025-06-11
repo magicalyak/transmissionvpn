@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB2
+    type: influxdb
+    access: proxy
+    url: http://influxdb2:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: transmissionvpn
+      defaultBucket: metrics
+      tlsSkipVerify: true
+    secureJsonData:
+      token: my-super-secret-auth-token 

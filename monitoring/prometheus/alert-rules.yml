@@ -1,0 +1,116 @@
+groups:
+  - name: transmission-alerts
+    rules:
+      - alert: TransmissionDown
+        expr: up{job="transmission-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Transmission is down"
+          description: "Transmission exporter has been down for more than 5 minutes."
+
+      - alert: NoActiveTorrents
+        expr: transmission_session_stats_active_torrent_count == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No active torrents"
+          description: "No torrents have been active for more than 30 minutes."
+
+      - alert: SlowDownloadSpeed
+        expr: transmission_session_stats_download_speed < 1048576  # 1MB/s
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow download speed"
+          description: "Download speed has been below 1MB/s for more than 15 minutes. Current speed: {{ $value | humanize }}B/s"
+
+      - alert: LowDiskSpace
+        expr: transmission_session_stats_free_space < 5368709120  # 5GB
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Free disk space is below 5GB. Current free space: {{ $value | humanize }}B"
+
+  - name: vpn-alerts
+    rules:
+      - alert: VPNConnectivityIssue
+        expr: probe_success{job="blackbox-vpn"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VPN connectivity issue"
+          description: "Unable to reach external services through VPN for more than 2 minutes. Target: {{ $labels.instance }}"
+
+      - alert: HighFailureRate
+        expr: rate(probe_success{job="blackbox-vpn"}[5m]) < 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High VPN failure rate"
+          description: "VPN connectivity success rate is below 80% over the last 5 minutes."
+
+  - name: system-alerts
+    rules:
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total{name="transmissionvpn"}[5m]) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "TransmissionVPN container CPU usage is above 80% for more than 10 minutes."
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{name="transmissionvpn"} / container_spec_memory_limit_bytes{name="transmissionvpn"} * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "TransmissionVPN container memory usage is above 85% for more than 5 minutes."
+
+      - alert: ContainerRestarted
+        expr: increase(container_start_time_seconds{name="transmissionvpn"}[1h]) > 0
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: "Container restarted"
+          description: "TransmissionVPN container has been restarted within the last hour."
+
+      - alert: ExporterDown
+        expr: up{job=~"node-exporter|cadvisor"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} exporter is down"
+          description: "{{ $labels.job }} has been down for more than 5 minutes."
+
+  - name: network-alerts
+    rules:
+      - alert: HighNetworkUsage
+        expr: rate(container_network_transmit_bytes_total{name="transmissionvpn"}[5m]) > 104857600  # 100MB/s
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High network upload usage"
+          description: "TransmissionVPN container network upload is above 100MB/s for more than 5 minutes. Current rate: {{ $value | humanize }}B/s"
+
+      - alert: NetworkInterfaceDown
+        expr: up{job="blackbox-vpn"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Network interface appears down"
+          description: "Unable to reach any external connectivity check endpoints." 

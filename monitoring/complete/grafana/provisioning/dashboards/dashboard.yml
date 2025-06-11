@@ -1,0 +1,22 @@
+apiVersion: 1
+
+providers:
+  - name: 'TransmissionVPN'
+    orgId: 1
+    folder: 'TransmissionVPN'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+
+  - name: 'System Monitoring'
+    orgId: 1
+    folder: 'System'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/system 
