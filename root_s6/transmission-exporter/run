@@ -10,17 +10,17 @@ fi
 
 echo "[transmission-exporter] Starting Transmission Prometheus exporter on port ${TRANSMISSION_EXPORTER_PORT}"
 
-# Set up exporter arguments
-EXPORTER_ARGS="-web.listen-address=:${TRANSMISSION_EXPORTER_PORT}"
+# Set up exporter arguments using the correct syntax
+EXPORTER_ARGS="--webaddr=:${TRANSMISSION_EXPORTER_PORT}"
 
 # Add transmission RPC endpoint
-EXPORTER_ARGS="${EXPORTER_ARGS} -transmission.addr=http://127.0.0.1:9091/transmission/rpc"
+EXPORTER_ARGS="${EXPORTER_ARGS} --transmissionaddr=http://127.0.0.1:9091"
 
 # Add authentication if configured
 if [[ -n "${TRANSMISSION_RPC_USERNAME}" ]] && [[ -n "${TRANSMISSION_RPC_PASSWORD}" ]]; then
     echo "[transmission-exporter] Using RPC authentication"
-    EXPORTER_ARGS="${EXPORTER_ARGS} -transmission.username=${TRANSMISSION_RPC_USERNAME}"
-    EXPORTER_ARGS="${EXPORTER_ARGS} -transmission.password=${TRANSMISSION_RPC_PASSWORD}"
+    EXPORTER_ARGS="${EXPORTER_ARGS} --transmissionusername=${TRANSMISSION_RPC_USERNAME}"
+    EXPORTER_ARGS="${EXPORTER_ARGS} --transmissionpassword=${TRANSMISSION_RPC_PASSWORD}"
 fi
 
 # Start the exporter

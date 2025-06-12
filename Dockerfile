@@ -1,3 +1,12 @@
+# Multi-stage build for transmission-exporter
+FROM golang:1.21-alpine AS exporter-builder
+WORKDIR /src
+RUN apk add --no-cache git
+RUN git clone https://github.com/metalmatze/transmission-exporter.git .
+# Use master branch since tags might not be available
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o transmission-exporter ./cmd/transmission-exporter
+
+# Main image
 FROM lscr.io/linuxserver/transmission:latest
 
 # TRANSMISSION_VERSION is inherited from the upstream linuxserver/transmission image
@@ -96,12 +105,9 @@ ENV TRANSMISSION_EXPORTER_PORT=${TRANSMISSION_EXPORTER_PORT:-9099}
 RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip git && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
 
-# Install transmission-exporter binary
-RUN curl -L "https://github.com/metalmatze/transmission-exporter/releases/download/v0.3.0/transmission-exporter_0.3.0_linux_amd64.tar.gz" \
-    -o /tmp/exporter.tar.gz && \
-    tar -xzf /tmp/exporter.tar.gz -C /usr/local/bin/ && \
-    rm /tmp/exporter.tar.gz && \
-    chmod +x /usr/local/bin/transmission-exporter
+# Copy transmission-exporter binary from builder stage
+COPY --from=exporter-builder /src/transmission-exporter /usr/local/bin/transmission-exporter
+RUN chmod +x /usr/local/bin/transmission-exporter
 
 # Expose metrics port
 EXPOSE 9099
