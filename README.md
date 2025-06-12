@@ -89,6 +89,9 @@ services:
 | `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) | `flood` |
 | `TRANSMISSION_EXPORTER_ENABLED` | Enable built-in Prometheus exporter | `false` | `true` |
 | `TRANSMISSION_EXPORTER_PORT` | Prometheus metrics port | `9099` | `9099` |
+| `METRICS_ENABLED` | Enable internal health metrics | `false` | `true` |
+| `CHECK_DNS_LEAK` | Enable DNS leak detection | `false` | `true` |
+| `CHECK_IP_LEAK` | Enable IP leak detection | `false` | `true` |
 
 ## 📁 Volumes
 
@@ -131,11 +134,15 @@ docker-compose up -d
 
 Open <http://localhost:9091> in your browser.
 
-## 📊 Prometheus Monitoring
+## 📊 Monitoring & Metrics
 
-This container includes an **optional built-in Prometheus exporter** that exposes Transmission metrics directly from within the container. No separate services required!
+This container provides **two complementary monitoring systems**:
 
-### 🚀 Quick Setup
+### 🔧 Built-in Prometheus Exporter (Recommended)
+
+**Optional built-in Prometheus exporter** that exposes Transmission metrics directly from within the container. No separate services required!
+
+#### 🚀 Quick Setup
 
 1. **Enable the exporter** in your `.env` file:
    ```bash
@@ -160,7 +167,7 @@ This container includes an **optional built-in Prometheus exporter** that expose
    curl http://localhost:9099/metrics
    ```
 
-### 📈 Prometheus Configuration
+#### 📈 Prometheus Configuration
 
 Add this scrape configuration to your `prometheus.yml`:
 
@@ -172,7 +179,7 @@ scrape_configs:
     scrape_interval: 15s
 ```
 
-### 📊 Grafana Dashboards
+#### 📊 Grafana Dashboards
 
 Import a pre-built dashboard for Transmission metrics:
 
@@ -180,7 +187,7 @@ Import a pre-built dashboard for Transmission metrics:
 2. **Alternative**: `13265` (Simple Transmission Exporter)
 3. **Data Source**: Point to your Prometheus instance
 
-### 🔧 Available Metrics
+#### 🔧 Available Metrics
 
 The exporter provides comprehensive metrics including:
 
@@ -188,6 +195,36 @@ The exporter provides comprehensive metrics including:
 - **Transfer Rates**: Download/upload speeds and totals  
 - **Session Info**: Uptime, version, configuration
 - **Queue Status**: Torrent queue sizes and states
+
+### 🩺 Internal Health Metrics (Advanced)
+
+**Internal metrics collection** for system monitoring and debugging. These metrics are stored in `/tmp/metrics.txt` inside the container.
+
+#### Configuration
+
+```bash
+METRICS_ENABLED=true          # Enable internal metrics collection
+CHECK_DNS_LEAK=true          # Enable DNS leak detection
+CHECK_IP_LEAK=true           # Enable IP leak detection
+```
+
+#### Available Internal Metrics
+
+- **System Health**: CPU usage, memory usage, disk usage
+- **VPN Status**: Interface status, connectivity, ping times
+- **Network**: Total RX/TX bytes, DNS resolution times
+- **Transmission**: Response times, active torrents count
+- **Security**: IP leak detection, DNS leak detection
+
+#### Accessing Internal Metrics
+
+```bash
+# View current metrics
+docker exec transmissionvpn cat /tmp/metrics.txt
+
+# View health logs
+docker exec transmissionvpn cat /tmp/healthcheck.log
+```
 
 ### 🏗️ Advanced Integration
 
@@ -203,6 +240,17 @@ networks:
   monitoring:
     external: true
 ```
+
+### 📋 Metrics Comparison
+
+| Feature | Prometheus Exporter | Internal Health Metrics |
+|---------|-------------------|------------------------|
+| **Purpose** | External monitoring | Internal debugging |
+| **Format** | Prometheus standard | Custom text format |
+| **Access** | HTTP endpoint | File inside container |
+| **Metrics** | Transmission-focused | System health focused |
+| **Use Case** | Grafana dashboards | Troubleshooting |
+| **Default** | Disabled | Disabled |
 
 ## 🛡️ VPN Providers
 
@@ -457,6 +505,9 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `DEBUG` | Debug logging | `false` |
 | `TRANSMISSION_EXPORTER_ENABLED` | Built-in Prometheus exporter | `false` |
 | `TRANSMISSION_EXPORTER_PORT` | Metrics endpoint port | `9099` |
+| `METRICS_ENABLED` | Internal health metrics | `false` |
+| `CHECK_DNS_LEAK` | DNS leak detection | `false` |
+| `CHECK_IP_LEAK` | IP leak detection | `false` |
 | `TRANSMISSION_WEB_UI` | Alternative web UI to use | `default` |
 
 </details>
