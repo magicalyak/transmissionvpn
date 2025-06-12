@@ -12,6 +12,26 @@ An all-in-one Docker container that provides an Alpine-based Transmission Bittor
 * **ጤ Health Checked:** Automatically restarts if the VPN connection drops.
 * **dns Over-HTTPS:** Encrypts DNS queries to prevent snooping.
 
+## 🏷️ Versioning
+
+This project follows a versioning scheme aligned with the upstream [LinuxServer.io transmission releases](https://github.com/linuxserver/docker-transmission/releases):
+
+### Version Format: `4.0.6-rX`
+
+- **`4.0.6`** - Matches the upstream Transmission version from LinuxServer.io
+- **`-rX`** - Our revision number (increments with each release)
+
+### Examples:
+- `4.0.6-r1` - First release based on Transmission 4.0.6
+- `4.0.6-r2` - Second release with bug fixes/features
+- `4.0.6-r5` - Current release (documentation fixes, versioning alignment)
+
+### When We Update:
+- **Major/Minor**: When LinuxServer.io updates Transmission (e.g., `4.0.6` → `4.1.0`)
+- **Revision**: For our bug fixes, features, or documentation updates
+
+This ensures compatibility with the upstream base image while tracking our enhancements.
+
 ## 🚀 Quick Start
 
 Run the container with this command:
