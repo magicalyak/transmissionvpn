@@ -87,6 +87,8 @@ services:
 | `ENABLE_PRIVOXY` | Enable HTTP proxy | `no` | `yes` |
 | `DEBUG` | Enable debug logging | `false` | `true` |
 | `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) | `flood` |
+| `TRANSMISSION_EXPORTER_ENABLED` | Enable built-in Prometheus exporter | `false` | `true` |
+| `TRANSMISSION_EXPORTER_PORT` | Prometheus metrics port | `9099` | `9099` |
 
 ## 📁 Volumes
 
@@ -102,6 +104,7 @@ services:
 |------|----------|----------|
 | `9091` | Transmission Web UI | Yes |
 | `8118` | Privoxy HTTP proxy | No |
+| `9099` | Prometheus metrics endpoint | No |
 
 ## 🔧 Setup Instructions
 
@@ -128,59 +131,78 @@ docker-compose up -d
 
 Open <http://localhost:9091> in your browser.
 
-## 📊 Monitoring and Metrics
+## 📊 Prometheus Monitoring
 
-This project includes a built-in Prometheus exporter to expose Transmission metrics, allowing you to monitor your instance using modern observability platforms. The `transmission-exporter` service is defined in the `docker-compose.yml` and can be enabled by simply running `docker-compose up -d`.
+This container includes an **optional built-in Prometheus exporter** that exposes Transmission metrics directly from within the container. No separate services required!
 
-The metrics endpoint will be available at `http://<your_docker_host_ip>:29091/metrics`.
+### 🚀 Quick Setup
 
-### 1. Prometheus Integration
+1. **Enable the exporter** in your `.env` file:
+   ```bash
+   TRANSMISSION_EXPORTER_ENABLED=true
+   TRANSMISSION_EXPORTER_PORT=9099
+   ```
 
-Prometheus is an open-source monitoring system that collects metrics from configured targets at specified intervals.
+2. **Expose the port** in your `docker-compose.yml`:
+   ```yaml
+   ports:
+     - "9091:9091"    # Transmission Web UI
+     - "9099:9099"    # Prometheus metrics (if enabled)
+   ```
 
-**Configuration:**
+3. **Start the container**:
+   ```bash
+   docker-compose up -d
+   ```
 
-To get started, add the following scrape configuration to your `prometheus.yml` file. This tells Prometheus where to find the `transmission-exporter`.
+4. **Verify metrics** are available:
+   ```bash
+   curl http://localhost:9099/metrics
+   ```
+
+### 📈 Prometheus Configuration
+
+Add this scrape configuration to your `prometheus.yml`:
 
 ```yaml
 scrape_configs:
   - job_name: 'transmissionvpn'
     static_configs:
-      - targets: ['<your_docker_host_ip>:29091']
+      - targets: ['localhost:9099']  # or your Docker host IP
+    scrape_interval: 15s
 ```
 
-Replace `<your_docker_host_ip>` with the actual IP address of the machine running Docker.
+### 📊 Grafana Dashboards
 
-### 2. Grafana Dashboards
+Import a pre-built dashboard for Transmission metrics:
 
-Grafana is a popular open-source platform for visualizing and analyzing metrics. You can create rich, interactive dashboards to monitor your Transmission instance in real-time.
+1. **Dashboard ID**: `14355` (Transmission Dashboard)
+2. **Alternative**: `13265` (Simple Transmission Exporter)
+3. **Data Source**: Point to your Prometheus instance
 
-**Steps:**
+### 🔧 Available Metrics
 
-1. **Set up Grafana:** Install and configure a Grafana instance.
-2. **Add Prometheus Data Source:** In Grafana, add your Prometheus instance as a new data source.
-3. **Import Dashboard:** The recommended exporter `sandrotosi/simple-transmission-exporter` has a pre-built Grafana dashboard available. You can import it easily:
-    * Go to **Dashboards** -> **Import**.
-    * Enter the dashboard ID `13265` or upload the JSON file from [here](https://grafana.com/grafana/dashboards/13265-transmission-by-simple-exporter/).
-    * Select your Prometheus data source and click **Import**.
+The exporter provides comprehensive metrics including:
 
-You will now have a comprehensive dashboard showing your Transmission stats.
+- **Torrent Statistics**: Active, downloading, seeding counts
+- **Transfer Rates**: Download/upload speeds and totals  
+- **Session Info**: Uptime, version, configuration
+- **Queue Status**: Torrent queue sizes and states
 
-### 3. InfluxDB Integration
+### 🏗️ Advanced Integration
 
-InfluxDB is a time-series database designed to handle high write and query loads. You can configure InfluxDB to scrape the Prometheus endpoint directly.
+**InfluxDB v2 Scraper:**
+- **Target URL**: `http://your-host:9099/metrics`
+- **Schedule**: `1m` (or desired interval)
+- **Bucket**: Choose your metrics bucket
 
-**Configuration (InfluxDB v2):**
-
-1. **Open the InfluxDB UI.**
-2. Navigate to **Data** -> **Scrapers**.
-3. Click **Create Scraper**.
-4. **Name:** Give your scraper a name (e.g., "TransmissionVPN").
-5. **Bucket:** Choose the bucket where you want to store the metrics.
-6. **Target URL:** Enter the URL of the exporter: `http://<your_docker_host_ip>:29091/metrics`.
-7. **Schedule:** Set how often you want to scrape the metrics (e.g., every `1m`).
-
-InfluxDB will now automatically collect the metrics from the exporter. You can then build dashboards and alerts within the InfluxDB UI or connect it to Grafana as a data source.
+**Docker Networks:**
+If running Prometheus in Docker, ensure both containers are on the same network:
+```yaml
+networks:
+  monitoring:
+    external: true
+```
 
 ## 🛡️ VPN Providers
 
@@ -433,7 +455,8 @@ If you're getting "*directory does not appear to exist inside the container*" er
 |----------|-------------|---------|
 | `ENABLE_PRIVOXY` | HTTP proxy | `no` |
 | `DEBUG` | Debug logging | `false` |
-| `METRICS_ENABLED` | Metrics collection | `false` |
+| `TRANSMISSION_EXPORTER_ENABLED` | Built-in Prometheus exporter | `false` |
+| `TRANSMISSION_EXPORTER_PORT` | Metrics endpoint port | `9099` |
 | `TRANSMISSION_WEB_UI` | Alternative web UI to use | `default` |
 
 </details>

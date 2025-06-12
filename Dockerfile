@@ -41,6 +41,10 @@ ARG TRANSMISSION_WEB_UI_AUTO
 ARG HEALTH_CHECK_HOST
 ARG LOG_TO_STDOUT
 
+# Add ARG for built-in exporter
+ARG TRANSMISSION_EXPORTER_ENABLED
+ARG TRANSMISSION_EXPORTER_PORT
+
 # Set ENV from ARG
 ENV VPN_USER=$VPN_USER
 ENV VPN_PASS=$VPN_PASS
@@ -84,9 +88,23 @@ ENV TRANSMISSION_WEB_UI_AUTO=${TRANSMISSION_WEB_UI_AUTO:-}
 ENV HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
 ENV LOG_TO_STDOUT=${LOG_TO_STDOUT:-false}
 
+# Built-in Prometheus exporter settings
+ENV TRANSMISSION_EXPORTER_ENABLED=${TRANSMISSION_EXPORTER_ENABLED:-false}
+ENV TRANSMISSION_EXPORTER_PORT=${TRANSMISSION_EXPORTER_PORT:-9099}
+
 # Install OpenVPN, WireGuard, Privoxy and tools
 RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip git && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
+
+# Install transmission-exporter binary
+RUN curl -L "https://github.com/metalmatze/transmission-exporter/releases/download/v0.3.0/transmission-exporter_0.3.0_linux_amd64.tar.gz" \
+    -o /tmp/exporter.tar.gz && \
+    tar -xzf /tmp/exporter.tar.gz -C /usr/local/bin/ && \
+    rm /tmp/exporter.tar.gz && \
+    chmod +x /usr/local/bin/transmission-exporter
+
+# Expose metrics port
+EXPOSE 9099
 
 # Copy s6-overlay init scripts
 COPY root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
@@ -101,12 +119,19 @@ COPY root/healthcheck.sh /root/healthcheck.sh
 # Copy Privoxy configuration template and s6 service files
 COPY config/privoxy/config /etc/privoxy/config.template
 COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
+
+# Copy transmission-exporter s6 service
+COPY root_s6/transmission-exporter/run /etc/s6-overlay/s6-rc.d/transmission-exporter/run
+
+# Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \
-    touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy
+    echo "longrun" > /etc/s6-overlay/s6-rc.d/transmission-exporter/type && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/transmission-exporter
 
 # Make scripts executable
-RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run
+RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/transmission-exporter/run
 
 # Healthcheck
 HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \
