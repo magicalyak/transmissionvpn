@@ -508,7 +508,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `METRICS_ENABLED` | Internal health metrics | `false` |
 | `CHECK_DNS_LEAK` | DNS leak detection | `false` |
 | `CHECK_IP_LEAK` | IP leak detection | `false` |
-| `TRANSMISSION_WEB_UI` | Alternative web UI to use | `default` |
+| `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) |
 
 </details>
 
