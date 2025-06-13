@@ -12,18 +12,20 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # TransmissionVPN metrics (built-in exporter)
-  - job_name: 'transmissionvpn-exporter'
+  # TransmissionVPN built-in metrics exporter
+  - job_name: 'transmissionvpn'
     static_configs:
-      - targets: ['transmissionvpn:9099']  # Use container name, not localhost
+      - targets: ['transmissionvpn:9099']  # Use container name if on same network
+      # - targets: ['host.docker.internal:9099']  # Use this if containers on different networks
     scrape_interval: 15s
     scrape_timeout: 10s
     metrics_path: /metrics
 
-  # TransmissionVPN health checks
+  # TransmissionVPN health metrics (VPN status, container health)
   - job_name: 'transmissionvpn-health'
     static_configs:
-      - targets: ['transmissionvpn:8080']  # Separate health endpoint
+      - targets: ['health-metrics:8080']  # Health metrics service
+      # - targets: ['host.docker.internal:8080']  # Use this if running externally
     scrape_interval: 30s
     scrape_timeout: 10s
     metrics_path: /metrics

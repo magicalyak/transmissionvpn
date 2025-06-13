@@ -1,10 +1,8 @@
 #!/bin/bash
 
-# Enhanced healthcheck script for transmissionvpn - FIXED VERSION
+# Enhanced healthcheck script for transmissionvpn
 # Provides comprehensive monitoring of VPN, Transmission, and network connectivity
 # Exit codes: 0=success, 1=transmission_down, 2=vpn_interface_down, 3=vpn_interface_missing, 4=vpn_connectivity_failed, 5=dns_failed, 6=ip_leak_detected
-#
-# BUG FIX: Modified log function to prevent debug output from interfering with function return values
 
 set -e
 
@@ -17,15 +15,13 @@ HEALTH_LOG_FILE="/tmp/healthcheck.log"
 METRICS_FILE="/tmp/metrics.txt"
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
 
-# FIXED: Logging function that only outputs to stderr and log file, not stdout
-# This prevents debug output from interfering with function return values
+# Logging function
 log() {
     local level="$1"
     shift
     local message="$*"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    # Output to stderr and log file, but NOT stdout to avoid interfering with function returns
-    echo "[$timestamp] [$level] $message" | tee -a "$HEALTH_LOG_FILE" >&2
+    echo "[$timestamp] [$level] $message" | tee -a "$HEALTH_LOG_FILE"
 }
 
 # Metrics function
@@ -87,24 +83,24 @@ check_transmission() {
     fi
 }
 
-# FIXED: Function to determine VPN interface - now properly isolates return value from debug output
+# Function to determine VPN interface
 get_vpn_interface() {
     local vpn_if=""
     
-    if [ -f "$VPN_INTERFACE_FILE" ]; then
+if [ -f "$VPN_INTERFACE_FILE" ]; then
         vpn_if=$(cat "$VPN_INTERFACE_FILE")
         log "DEBUG" "VPN interface from file: $vpn_if"
-    else
+else
         log "WARN" "VPN interface file not found, attempting to detect..."
         
         # Try to detect VPN interface
-        if ip link show wg0 &> /dev/null; then
+  if ip link show wg0 &> /dev/null; then
             vpn_if="wg0"
             log "DEBUG" "Detected WireGuard interface: wg0"
-        elif ip link show tun0 &> /dev/null; then
+  elif ip link show tun0 &> /dev/null; then
             vpn_if="tun0"
             log "DEBUG" "Detected OpenVPN interface: tun0"
-        else
+  else
             # Try to find any tun/wg interface
             for iface in $(ip link show | grep -E "(tun|wg)" | cut -d: -f2 | tr -d ' '); do
                 if [ -n "$iface" ]; then
@@ -121,7 +117,6 @@ get_vpn_interface() {
         fi
     fi
     
-    # Return the interface name to stdout (this is what gets captured by the caller)
     echo "$vpn_if"
 }
 
@@ -185,14 +180,14 @@ check_vpn_connectivity() {
 
 # Function to check DNS resolution
 check_dns() {
-    log "DEBUG" "Checking DNS resolution..."
+    log_info "Checking DNS resolution..."
     local dns_start_time
     dns_start_time=$(date +%s%N)
     if getent hosts "$HEALTH_CHECK_HOST" >/dev/null; then
         local dns_end_time
         dns_end_time=$(date +%s%N)
         local dns_duration=$(( (dns_end_time - dns_start_time) / 1000000 ))
-        log "INFO" "DNS resolution for $HEALTH_CHECK_HOST is working (${dns_duration}ms)."
+        log_success "DNS resolution for $HEALTH_CHECK_HOST is working (${dns_duration}ms)."
         record_metric "dns_resolution_status" "1"
         record_metric "dns_resolution_time_ms" "$dns_duration"
         return 0
@@ -379,4 +374,4 @@ main() {
 }
 
 # Run main function
-main "$@" 
+main "$@"

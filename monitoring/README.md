@@ -1,237 +1,186 @@
-# TransmissionVPN Monitoring Setup
+# TransmissionVPN Monitoring
 
-This directory contains a complete monitoring stack for TransmissionVPN using Prometheus and Grafana.
+Monitoring solutions for TransmissionVPN - from simple single-container to full Prometheus/Grafana stack.
 
-## 🚨 Troubleshooting Common Issues
+## 🎯 **Single Container Setup (Recommended)**
 
-### Issue: Prometheus Can't Scrape Metrics
+**Perfect for users who want health monitoring without additional containers.**
 
-**Symptoms:**
-- Prometheus targets show as "down"
-- `curl localhost:9099/metrics` fails
-- Health checks showing all 0 values
-
-**Root Causes & Solutions:**
-
-#### 1. **METRICS_ENABLED=false** (Most Common)
+### **Quick Setup**
 ```bash
-# Check your transmission.env file
-grep METRICS_ENABLED /opt/containerd/env/transmission.env
+# 1. Enable built-in health metrics
+echo "METRICS_ENABLED=true" >> /opt/containerd/env/transmission.env
+docker restart transmission
 
-# Should be:
-METRICS_ENABLED=true
-TRANSMISSION_EXPORTER_ENABLED=true
+# 2. View health status
+docker exec transmission /root/healthcheck.sh
+docker exec transmission cat /tmp/metrics.txt
+
+# 3. Optional: Run health bridge for HTTP access
+python3 scripts/health-bridge.py
+# Access: http://localhost:8080/metrics
 ```
 
-#### 2. **Network Connectivity Issues**
+📖 **[Complete Single Container Guide →](docs/single-container-guide.md)**
+
+---
+
+## 🚀 **Full Monitoring Stack (Advanced)**
+
+**For users who want comprehensive monitoring with Prometheus and Grafana.**
+
+### **Quick Start**
 ```bash
-# Wrong: Using localhost in Prometheus config
-- targets: ['localhost:9099']
-
-# Correct: Using container name
-- targets: ['transmissionvpn:9099']
+cd monitoring/docker-compose
+docker-compose up -d
 ```
 
-#### 3. **Container Not Exposing Metrics**
+**Access:**
+- **Grafana**: http://localhost:3000 (admin/admin)
+- **Prometheus**: http://localhost:9090
+- **TransmissionVPN**: http://localhost:9091
+
+The dashboard is automatically loaded in Grafana with transmission metrics!
+
+## 📁 Directory Structure
+
+```
+monitoring/
+├── README.md                           # This guide
+├── scripts/                            # Health monitoring scripts
+│   ├── health-bridge.py                # Single-container health bridge
+│   └── README.md                       # Scripts documentation
+├── docs/                               # Documentation
+│   ├── single-container-guide.md       # Single container setup
+│   ├── single-container-setup.md       # Alternative setup guide
+│   └── single-container-instructions.md # Step-by-step instructions
+└── docker-compose/                     # Full monitoring stack
+    ├── docker-compose.yml              # Complete monitoring stack
+    ├── prometheus.yml                  # Prometheus configuration
+    └── grafana/                        # Grafana configuration
+        ├── dashboards/
+        │   └── transmissionvpn-dashboard.json
+        └── provisioning/
+            ├── datasources/prometheus.yml
+            └── dashboards/dashboard.yml
+```
+
+## 📊 Dashboard Features
+
+- **📈 Real-time Transfer Speeds** (download/upload)
+- **📊 Torrent Statistics** (total, active, paused)
+- **💾 System Info** (disk usage, free space)
+- **📈 Transfer History** (cumulative and session stats)
+- **🎨 Clean, responsive design**
+
+## 🔧 Prerequisites
+
+Your TransmissionVPN container needs these environment variables:
+
 ```bash
-# Check if metrics endpoint is responding
-curl -s http://localhost:9099/metrics | head -10
-
-# Should return Prometheus-formatted metrics starting with transmission_
-```
-
-## 🔧 Quick Fix Script
-
-Run our troubleshooting script to diagnose and fix issues:
-
-```bash
-cd monitoring
-chmod +x fix-prometheus-issues.sh
-./fix-prometheus-issues.sh
-```
-
-## 📊 Monitoring Architecture
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ TransmissionVPN │    │    Prometheus    │    │     Grafana     │
-│                 │    │                  │    │                 │
-│ Built-in        │───▶│ Scrapes metrics  │───▶│ Visualizes data │
-│ Exporter :9099  │    │ every 15s        │    │ Dashboards      │
-│                 │    │                  │    │                 │
-│ Health checks   │    │ Stores time      │    │ Alerts          │
-│ Internal metrics│    │ series data      │    │                 │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-```
-
-## 🚀 Quick Start
-
-### 1. **Fix TransmissionVPN Configuration**
-
-Edit your `/opt/containerd/env/transmission.env`:
-
-```bash
-# Enable metrics (REQUIRED)
+# Required for transmission metrics
 TRANSMISSION_EXPORTER_ENABLED=true
 TRANSMISSION_EXPORTER_PORT=9099
-METRICS_ENABLED=true
 
-# Enable health monitoring
+# Optional for enhanced health monitoring (single container)
+METRICS_ENABLED=true
 CHECK_DNS_LEAK=true
 CHECK_IP_LEAK=true
-HEALTH_CHECK_HOST=8.8.8.8
-```
-
-### 2. **Start Monitoring Stack**
-
-```bash
-# Navigate to monitoring directory
-cd monitoring
-
-# Start Prometheus + Grafana
-docker-compose up -d
-
-# Check logs
-docker-compose logs -f
-```
-
-### 3. **Restart TransmissionVPN**
-
-```bash
-# Restart to apply new configuration
-docker restart transmission
-```
-
-### 4. **Verify Setup**
-
-```bash
-# Check metrics endpoint
-curl http://localhost:9099/metrics | grep transmission_
-
-# Check Prometheus targets
-curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | select(.labels.job | contains("transmission"))'
-
-# Access Grafana
-open http://localhost:3000
-# Login: admin/admin
 ```
 
 ## 📈 Available Metrics
 
-### Built-in Prometheus Exporter
-- **Torrent Statistics**: Active, downloading, seeding counts
-- **Transfer Rates**: Download/upload speeds and totals
-- **Session Info**: Uptime, version, configuration
-- **Queue Status**: Torrent queue sizes and states
+### Transmission Core Metrics (Always Available)
+- `transmission_session_stats_download_speed_bytes` - Current download speed
+- `transmission_session_stats_upload_speed_bytes` - Current upload speed
+- `transmission_session_stats_torrents_total` - Total number of torrents
+- `transmission_session_stats_torrents_active` - Currently active torrents
+- `transmission_session_stats_torrents_paused` - Paused torrents
 
-### Internal Health Metrics
-- **System Health**: CPU, memory, disk usage
-- **VPN Status**: Interface status, connectivity, ping times
-- **Network**: Total RX/TX bytes, DNS resolution times
-- **Security**: IP leak detection, DNS leak detection
+### Transfer Statistics
+- `transmission_session_stats_downloaded_bytes{type="cumulative"}` - All-time downloads
+- `transmission_session_stats_uploaded_bytes{type="cumulative"}` - All-time uploads
+- `transmission_session_stats_downloaded_bytes{type="current"}` - Session downloads
+- `transmission_session_stats_uploaded_bytes{type="current"}` - Session uploads
 
-## 🎯 Prometheus Targets
+### System Metrics
+- `transmission_free_space` - Available disk space
+- `transmission_cache_size_bytes` - Cache memory usage
+- `transmission_version` - Transmission version info
+- `transmission_global_peer_limit` - Maximum global peers
+- `transmission_speed_limit_down_bytes` - Download speed limit
+- `transmission_speed_limit_up_bytes` - Upload speed limit
 
-Your `prometheus.yml` should target:
-
-```yaml
-scrape_configs:
-  # Built-in metrics exporter
-  - job_name: 'transmissionvpn-exporter'
-    static_configs:
-      - targets: ['transmissionvpn:9099']
-    scrape_interval: 15s
-
-  # Health metrics (if using external server)
-  - job_name: 'transmissionvpn-health'
-    static_configs:
-      - targets: ['host.docker.internal:8081']
-    metrics_path: '/prometheus'
+**View all metrics:**
+```bash
+# Transmission metrics
+curl http://localhost:9099/metrics | grep transmission_
 ```
 
-## 🔍 Debugging Commands
+## 🚨 Troubleshooting
+
+### No metrics showing?
+
+**Quick fix:**
+```bash
+cd monitoring/scripts
+chmod +x quick-network-fix.sh
+./quick-network-fix.sh
+```
+
+**Common issues:**
+1. **Missing env vars**: Add `TRANSMISSION_EXPORTER_ENABLED=true` to your `.env` file
+2. **Network isolation**: Containers on different Docker networks
+3. **Port conflicts**: Port 9099 not exposed or in use
+
+### Comprehensive diagnostics:
+```bash
+cd monitoring/scripts
+chmod +x fix-prometheus-issues.sh
+./fix-prometheus-issues.sh
+```
+
+## 🎯 Setup Options
+
+### Option 1: Single Container (Recommended)
+Perfect for most users - no additional containers needed:
 
 ```bash
-# Check container networking
-docker network ls
-docker inspect transmission | grep -A 10 Networks
+# Enable health metrics in your existing container
+echo "METRICS_ENABLED=true" >> /opt/containerd/env/transmission.env
+docker restart transmission
 
-# Test connectivity between containers
-docker exec prometheus wget -qO- http://transmissionvpn:9099/metrics
+# Optional: Run health bridge for HTTP access
+python3 monitoring/scripts/health-bridge.py
+```
 
-# Check Prometheus configuration
-docker exec prometheus cat /etc/prometheus/prometheus.yml
+### Option 2: Full Monitoring Stack
+Includes Prometheus and Grafana for advanced monitoring:
 
-# View Prometheus targets
-curl http://localhost:9090/api/v1/targets | jq .
+```bash
+# Start full monitoring stack
+cd monitoring/docker-compose
+docker-compose up -d
+```
 
-# Check container logs
-docker logs transmission | grep -i metrics
+## 🔗 Useful Commands
+
+```bash
+# Check Prometheus targets
+curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | select(.labels.job | contains("transmission")) | .health'
+
+# Test metrics endpoints
+curl http://localhost:9099/metrics | head -10  # Transmission metrics
+
+# View container logs
+docker logs transmission | grep -i metric
 docker logs prometheus | grep -i transmission
+docker logs grafana
 ```
 
-## 📋 Grafana Dashboard Setup
+## 🆘 Need Help?
 
-1. **Access Grafana**: http://localhost:3000 (admin/admin)
-2. **Import Dashboard**: 
-   - Dashboard ID: `14355` (Transmission Dashboard)
-   - Or ID: `13265` (Simple Transmission Exporter)
-3. **Select Prometheus Datasource**
-4. **Customize panels** as needed
-
-## 🛠️ Troubleshooting Checklist
-
-- [ ] `TRANSMISSION_EXPORTER_ENABLED=true` in env file
-- [ ] `METRICS_ENABLED=true` in env file  
-- [ ] Port 9099 exposed in docker run/compose
-- [ ] Prometheus targets use container names, not localhost
-- [ ] Containers on same Docker network
-- [ ] Firewall allows port 9099
-- [ ] TransmissionVPN container is healthy
-- [ ] Metrics endpoint returns data: `curl localhost:9099/metrics`
-
-## 📚 Advanced Configuration
-
-### Multiple Metrics Approaches
-
-You can use both built-in and external metrics:
-
-```yaml
-# Built-in exporter (recommended)
-- job_name: 'transmissionvpn-builtin'
-  static_configs:
-    - targets: ['transmissionvpn:9099']
-
-# External health server
-- job_name: 'transmissionvpn-health'
-  static_configs:
-    - targets: ['host.docker.internal:8081']
-  metrics_path: '/prometheus'
-```
-
-### Custom Metrics Collection
-
-```bash
-# Enable all monitoring features
-TRANSMISSION_EXPORTER_ENABLED=true
-METRICS_ENABLED=true
-CHECK_DNS_LEAK=true
-CHECK_IP_LEAK=true
-HEALTH_CHECK_HOST=1.1.1.1
-```
-
-## 🆘 Getting Help
-
-If you're still having issues:
-
-1. **Run the troubleshooter**: `./fix-prometheus-issues.sh`
-2. **Check logs**: `docker logs transmission | grep -i metric`
-3. **Verify network**: `docker network inspect transmissionvpn_default`
-4. **Test endpoints**: `curl -v http://localhost:9099/metrics`
-
-## 🔗 Useful Links
-
-- [Prometheus Documentation](https://prometheus.io/docs/)
-- [Grafana Documentation](https://grafana.com/docs/)
-- [Transmission Exporter](https://github.com/metalmatze/transmission-exporter)
-- [Docker Networking](https://docs.docker.com/network/) 
+1. **Single Container Issues**: See [Single Container Guide](docs/single-container-guide.md)
+2. **Run diagnostics**: `./scripts/fix-prometheus-issues.sh`
+3. **Check container status**: `docker ps`
+4. **Test connectivity**: `curl -v http://localhost:9099/metrics` 
