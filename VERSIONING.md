@@ -25,6 +25,7 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.0.6-r9` - Critical kill switch fix: Allow VPN server traffic before applying kill switch
 - `v4.0.6-r8` - Fix VPN connection and health check bugs, restructure monitoring
 - `v4.0.6-r7` - Previous release
 - `v4.0.6-r6` - Previous release
