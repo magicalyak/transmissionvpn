@@ -556,6 +556,18 @@ fi
 
 # All other OUTPUT traffic must go through VPN interface or be dropped
 iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
+
+# KILL SWITCH FIX: Allow OpenVPN traffic to VPN server before applying kill switch
+# Extract VPN server from config and allow traffic to it
+if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$OVPN_CONFIG_FILE" ]; then
+  VPN_SERVER=$(grep '^remote ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $2}')
+  VPN_PORT=$(grep '^remote ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $3}')
+  if [ -n "$VPN_SERVER" ] && [ -n "$VPN_PORT" ]; then
+    echo "[INFO] Adding kill switch exception for VPN server $VPN_SERVER:$VPN_PORT"
+    iptables -A OUTPUT -o eth0 -d "$VPN_SERVER" -p udp --dport "$VPN_PORT" -j ACCEPT
+  fi
+fi
+
 iptables -A OUTPUT -o eth0 -j DROP # Drop if trying to go out eth0 and not LAN/PBR
 # Could also be more strict: iptables -A OUTPUT ! -o "$VPN_INTERFACE" -j DROP
 # but the above allows things like established connections already handled.
