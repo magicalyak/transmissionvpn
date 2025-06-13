@@ -24,7 +24,7 @@ This project follows a versioning scheme aligned with the upstream [LinuxServer.
 ### Examples:
 - `4.0.6-r1` - First release based on Transmission 4.0.6
 - `4.0.6-r2` - Second release with bug fixes/features
-- `4.0.6-r6` - Current release (workflow support, documentation fixes, versioning alignment)
+- `4.0.6-r7` - Current release (comprehensive monitoring stack, Prometheus fixes, troubleshooting tools)
 
 ### When We Update:
 - **Major/Minor**: When LinuxServer.io updates Transmission (e.g., `4.0.6` → `4.1.0`)

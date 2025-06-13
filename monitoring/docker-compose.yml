@@ -16,9 +16,17 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=1y'
       - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
     restart: unless-stopped
     networks:
       - transmissionvpn_default
+    depends_on:
+      - transmissionvpn
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   grafana:
     image: grafana/grafana:11.0.0
@@ -27,11 +35,44 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
     restart: unless-stopped
     networks:
       - transmissionvpn_default
+    depends_on:
+      - prometheus
+
+  # TransmissionVPN service (if not already running)
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    env_file:
+      - ../transmission.env
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun     
+    ports:
+      - "9091:9091"    # Transmission Web UI
+      - "8118:8118"    # Privoxy HTTP proxy
+      - "9099:9099"    # Prometheus metrics
+    volumes:
+      - ../config:/config
+      - ../downloads:/downloads
+      - ../watch:/watch
+    restart: unless-stopped
+    networks:
+      - transmissionvpn_default
+    healthcheck:
+      test: ["CMD", "/root/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   prometheus-data:
@@ -39,5 +80,5 @@ volumes:
 
 networks:
   transmissionvpn_default:
-    external: true
-    name: transmissionvpn_default 
+    name: transmissionvpn_default
+    driver: bridge 

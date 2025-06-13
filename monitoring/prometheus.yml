@@ -2,13 +2,36 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  # Add any rule files here
+  # - "alert-rules.yml"
+
 scrape_configs:
+  # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'transmissionvpn'
+  # TransmissionVPN metrics (built-in exporter)
+  - job_name: 'transmissionvpn-exporter'
     static_configs:
-      - targets: ['transmissionvpn:9099']
+      - targets: ['transmissionvpn:9099']  # Use container name, not localhost
     scrape_interval: 15s
-    metrics_path: /metrics 
+    scrape_timeout: 10s
+    metrics_path: /metrics
+
+  # TransmissionVPN health checks
+  - job_name: 'transmissionvpn-health'
+    static_configs:
+      - targets: ['transmissionvpn:8080']  # Separate health endpoint
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+
+  # If you're still running external metrics server
+  - job_name: 'transmissionvpn-external'
+    static_configs:
+      - targets: ['host.docker.internal:8081']  # For external server on host
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /prometheus 
