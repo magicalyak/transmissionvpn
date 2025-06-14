@@ -43,9 +43,11 @@ services:
     # Restart policy
     restart: unless-stopped
     
-    # Optional: Health check
+    # Smart health check - monitors both Transmission AND VPN with grace period
+    # Use /root/healthcheck-smart.sh (recommended), /root/healthcheck-fixed.sh (Transmission-only), 
+    # or /root/healthcheck.sh (strict VPN monitoring)
     healthcheck:
-      test: ["CMD", "/root/healthcheck.sh"]
+      test: ["CMD", "/root/healthcheck-smart.sh"]
       interval: 30s
       timeout: 10s
       retries: 3

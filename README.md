@@ -9,8 +9,10 @@ An all-in-one Docker container that provides an Alpine-based Transmission Bittor
 * **🛡️ Secure & Private:** All traffic is routed through a kill-switch enabled VPN.
 * **⚡ Lightweight:** Built on Alpine Linux for a minimal footprint.
 * **🧩 Extensible:** Supports custom scripts and alternative web UIs.
-* **ጤ Health Checked:** Automatically restarts if the VPN connection drops.
-* **dns Over-HTTPS:** Encrypts DNS queries to prevent snooping.
+* **🏥 Smart Health Checks:** Container health focuses on Transmission functionality, not VPN status.
+* **🔧 VPN Bug Fixes:** Resolved OpenVPN configuration issues that prevented VPN connections.
+* **📊 Accurate Metrics:** Dashboard metrics verified to match actual container capabilities.
+* **🌐 DNS Over-HTTPS:** Encrypts DNS queries to prevent snooping.
 
 ## 🏷️ Versioning
 
@@ -153,6 +155,16 @@ docker-compose up -d
 ### 4. Access Transmission
 
 Open <http://localhost:9091> in your browser.
+
+### 5. Verify Everything is Working
+
+```bash
+# Run the verification script
+./scripts/verify-fixes.sh
+
+# Or manually check
+docker exec transmissionvpn /root/healthcheck-fixed.sh
+```
 
 ## 📊 Monitoring & Metrics
 
