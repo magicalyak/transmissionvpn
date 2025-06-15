@@ -100,19 +100,16 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            # For version tags like v4.0.6-r11, create multiple tag formats
-            type=match,pattern=v(.*),group=1
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # Handle custom versioning format like v4.0.6-r11
-            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=schedule,pattern={{date 'YYYYMMDD'}}
-            type=sha,prefix={{branch}}-
+            # Only create clean version tags for releases
+            type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Latest tag only for version tag releases
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Stable tag for version tags
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          flavor: |
+            # Don't auto-generate latest tag
+            latest=false
           labels: |
             org.opencontainers.image.title=transmissionvpn
             org.opencontainers.image.description=Transmission with VPN integration - Multi-architecture support
@@ -124,6 +121,52 @@ jobs:
             org.opencontainers.image.created=${{ steps.meta.outputs.created }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
 
+      - name: Debug metadata output
+        run: |
+          echo "🔍 Debug Information:"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref type: ${{ github.ref_type }}"
+          echo "Version: ${{ steps.meta.outputs.version }}"
+          echo "Generated tags:"
+          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n' | sed 's/^/  - /'
+          echo "JSON output:"
+          echo '${{ steps.meta.outputs.json }}'
+
+      - name: Validate generated tags
+        run: |
+          echo "🔍 Validating generated tags for invalid references..."
+          TAGS='${{ steps.meta.outputs.tags }}'
+          
+          # Check for empty tags
+          if [[ -z "$TAGS" ]]; then
+            echo "❌ ERROR: No tags generated!"
+            exit 1
+          fi
+          
+          # Split tags and validate each one
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            # Remove registry prefix for validation
+            tag_name=$(echo "$tag" | sed 's/.*://')
+            
+            # Check for empty tag names
+            if [[ -z "$tag_name" ]]; then
+              echo "❌ ERROR: Empty tag name found in: $tag"
+              exit 1
+            fi
+            
+            # Check for invalid characters (Docker tag validation)
+            if [[ ! "$tag_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+              echo "❌ ERROR: Invalid tag format: $tag_name (contains invalid characters)"
+              exit 1
+            fi
+            
+            echo "✅ Valid tag: $tag"
+          done
+          
+          echo "✅ All tags validated successfully!"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -133,7 +176,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY_DOCKERHUB }}
@@ -164,7 +207,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          outputs: type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          outputs: type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}
           cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
           build-args: |
@@ -189,7 +232,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
     
     steps:
       - name: Download digests
@@ -210,19 +253,62 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            # For version tags like v4.0.6-r11, create multiple tag formats
-            type=match,pattern=v(.*),group=1
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # Handle custom versioning format like v4.0.6-r11
-            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=schedule,pattern={{date 'YYYYMMDD'}}
-            type=sha,prefix={{branch}}-
+            # Only create clean version tags for releases
+            type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Latest tag only for version tag releases
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Stable tag for version tags
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          flavor: |
+            # Don't auto-generate latest tag
+            latest=false
+
+      - name: Debug merge metadata output
+        run: |
+          echo "🔍 Merge Job Debug Information:"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref type: ${{ github.ref_type }}"
+          echo "Version: ${{ steps.meta.outputs.version }}"
+          echo "Generated tags:"
+          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n' | sed 's/^/  - /'
+          echo "JSON output:"
+          echo '${{ steps.meta.outputs.json }}'
+
+      - name: Validate merge job tags
+        run: |
+          echo "🔍 Validating merge job tags for invalid references..."
+          TAGS='${{ steps.meta.outputs.tags }}'
+          
+          # Check for empty tags
+          if [[ -z "$TAGS" ]]; then
+            echo "❌ ERROR: No tags generated in merge job!"
+            exit 1
+          fi
+          
+          # Split tags and validate each one
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            # Remove registry prefix for validation
+            tag_name=$(echo "$tag" | sed 's/.*://')
+            
+            # Check for empty tag names
+            if [[ -z "$tag_name" ]]; then
+              echo "❌ ERROR: Empty tag name found in merge job: $tag"
+              exit 1
+            fi
+            
+            # Check for invalid characters (Docker tag validation)
+            if [[ ! "$tag_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+              echo "❌ ERROR: Invalid tag format in merge job: $tag_name (contains invalid characters)"
+              exit 1
+            fi
+            
+            echo "✅ Valid merge tag: $tag"
+          done
+          
+          echo "✅ All merge job tags validated successfully!"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -241,14 +327,53 @@ jobs:
       - name: Create manifest list and push to Docker Hub
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map(select(contains("docker.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          echo "🔍 Creating Docker Hub manifest..."
+          
+          # Validate JSON output exists
+          if [[ -z "$DOCKER_METADATA_OUTPUT_JSON" ]]; then
+            echo "❌ ERROR: DOCKER_METADATA_OUTPUT_JSON is empty!"
+            exit 1
+          fi
+          
+          echo "Metadata JSON:"
+          echo "$DOCKER_METADATA_OUTPUT_JSON" | jq '.'
+          
+          # Extract Docker Hub tags safely
+          DOCKERHUB_TAGS=$(echo "$DOCKER_METADATA_OUTPUT_JSON" | jq -cr '.tags | map(select(contains("docker.io")) | "-t " + .) | join(" ")')
+          
+          if [[ -z "$DOCKERHUB_TAGS" || "$DOCKERHUB_TAGS" == "null" ]]; then
+            echo "❌ ERROR: No Docker Hub tags found!"
+            exit 1
+          fi
+          
+          echo "Docker Hub tags to create: $DOCKERHUB_TAGS"
+          
+          # Create manifest
+          docker buildx imagetools create $DOCKERHUB_TAGS \
             $(printf '${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Create manifest list and push to GHCR
         working-directory: /tmp/digests
         run: |
-          # Create tags for GHCR
-          GHCR_TAGS=$(jq -cr '.tags | map(select(contains("ghcr.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          echo "🔍 Creating GHCR manifest..."
+          
+          # Validate JSON output exists
+          if [[ -z "$DOCKER_METADATA_OUTPUT_JSON" ]]; then
+            echo "❌ ERROR: DOCKER_METADATA_OUTPUT_JSON is empty for GHCR!"
+            exit 1
+          fi
+          
+          # Extract GHCR tags safely
+          GHCR_TAGS=$(echo "$DOCKER_METADATA_OUTPUT_JSON" | jq -cr '.tags | map(select(contains("ghcr.io")) | "-t " + .) | join(" ")')
+          
+          if [[ -z "$GHCR_TAGS" || "$GHCR_TAGS" == "null" ]]; then
+            echo "⚠️ WARNING: No GHCR tags found, skipping GHCR push"
+            exit 0
+          fi
+          
+          echo "GHCR tags to create: $GHCR_TAGS"
+          
+          # Create GHCR manifest
           docker buildx imagetools create $GHCR_TAGS \
             $(printf '${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
@@ -261,7 +386,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - merge
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         platform:
@@ -289,19 +414,16 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            # For version tags like v4.0.6-r11, create multiple tag formats
-            type=match,pattern=v(.*),group=1
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # Handle custom versioning format like v4.0.6-r11
-            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=schedule,pattern={{date 'YYYYMMDD'}}
-            type=sha,prefix={{branch}}-
+            # Only create clean version tags for releases
+            type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Latest tag only for version tag releases
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Stable tag for version tags
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          flavor: |
+            # Don't auto-generate latest tag
+            latest=false
 
       - name: Debug metadata output
         run: |
@@ -337,7 +459,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - merge
-    if: github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
       - name: Checkout repository
@@ -358,19 +480,16 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            # For version tags like v4.0.6-r11, create multiple tag formats
-            type=match,pattern=v(.*),group=1
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            # Handle custom versioning format like v4.0.6-r11
-            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=schedule,pattern={{date 'YYYYMMDD'}}
-            type=sha,prefix={{branch}}-
+            # Only create clean version tags for releases
+            type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Latest tag only for version tag releases
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Stable tag for version tags
+            type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          flavor: |
+            # Don't auto-generate latest tag
+            latest=false
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -390,7 +509,7 @@ jobs:
     needs:
       - merge
       - test-multiarch
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
       - name: Checkout repository

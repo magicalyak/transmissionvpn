@@ -5,49 +5,175 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.6-r7] - 2024-12-19
+## [4.0.6-r14] - 2024-01-XX
 
 ### Added
-- **Comprehensive Monitoring Stack**: Complete Prometheus + Grafana monitoring solution
-- **Automated Troubleshooting**: `fix-prometheus-issues.sh` script for diagnosing monitoring problems
-- **Enhanced Prometheus Configuration**: Fixed container networking and scraping targets
-- **Grafana Provisioning**: Automatic datasource and dashboard configuration
-- **Monitoring Documentation**: Complete setup guide with troubleshooting steps
-- **Health Metrics Integration**: Improved internal health metrics collection
-- **Network Connectivity Fixes**: Proper Docker container networking for metrics
+- **InfluxDB2 Monitoring Stack**: Complete InfluxDB2 integration with Telegraf and Grafana
+- **Advanced Time-Series Analytics**: 365-day data retention with Flux query language
+- **Comprehensive System Monitoring**: CPU, memory, disk, network, and Docker metrics
+- **Beautiful Pre-built Dashboards**: Two modern Grafana dashboards with visualizations
+- **Enhanced Health Endpoint**: Comprehensive system info similar to nzbgetvpn
+- **Dual Monitoring Options**: Prometheus (simple) + InfluxDB2 (advanced) stacks
+- **Platform Information**: Detailed OS and hardware information collection
+- **VPN Interface Statistics**: Packet counters, DNS servers, and connection stats
+- **Container Information**: Environment variables and configuration details
+- **Session Statistics**: Current and cumulative transfer data
+
+### Enhanced
+- **Health Endpoint Response**: Now includes platform, CPU, network interfaces, VPN stats
+- **Transmission Status**: Added version, port test, protocol settings (DHT, PEX, UTP)
+- **System Monitoring**: Added psutil dependency for comprehensive metrics
+- **Network Detection**: Automatic VPN interface identification
+- **Memory Monitoring**: Breakdown including buffers and cached memory
+- **Documentation**: Comprehensive monitoring guides with stack comparison
 
 ### Fixed
-- **Prometheus Scraping Issues**: Fixed `localhost` vs container name targeting
+- **Variable Consistency**: Updated all TRANSMISSION_EXPORTER_* to METRICS_* variables
+- **Monitoring Scripts**: Fixed references to old variable names
+- **Error Handling**: Improved health endpoint error handling
+- **Network Detection**: Enhanced VPN interface detection logic
+
+## [4.0.6-r13] - 2024-01-XX
+
+### Added
+- **Enhanced Health Monitoring**: Comprehensive JSON health endpoint similar to nzbgetvpn
+- **System Information Collection**: Hostname, uptime, load average, memory, disk usage
+- **VPN Status Monitoring**: Interface detection, IP addresses, external IP verification
+- **Transmission Health Checks**: Daemon status, web UI accessibility, RPC connectivity
+- **Multiple Health Endpoints**: `/health` (JSON), `/health/simple` (text)
+- **Issue Detection**: Automatic detection of critical issues and warnings
+
+### Enhanced
+- **Metrics Server**: Updated with comprehensive health data collection
+- **Status Determination**: Intelligent status calculation (healthy/degraded/unhealthy/error)
+- **Response Times**: Added response time measurement for health checks
+- **External IP Detection**: Configurable external IP service
+
+### Fixed
+- **Health Check Logic**: Improved reliability of health status determination
+- **Error Handling**: Better error handling in health data collection
+- **Network Connectivity**: Enhanced external IP detection with timeout handling
+
+## [4.0.6-r12] - 2024-01-XX
+
+### Added
+- **Built-in Custom Metrics Server**: Python-based metrics server replacing transmission-exporter
+- **Enhanced Health Monitoring**: Comprehensive health checks with detailed status reporting
+- **Prometheus Integration**: Native Prometheus metrics endpoint at `/metrics`
+- **Health Endpoints**: JSON health data at `/health` and simple check at `/health/simple`
+- **VPN Monitoring**: VPN interface detection and connectivity monitoring
+- **System Metrics**: Disk usage, memory, and system health metrics
+
+### Enhanced
+- **Container Architecture**: Single container solution with built-in monitoring
+- **Port Management**: Consolidated metrics on port 9099
+- **Environment Variables**: Simplified configuration with METRICS_* variables
+- **Documentation**: Updated monitoring setup guides
+
+### Removed
+- **External transmission-exporter**: Replaced with built-in solution
+- **Complex Multi-container Setup**: Simplified to single container architecture
+
+### Fixed
 - **Metrics Collection**: Resolved `METRICS_ENABLED=false` causing empty metrics
-- **Container Networking**: Fixed connectivity between Prometheus and TransmissionVPN containers
-- **Health Check Accuracy**: Improved health check reliability and reporting
-- **Documentation Accuracy**: Updated monitoring setup instructions
+- **Port Conflicts**: Eliminated conflicts between different metrics solutions
+- **Health Check Reliability**: Improved health check accuracy and performance
 
-### Changed
-- **Monitoring Architecture**: Streamlined built-in vs external metrics approach
-- **Prometheus Targets**: Updated configuration to use proper container names
-- **Docker Compose**: Enhanced monitoring stack with health checks and dependencies
-- **Environment Variables**: Clarified metrics-related configuration options
-
-### Technical Details
-- Fixed Prometheus configuration to target `transmissionvpn:9099` instead of `localhost:9099`
-- Added comprehensive troubleshooting script with automated diagnostics
-- Enhanced Docker networking configuration for monitoring stack
-- Improved Grafana provisioning with automatic Prometheus datasource setup
-- Added health checks and dependency management to monitoring containers
-
-## [4.0.6-r6] - 2024-12-18
+## [4.0.6-r11] - 2024-01-XX
 
 ### Added
-- Workflow support and documentation fixes
-- Versioning alignment improvements
+- **Custom Metrics Server**: Lightweight Python server for Prometheus metrics
+- **Health Monitoring**: Enhanced health checks with VPN and system monitoring
+- **Prometheus Integration**: Native metrics endpoint for monitoring
+- **Environment Configuration**: Comprehensive environment variable support
 
-## [4.0.6-r2] - 2024-12-17
+### Enhanced
+- **Monitoring Architecture**: Transition from external to built-in metrics
+- **Variable Naming**: Standardized METRICS_* variable naming convention
+- **Documentation**: Comprehensive monitoring and setup documentation
+
+### Deprecated
+- **TRANSMISSION_EXPORTER_***: Variables deprecated in favor of METRICS_*
+- **External Metrics Solutions**: Moving towards built-in monitoring
+
+### Fixed
+- **Metrics Reliability**: Improved metrics collection and reporting
+- **Health Check Accuracy**: Enhanced health check logic and error handling
+
+## [4.0.6-r10] - 2024-01-XX
 
 ### Added
-- Second release with bug fixes and features
+- **Enhanced Monitoring**: Improved metrics collection and health monitoring
+- **VPN Health Checks**: Comprehensive VPN connectivity monitoring
+- **System Health**: Detailed system health reporting and metrics
 
-## [4.0.6-r1] - 2024-12-16
+### Enhanced
+- **Health Check Scripts**: Improved reliability and error handling
+- **Monitoring Integration**: Better integration with monitoring systems
+- **Documentation**: Enhanced setup and troubleshooting guides
+
+### Fixed
+- **Health Check Issues**: Resolved various health check reliability problems
+- **Metrics Collection**: Fixed metrics collection and reporting issues
+
+## [4.0.6-r9] - 2024-01-XX
 
 ### Added
-- First release based on Transmission 4.0.6 
+- **Monitoring Improvements**: Enhanced monitoring capabilities
+- **Health Check Enhancements**: Improved health check functionality
+
+### Fixed
+- **Various Bug Fixes**: Multiple stability and reliability improvements
+
+## [4.0.6-r8] - 2024-01-XX
+
+### Added
+- **Initial Monitoring**: Basic monitoring and health check functionality
+- **Health Check Scripts**: Initial health check implementation
+
+### Enhanced
+- **Container Stability**: Improved container reliability and performance
+
+---
+
+## Migration Notes
+
+### From v4.0.6-r13 to v4.0.6-r14
+- **New Monitoring Options**: Choose between Prometheus (simple) or InfluxDB2 (advanced)
+- **Enhanced Health Data**: More comprehensive system information available
+- **No Breaking Changes**: Existing configurations continue to work
+
+### From v4.0.6-r12 to v4.0.6-r13
+- **Enhanced Health Endpoint**: More detailed health information available
+- **Backward Compatible**: All existing functionality preserved
+
+### From v4.0.6-r11 to v4.0.6-r12
+- **Variable Migration**: Update TRANSMISSION_EXPORTER_* to METRICS_* variables
+- **Port Changes**: Metrics now available on port 9099 by default
+- **Configuration Update**: Review and update environment variables
+
+### General Upgrade Process
+1. Pull the latest image: `docker pull magicalyak/transmissionvpn:latest`
+2. Stop existing container: `docker stop transmission`
+3. Remove old container: `docker rm transmission`
+4. Update environment variables if needed
+5. Start new container with existing configuration
+
+---
+
+## Environment Variables
+
+### Current Variables (v4.0.6-r14)
+- `METRICS_ENABLED=true` - Enable built-in metrics server
+- `METRICS_PORT=9099` - Metrics server port
+- `METRICS_INTERVAL=30` - Metrics collection interval
+- `HEALTH_CHECK_TIMEOUT=10` - Health check timeout
+- `EXTERNAL_IP_SERVICE=ifconfig.me` - External IP detection service
+
+### Deprecated Variables
+- `TRANSMISSION_EXPORTER_ENABLED` → Use `METRICS_ENABLED`
+- `TRANSMISSION_EXPORTER_PORT` → Use `METRICS_PORT`
+
+---
+
+For detailed information about specific releases, see the individual release notes files or the [GitHub Releases](https://github.com/magicalyak/transmissionvpn/releases) page.

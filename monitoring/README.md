@@ -1,452 +1,521 @@
 # TransmissionVPN Monitoring
 
-This directory contains comprehensive monitoring configurations for TransmissionVPN with multiple backend options.
+**Complete monitoring solutions for TransmissionVPN with health checks, metrics, and beautiful dashboards.**
 
-## 🎯 **Monitoring Options**
+## 🎯 **Quick Start**
 
-Choose the monitoring stack that best fits your needs:
-
-### 1. **Prometheus + Grafana** (Recommended for simplicity)
-- **Location**: `docker-compose/`
-- **Best for**: Simple setup, Prometheus ecosystem integration
-- **Features**: Real-time metrics, basic alerting, lightweight
-
-### 2. **InfluxDB2 + Telegraf + Grafana** (Recommended for advanced users)
-- **Location**: `influxdb2/`
-- **Best for**: Advanced analytics, long-term storage, comprehensive monitoring
-- **Features**: Time-series optimization, advanced querying, detailed system metrics
-
-## 🚀 **Quick Start**
-
-### Option 1: Prometheus Stack
+### **Option 1: Simple Setup (Recommended for most users)**
 ```bash
-cd monitoring/docker-compose
-docker-compose up -d
+# Enable built-in metrics in your container
+echo "METRICS_ENABLED=true" >> /path/to/your/transmission.env
+docker restart transmission
+
+# Access metrics
+curl http://localhost:9099/metrics
+curl http://localhost:9099/health
 ```
-- Grafana: http://localhost:3000 (admin/admin)
-- Prometheus: http://localhost:9090
 
-### Option 2: InfluxDB2 Stack
+### **Option 2: Use with Existing Prometheus/Grafana**
 ```bash
+# Enable metrics in your TransmissionVPN container
+echo "METRICS_ENABLED=true" >> /path/to/your/transmission.env
+docker restart transmission
+
+# Add to your existing prometheus.yml
+cat >> /path/to/your/prometheus.yml << 'EOF'
+  - job_name: 'transmissionvpn'
+    static_configs:
+      - targets: ['transmission:9099']  # or 'your-server-ip:9099'
+    scrape_interval: 30s
+    metrics_path: /metrics
+EOF
+
+# Restart Prometheus to load new config
+docker restart prometheus  # or systemctl reload prometheus
+```
+
+### **Option 3: Advanced Monitoring Stack**
+```bash
+# Clone and start InfluxDB2 stack
 cd monitoring/influxdb2
 docker-compose up -d
-```
-- Grafana: http://localhost:3001 (admin/admin)
-- InfluxDB2: http://localhost:8086 (admin/transmissionvpn123)
-- Chronograf: http://localhost:8888
 
-## 📊 **TransmissionVPN Metrics Server**
-
-The main TransmissionVPN container includes a built-in custom metrics server that provides:
-
-- **Prometheus metrics** at `/metrics` endpoint
-- **Enhanced health data** at `/health` endpoint (JSON format like nzbgetvpn)
-- **Simple health check** at `/health/simple` endpoint (plain text OK/Service Unavailable)
-
-### Enable Metrics in TransmissionVPN
-
-```env
-METRICS_ENABLED=true
-METRICS_PORT=9099
-METRICS_INTERVAL=30
+# Access dashboards
+open http://localhost:3001  # Grafana (admin/transmissionvpn123)
+open http://localhost:8086  # InfluxDB2 (admin/transmissionvpn123)
 ```
 
-### Test Endpoints
+## 📊 **Monitoring Options Comparison**
 
+| Feature | Built-in Metrics | Existing Prometheus | InfluxDB2 Stack |
+|---------|------------------|---------------------|-----------------|
+| **Complexity** | ⭐ Simple | ⭐⭐ Easy | ⭐⭐⭐ Advanced |
+| **Resource Usage** | Minimal | Minimal | Moderate |
+| **Setup Time** | 1 minute | 2 minutes | 10 minutes |
+| **Data Retention** | Session only | Your config | 365 days |
+| **Query Language** | None | PromQL | Flux |
+| **Dashboards** | None | Your existing | Beautiful |
+| **Alerting** | None | Your existing | Advanced |
+| **Integration** | Standalone | Seamless | New stack |
+| **Best For** | Quick health checks | Existing infrastructure | New deployments |
+
+## 🏗️ **Architecture Overview**
+
+### **Built-in Metrics (Single Container)**
+```
+┌─────────────────────────┐
+│   TransmissionVPN       │
+│  ┌─────────────────────┐│
+│  │ Transmission Daemon ││
+│  └─────────────────────┘│
+│  ┌─────────────────────┐│
+│  │ Metrics Server      ││  :9099/metrics
+│  │ (Python)            ││  :9099/health
+│  └─────────────────────┘│
+└─────────────────────────┘
+```
+
+### **InfluxDB2 Stack (Advanced)**
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ TransmissionVPN │    │    Telegraf     │    │    InfluxDB2    │
+│                 │───▶│   (Collector)   │───▶│   (Database)    │
+│ :9099/metrics   │    │                 │    │   :8086         │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                                        │
+                       ┌─────────────────┐             │
+                       │     Grafana     │◀────────────┘
+                       │  (Dashboards)   │
+                       │     :3001       │
+                       └─────────────────┘
+```
+
+## 🚀 **Setup Guides**
+
+### **Built-in Metrics Setup**
+
+1. **Enable metrics in your container:**
+   ```bash
+   # Add to your environment file
+   METRICS_ENABLED=true
+   METRICS_PORT=9099
+   METRICS_INTERVAL=30
+   ```
+
+2. **Restart container:**
+   ```bash
+   docker restart transmission
+   ```
+
+3. **Verify metrics:**
+   ```bash
+   curl http://localhost:9099/metrics
+   curl http://localhost:9099/health
+   ```
+
+### **InfluxDB2 Stack Setup**
+
+1. **Navigate to monitoring directory:**
+   ```bash
+   cd monitoring/influxdb2
+   ```
+
+2. **Start the stack:**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Access services:**
+   - **Grafana**: http://localhost:3001 (admin/transmissionvpn123)
+   - **InfluxDB2**: http://localhost:8086 (admin/transmissionvpn123)
+   - **Chronograf**: http://localhost:8888
+
+4. **View dashboards:**
+   - TransmissionVPN Overview
+   - TransmissionVPN Analytics
+
+## 🔗 **Integration with Existing Prometheus/Grafana**
+
+### **Prerequisites**
+- Existing Prometheus server
+- Existing Grafana instance
+- Network connectivity between Prometheus and TransmissionVPN container
+
+### **Step 1: Enable TransmissionVPN Metrics**
+
+Add to your TransmissionVPN environment file:
 ```bash
-# Prometheus metrics
-curl http://your-server:9099/metrics
-
-# Enhanced health data (JSON)
-curl http://your-server:9099/health
-
-# Simple health check
-curl http://your-server:9099/health/simple
-```
-
-## 📈 **Available Metrics**
-
-### Transmission Metrics
-- `transmission_torrent_count` - Total number of torrents
-- `transmission_active_torrents` - Number of active torrents
-- `transmission_downloading_torrents` - Number of downloading torrents
-- `transmission_seeding_torrents` - Number of seeding torrents
-- `transmission_download_rate_bytes_per_second` - Current download rate
-- `transmission_upload_rate_bytes_per_second` - Current upload rate
-- `transmission_session_downloaded_bytes` - Session downloaded bytes
-- `transmission_session_uploaded_bytes` - Session uploaded bytes
-
-### System & VPN Metrics
-- `transmissionvpn_container_running` - Container status (1=running, 0=down)
-- `transmissionvpn_vpn_connected` - VPN connection status (1=connected, 0=disconnected)
-- `transmissionvpn_web_ui_up` - Web UI accessibility (1=up, 0=down)
-- `transmissionvpn_external_ip_reachable` - External IP check (1=reachable, 0=unreachable)
-- `transmissionvpn_disk_usage_percent` - Disk usage percentage
-- `transmissionvpn_disk_available_bytes` - Available disk space
-
-## 🔍 **Enhanced Health Endpoint**
-
-The `/health` endpoint returns comprehensive status information similar to nzbgetvpn:
-
-```json
-{
-  "timestamp": 1703123456,
-  "iso_timestamp": "2023-12-21T10:17:36+00:00",
-  "status": "healthy",
-  "version": "4.0.6-r13",
-  "service": "transmissionvpn",
-  "uptime_seconds": 86400,
-  "system": {
-    "hostname": "transmission-container",
-    "platform": {
-      "system": "Linux",
-      "release": "5.15.0",
-      "machine": "x86_64"
-    },
-    "uptime_seconds": 86400,
-    "boot_time": 1703037036,
-    "load_average": [0.1, 0.2, 0.3],
-    "memory": {
-      "total": 8589934592,
-      "available": 4294967296,
-      "used": 4294967296,
-      "free": 2147483648,
-      "percent": 50.0,
-      "buffers": 134217728,
-      "cached": 1073741824
-    },
-    "swap": {
-      "total": 2147483648,
-      "used": 0,
-      "free": 2147483648,
-      "percent": 0.0
-    },
-    "disk": {
-      "total_bytes": 1000000000000,
-      "used_bytes": 500000000000,
-      "available_bytes": 500000000000,
-      "usage_percent": 50.0
-    },
-    "cpu": {
-      "count": 4,
-      "usage_percent": 15.2,
-      "frequency": {
-        "current": 2400.0,
-        "min": 800.0,
-        "max": 3200.0
-      }
-    },
-    "network_interfaces": {
-      "eth0": {
-        "ip": "172.17.0.2",
-        "netmask": "255.255.0.0"
-      },
-      "tun0": {
-        "ip": "10.8.0.2",
-        "netmask": "255.255.255.0"
-      }
-    }
-  },
-  "vpn": {
-    "interface": "tun0",
-    "status": "up",
-    "ip_address": "10.8.0.2",
-    "external_ip": "203.0.113.1",
-    "connected": true,
-    "dns_servers": ["8.8.8.8", "1.1.1.1"],
-    "stats": {
-      "bytes_sent": 1048576000,
-      "bytes_recv": 2097152000,
-      "packets_sent": 1000000,
-      "packets_recv": 1500000,
-      "errin": 0,
-      "errout": 0,
-      "dropin": 0,
-      "dropout": 0
-    }
-  },
-  "transmission": {
-    "web_ui_accessible": true,
-    "rpc_accessible": true,
-    "daemon_running": true,
-    "response_time_ms": 45,
-    "version": "3.00",
-    "session_id": "abc123def456",
-    "port_test": true,
-    "blocklist_enabled": true,
-    "blocklist_size": 500000,
-    "queue_enabled": false,
-    "speed_limit_enabled": false,
-    "alt_speed_enabled": false,
-    "encryption": "preferred",
-    "peer_port": 51413,
-    "peer_port_random": false,
-    "dht_enabled": true,
-    "lpd_enabled": true,
-    "pex_enabled": true,
-    "utp_enabled": true
-  },
-  "container": {
-    "id": "transmission-container",
-    "name": "transmission-container",
-    "environment": {
-      "TRANSMISSION_RPC_USERNAME": "admin",
-      "TRANSMISSION_RPC_PASSWORD": "***REDACTED***",
-      "VPN_CLIENT": "openvpn",
-      "METRICS_ENABLED": "true",
-      "METRICS_PORT": "9099"
-    }
-  },
-  "metrics": {
-    "torrents": 5,
-    "active_torrents": 2,
-    "downloading_torrents": 1,
-    "seeding_torrents": 1,
-    "paused_torrents": 3,
-    "download_rate": 1048576,
-    "upload_rate": 524288,
-    "total_size": 10737418240,
-    "total_downloaded": 5368709120,
-    "total_uploaded": 2684354560,
-    "last_update": 1703123450,
-    "update_interval": 30
-  },
-  "session": {
-    "current": {
-      "downloaded_bytes": 1073741824,
-      "uploaded_bytes": 536870912,
-      "files_added": 5,
-      "session_count": 1,
-      "seconds_active": 3600
-    },
-    "cumulative": {
-      "downloaded_bytes": 107374182400,
-      "uploaded_bytes": 53687091200,
-      "files_added": 500,
-      "session_count": 100,
-      "seconds_active": 360000
-    }
-  },
-  "endpoints": {
-    "metrics": "http://localhost:9099/metrics",
-    "health": "http://localhost:9099/health",
-    "health_simple": "http://localhost:9099/health/simple"
-  }
-}
-```
-
-### Status Values
-- `healthy` - All systems operational
-- `degraded` - Some issues but Transmission is running (warnings present)
-- `unhealthy` - Critical issues, Transmission down
-- `error` - Unable to determine status
-
-### Issues and Warnings
-- **Critical Issues** (status: unhealthy):
-  - `transmission_daemon_down` - Transmission daemon not running
-  - `web_ui_inaccessible` - Web UI not responding
-  - `rpc_inaccessible` - RPC interface not accessible
-
-- **Warnings** (status: degraded):
-  - `vpn_disconnected` - VPN not connected
-  - `disk_space_low` - Disk usage > 90%
-  - `memory_usage_high` - Memory usage > 90%
-  - `port_not_open` - Peer port not accessible
-
-## 🐳 **Monitoring Stack Comparison**
-
-| Feature | Prometheus + Grafana | InfluxDB2 + Telegraf + Grafana |
-|---------|---------------------|--------------------------------|
-| **Setup Complexity** | Simple | Moderate |
-| **Resource Usage** | Low | Medium |
-| **Data Retention** | Configurable | 365 days default |
-| **Query Language** | PromQL | Flux |
-| **System Metrics** | Basic | Comprehensive |
-| **Alerting** | Built-in | Advanced |
-| **Scalability** | Good | Excellent |
-| **Learning Curve** | Easy | Moderate |
-
-### Prometheus Stack Features
-- ✅ Simple setup and configuration
-- ✅ Native Prometheus metrics support
-- ✅ Built-in alerting with Alertmanager
-- ✅ Large ecosystem and community
-- ✅ Efficient for application metrics
-- ❌ Limited system metrics collection
-- ❌ Basic time-series functions
-
-### InfluxDB2 Stack Features
-- ✅ Comprehensive system monitoring
-- ✅ Advanced time-series analytics
-- ✅ Powerful Flux query language
-- ✅ Built-in data processing
-- ✅ Excellent for IoT and system metrics
-- ✅ Beautiful pre-built dashboards
-- ❌ More complex setup
-- ❌ Higher resource requirements
-
-## 📊 **Dashboard Features**
-
-### Prometheus Dashboards
-- **Main Dashboard**: System status, transfer speeds, torrent activity
-- **Status Indicators**: Red/green status for container, VPN, web UI
-- **Resource Monitoring**: Disk usage gauge, basic system metrics
-
-### InfluxDB2 Dashboards
-- **Overview Dashboard**: Comprehensive system health with beautiful visualizations
-- **Analytics Dashboard**: Deep-dive performance analysis and trends
-- **Advanced Metrics**: Memory breakdown, network analysis, container stats
-- **Interactive Elements**: Drill-down capabilities, time range selection
-
-## 🔧 **Configuration**
-
-### Network Configuration
-
-Update target configurations based on your setup:
-
-#### For Same Docker Network
-```yaml
-# Prometheus
-- targets: ['transmissionvpn:9099']
-
-# Telegraf
-urls = ["http://transmissionvpn:9099/metrics"]
-```
-
-#### For External TransmissionVPN
-```yaml
-# Prometheus
-- targets: ['your-server.com:9099']
-
-# Telegraf
-urls = ["http://your-server.com:9099/metrics"]
-```
-
-### Environment Variables
-
-Configure TransmissionVPN metrics:
-
-```env
-# Enable metrics collection
+# Enable built-in metrics server
 METRICS_ENABLED=true
 METRICS_PORT=9099
 METRICS_INTERVAL=30
 
-# Health check configuration
+# Optional: Health check configuration
 HEALTH_CHECK_TIMEOUT=10
 EXTERNAL_IP_SERVICE=ifconfig.me
 ```
 
-## 🚨 **Troubleshooting**
-
-### Common Issues
-
-#### 1. Metrics Not Appearing
+Restart your TransmissionVPN container:
 ```bash
-# Check if metrics are enabled
-docker logs transmission | grep -i metrics
+docker restart transmission
+```
 
-# Verify endpoint accessibility
+### **Step 2: Configure Prometheus Scraping**
+
+#### **Option A: Same Docker Network**
+If Prometheus and TransmissionVPN are on the same Docker network:
+```yaml
+# Add to your prometheus.yml
+scrape_configs:
+  - job_name: 'transmissionvpn'
+    static_configs:
+      - targets: ['transmission:9099']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    honor_labels: true
+```
+
+#### **Option B: Different Networks/Hosts**
+If running on different networks or hosts:
+```yaml
+# Add to your prometheus.yml
+scrape_configs:
+  - job_name: 'transmissionvpn'
+    static_configs:
+      - targets: ['your-server-ip:9099']  # Replace with actual IP
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: /metrics
+    honor_labels: true
+```
+
+#### **Option C: Docker Compose Integration**
+If using Docker Compose, add TransmissionVPN to your monitoring stack:
+```yaml
+version: '3.8'
+services:
+  transmission:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmission
+    # ... your existing config ...
+    networks:
+      - monitoring  # Add to monitoring network
+    
+  prometheus:
+    # ... your existing prometheus config ...
+    networks:
+      - monitoring
+
+networks:
+  monitoring:
+    external: true  # or create new network
+```
+
+### **Step 3: Reload Prometheus Configuration**
+
+```bash
+# Method 1: API reload (if enabled)
+curl -X POST http://localhost:9090/-/reload
+
+# Method 2: Container restart
+docker restart prometheus
+
+# Method 3: Service restart (if using systemd)
+sudo systemctl reload prometheus
+```
+
+### **Step 4: Verify Metrics Collection**
+
+1. **Check Prometheus targets:**
+   - Open http://your-prometheus:9090/targets
+   - Look for `transmissionvpn` job
+   - Status should be "UP"
+
+2. **Test metrics query:**
+   ```promql
+   # Check if metrics are being collected
+   up{job="transmissionvpn"}
+   
+   # View transmission metrics
+   transmission_session_stats_download_speed_bytes
+   transmissionvpn_vpn_interface_status
+   ```
+
+### **Step 5: Import Grafana Dashboard**
+
+#### **Option A: Use Pre-built Dashboard**
+1. Download dashboard JSON from `monitoring/docker-compose/grafana/dashboards/`
+2. In Grafana: **+** → **Import** → **Upload JSON file**
+3. Select your Prometheus data source
+4. Click **Import**
+
+#### **Option B: Create Custom Dashboard**
+Essential panels to include:
+```promql
+# System Health Status
+transmissionvpn_transmission_status
+
+# Transfer Speeds
+rate(transmission_session_stats_downloaded_bytes[5m]) * 8  # Download speed in bits/sec
+rate(transmission_session_stats_uploaded_bytes[5m]) * 8    # Upload speed in bits/sec
+
+# Active Torrents
+transmission_session_stats_torrents_active
+
+# VPN Status
+transmissionvpn_vpn_interface_status
+
+# System Resources
+transmissionvpn_memory_usage_percent
+transmissionvpn_disk_usage_percent
+```
+
+### **Step 6: Set Up Alerting (Optional)**
+
+Example Prometheus alerting rules:
+```yaml
+# alerts.yml
+groups:
+  - name: transmissionvpn
+    rules:
+      - alert: TransmissionDown
+        expr: transmissionvpn_transmission_status == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Transmission daemon is down"
+          description: "TransmissionVPN container transmission daemon has been down for more than 2 minutes"
+
+      - alert: VPNDisconnected
+        expr: transmissionvpn_vpn_interface_status == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VPN connection lost"
+          description: "TransmissionVPN VPN interface has been down for more than 5 minutes"
+
+      - alert: HighDiskUsage
+        expr: transmissionvpn_disk_usage_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage in TransmissionVPN"
+          description: "Disk usage is {{ $value }}% in TransmissionVPN downloads directory"
+```
+
+### **Troubleshooting Integration**
+
+#### **Metrics not appearing in Prometheus**
+```bash
+# Check if metrics endpoint is accessible
 curl http://your-server:9099/metrics
-curl http://your-server:9099/health
 
-# Check monitoring stack logs
-docker logs prometheus  # or telegraf
-docker logs grafana
-```
-
-#### 2. VPN Status Not Updating
-```bash
-# Check VPN interface
-docker exec transmission ip addr show
-
-# Test external IP detection
-docker exec transmission curl -s ifconfig.me
-
-# Verify health endpoint
-curl http://your-server:9099/health | jq '.vpn'
-```
-
-#### 3. Dashboard Not Loading
-```bash
-# Check data source configuration
-# Prometheus: http://localhost:9090/targets
-# InfluxDB2: Check connection in Grafana data sources
+# Check Prometheus logs
+docker logs prometheus | grep transmissionvpn
 
 # Verify network connectivity
-docker exec grafana curl http://prometheus:9090/api/v1/query?query=up
-# or
-docker exec grafana-influx curl http://influxdb:8086/ping
+docker exec prometheus nslookup transmission  # if same network
 ```
 
-### Performance Optimization
-
-#### Reduce Collection Frequency
-```env
-# TransmissionVPN
-METRICS_INTERVAL=60  # Increase from 30 seconds
-
-# Prometheus
-scrape_interval: 60s  # In prometheus.yml
-
-# Telegraf
-interval = "60s"  # In telegraf.conf
-```
-
-#### Optimize Storage
-```yaml
-# Prometheus retention
-- '--storage.tsdb.retention.time=30d'
-
-# InfluxDB2 retention
-DOCKER_INFLUXDB_INIT_RETENTION=30d
-```
-
-## 📚 **Advanced Usage**
-
-### Custom Metrics
-
-Add custom metrics to the TransmissionVPN metrics server by modifying `scripts/transmission-metrics-server.py`.
-
-### External Integration
-
-Both monitoring stacks support:
-- External Prometheus federation
-- Remote write to external systems
-- API access for custom applications
-- Webhook notifications
-
-### Backup and Monitoring
-
+#### **Dashboard shows no data**
 ```bash
-# Backup Prometheus data
-docker run --rm -v prometheus-data:/data -v $(pwd):/backup alpine tar czf /backup/prometheus-backup.tar.gz /data
+# Verify data source configuration in Grafana
+# Check time range (metrics are recent)
+# Confirm metric names match (they may have changed)
 
-# Backup InfluxDB2 data
-docker exec influxdb2 influx backup /tmp/backup
-docker cp influxdb2:/tmp/backup ./influxdb-backup
+# Test query in Prometheus first
+curl 'http://localhost:9090/api/v1/query?query=up{job="transmissionvpn"}'
 ```
 
-## 🔗 **Related Documentation**
+#### **Connection refused errors**
+```bash
+# Check if metrics are enabled
+docker exec transmission printenv | grep METRICS
 
-- [Main README](../README.md) - TransmissionVPN configuration
-- [InfluxDB2 Setup](influxdb2/README.md) - Detailed InfluxDB2 monitoring guide
-- [Environment Variables](../README.md#environment-variables) - All available options
-- [Health Check Options](../HEALTHCHECK_OPTIONS.md) - Health monitoring configuration
+# Check if port is accessible
+docker exec transmission netstat -tlnp | grep 9099
 
-## 🆘 **Support**
+# Check firewall rules (if applicable)
+sudo ufw status | grep 9099
+```
 
-For monitoring-specific issues:
+## 📈 **Available Metrics**
 
-1. Check the appropriate stack's logs
-2. Verify network connectivity between services
-3. Ensure TransmissionVPN metrics are enabled
-4. Review the troubleshooting sections above
-5. Consult the official documentation for Prometheus, InfluxDB2, or Grafana
+### **Health Endpoint (`/health`)**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "system": {
+    "hostname": "transmission-container",
+    "platform": "Linux 5.4.0",
+    "uptime": 86400,
+    "load_average": [0.5, 0.3, 0.2],
+    "memory": {
+      "total": 8589934592,
+      "available": 4294967296,
+      "used": 4294967296,
+      "percent": 50.0
+    }
+  },
+  "vpn": {
+    "interface": "tun0",
+    "status": "connected",
+    "local_ip": "10.8.0.2",
+    "external_ip": "203.0.113.1",
+    "dns_servers": ["10.8.0.1"]
+  },
+  "transmission": {
+    "web_ui_accessible": true,
+    "daemon_accessible": true,
+    "version": "3.00",
+    "active_torrents": 5,
+    "download_speed": 1048576,
+    "upload_speed": 524288
+  }
+}
+```
+
+### **Prometheus Metrics (`/metrics`)**
+```
+# System metrics
+transmissionvpn_system_uptime_seconds 86400
+transmissionvpn_system_load_average 0.5
+transmissionvpn_memory_usage_percent 50.0
+transmissionvpn_disk_usage_percent 75.0
+
+# VPN metrics
+transmissionvpn_vpn_interface_status 1
+transmissionvpn_vpn_bytes_sent 1073741824
+transmissionvpn_vpn_bytes_received 2147483648
+
+# Transmission metrics
+transmissionvpn_transmission_status 1
+transmissionvpn_active_torrents 5
+transmissionvpn_download_speed_bytes 1048576
+transmissionvpn_upload_speed_bytes 524288
+transmissionvpn_session_downloaded_bytes 10737418240
+transmissionvpn_session_uploaded_bytes 5368709120
+```
+
+## 🎨 **Dashboard Features**
+
+### **Overview Dashboard**
+- **System Health**: Real-time status indicators with color coding
+- **Transfer Speeds**: Live download/upload speeds with smooth animations
+- **Torrent Activity**: Active torrents breakdown and status distribution
+- **Resource Usage**: CPU, memory, and disk utilization gauges
+- **VPN Monitoring**: Connection status and IP leak detection
+- **Network Performance**: Latency, packet loss, and throughput metrics
+
+### **Analytics Dashboard**
+- **Historical Trends**: Long-term transfer patterns and usage analytics
+- **Performance Analysis**: System resource trends over time
+- **Network Analysis**: VPN performance and connectivity patterns
+- **Error Tracking**: Failed connections, timeouts, and issues
+- **Capacity Planning**: Storage usage trends and predictions
+
+## 🔧 **Configuration**
+
+### **Environment Variables**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `METRICS_ENABLED` | `false` | Enable built-in metrics server |
+| `METRICS_PORT` | `9099` | Port for metrics server |
+| `METRICS_INTERVAL` | `30` | Metrics collection interval (seconds) |
+| `HEALTH_CHECK_TIMEOUT` | `10` | Health check timeout (seconds) |
+| `EXTERNAL_IP_SERVICE` | `ifconfig.me` | Service for external IP detection |
+| `VPN_INTERFACE_NAME` | `tun0` | VPN interface name to monitor |
+
+### **InfluxDB2 Configuration**
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| **Organization** | `transmissionvpn` | InfluxDB organization |
+| **Bucket** | `metrics` | Data storage bucket |
+| **Retention** | `365d` | Data retention period |
+| **Username** | `admin` | Default admin username |
+| **Password** | `transmissionvpn123` | Default admin password |
+
+## 🚨 **Troubleshooting**
+
+### **Common Issues**
+
+#### **Metrics not available**
+```bash
+# Check if metrics are enabled
+docker exec transmission printenv | grep METRICS
+
+# Check if metrics server is running
+docker exec transmission netstat -tlnp | grep 9099
+
+# Check logs
+docker logs transmission | grep metrics
+```
+
+#### **Health check fails**
+```bash
+# Test health endpoint
+curl -v http://localhost:9099/health
+
+# Check container health
+docker inspect transmission --format='{{.State.Health.Status}}'
+
+# View health logs
+docker inspect transmission --format='{{range .State.Health.Log}}{{.Output}}{{end}}'
+```
+
+#### **VPN metrics missing**
+```bash
+# Check VPN interface
+docker exec transmission ip addr show tun0
+
+# Test VPN connectivity
+docker exec transmission curl -s ifconfig.me
+
+# Check VPN logs
+docker logs transmission | grep -i vpn
+```
+
+### **Performance Tuning**
+
+#### **Reduce metrics collection frequency**
+```bash
+# Increase interval to reduce CPU usage
+METRICS_INTERVAL=60  # Collect every minute instead of 30 seconds
+```
+
+#### **Optimize InfluxDB2 retention**
+```bash
+# Reduce retention for lower disk usage
+# Edit monitoring/influxdb2/docker-compose.yml
+# Change: --store-retention-policy-default-duration=365d
+# To:     --store-retention-policy-default-duration=30d
+```
+
+## 📚 **Additional Documentation**
+
+- **[Single Container Guide](docs/single-container-guide.md)** - Minimal setup without Docker Compose
+- **[InfluxDB2 Setup](influxdb2/README.md)** - Detailed InfluxDB2 stack documentation
+- **[Health Fix Guide](docs/PERMANENT_HEALTH_FIX.md)** - Fixing container health issues
+- **[VPN Fix Guide](docs/VPN_FIX_GUIDE.md)** - VPN connectivity troubleshooting
+
+## 🤝 **Support**
+
+- **Issues**: Report bugs and feature requests on GitHub
+- **Discussions**: Join community discussions for help and tips
+- **Documentation**: Check the docs directory for detailed guides
+- **Examples**: See EXAMPLES.md for configuration examples
 
 ---
 
-**Choose Your Stack**: 
-- **New users**: Start with Prometheus + Grafana for simplicity
-- **Advanced users**: Use InfluxDB2 + Telegraf + Grafana for comprehensive monitoring
-- **Both**: Run both stacks on different ports for comparison 
+**Choose your monitoring approach based on your needs:**
+- **Just want health checks?** → Use built-in metrics
+- **Have existing Prometheus/Grafana?** → Use integration guide above
+- **Want a complete new stack?** → Use InfluxDB2 stack
+- **Need advanced analytics?** → Use InfluxDB2 with Flux queries 

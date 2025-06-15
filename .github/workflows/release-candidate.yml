@@ -1,0 +1,332 @@
+name: Build Release Candidate
+
+on:
+  push:
+    branches:
+      - 'release/*'
+      - 'hotfix/*'
+  workflow_dispatch:
+    inputs:
+      rc_version:
+        description: 'Release candidate version (e.g., v4.0.6-r15-rc.1)'
+        required: true
+        type: string
+
+env:
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_NAME: magicalyak/transmissionvpn
+
+jobs:
+  build-rc:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-rc
+            type=raw,value=${{ github.event.inputs.rc_version }},enable=${{ github.event.inputs.rc_version != '' }}
+            type=raw,value=rc-latest
+            type=sha,prefix=rc-{{branch}}-
+          labels: |
+            org.opencontainers.image.title=transmissionvpn
+            org.opencontainers.image.description=Transmission with VPN integration - Release Candidate
+            org.opencontainers.image.vendor=magicalyak
+            org.opencontainers.image.licenses=GPL-3.0
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Debug RC metadata output
+        run: |
+          echo "🔍 RC Debug Information:"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref type: ${{ github.ref_type }}"
+          echo "Version: ${{ steps.meta.outputs.version }}"
+          echo "Generated tags:"
+          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n' | sed 's/^/  - /'
+          echo "JSON output:"
+          echo '${{ steps.meta.outputs.json }}'
+
+      - name: Validate RC tags
+        run: |
+          echo "🔍 Validating RC tags..."
+          TAGS='${{ steps.meta.outputs.tags }}'
+          
+          # Check for empty tags
+          if [[ -z "$TAGS" ]]; then
+            echo "❌ ERROR: No RC tags generated!"
+            exit 1
+          fi
+          
+          # Split tags and validate each one
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            # Remove registry prefix for validation
+            tag_name=$(echo "$tag" | sed 's/.*://')
+            
+            # Check for empty tag names
+            if [[ -z "$tag_name" ]]; then
+              echo "❌ ERROR: Empty tag name found in RC: $tag"
+              exit 1
+            fi
+            
+            # Check for invalid characters (Docker tag validation)
+            if [[ ! "$tag_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+              echo "❌ ERROR: Invalid RC tag format: $tag_name (contains invalid characters)"
+              exit 1
+            fi
+            
+            echo "✅ Valid RC tag: $tag"
+          done
+          
+          echo "✅ All RC tags validated successfully!"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract platform pair
+        id: platform
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Build Release Candidate
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}-rc
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}-rc
+          build-args: |
+            BUILDPLATFORM=${{ matrix.platform }}
+            TARGETPLATFORM=${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-rc-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-rc:
+    runs-on: ubuntu-latest
+    needs:
+      - build-rc
+    
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-rc-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-rc
+            type=raw,value=${{ github.event.inputs.rc_version }},enable=${{ github.event.inputs.rc_version != '' }}
+            type=raw,value=rc-latest
+            type=sha,prefix=rc-{{branch}}-
+
+      - name: Debug RC merge metadata output
+        run: |
+          echo "🔍 RC Merge Job Debug Information:"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref type: ${{ github.ref_type }}"
+          echo "Version: ${{ steps.meta.outputs.version }}"
+          echo "Generated tags:"
+          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n' | sed 's/^/  - /'
+          echo "JSON output:"
+          echo '${{ steps.meta.outputs.json }}'
+
+      - name: Validate RC merge tags
+        run: |
+          echo "🔍 Validating RC merge tags..."
+          TAGS='${{ steps.meta.outputs.tags }}'
+          
+          # Check for empty tags
+          if [[ -z "$TAGS" ]]; then
+            echo "❌ ERROR: No RC merge tags generated!"
+            exit 1
+          fi
+          
+          # Split tags and validate each one
+          IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+          for tag in "${TAG_ARRAY[@]}"; do
+            # Remove registry prefix for validation
+            tag_name=$(echo "$tag" | sed 's/.*://')
+            
+            # Check for empty tag names
+            if [[ -z "$tag_name" ]]; then
+              echo "❌ ERROR: Empty tag name found in RC merge: $tag"
+              exit 1
+            fi
+            
+            # Check for invalid characters (Docker tag validation)
+            if [[ ! "$tag_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+              echo "❌ ERROR: Invalid RC merge tag format: $tag_name (contains invalid characters)"
+              exit 1
+            fi
+            
+            echo "✅ Valid RC merge tag: $tag"
+          done
+          
+          echo "✅ All RC merge tags validated successfully!"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push to GHCR
+        working-directory: /tmp/digests
+        run: |
+          echo "🔍 Creating GHCR RC manifest..."
+          
+          # Validate JSON output exists
+          if [[ -z "$DOCKER_METADATA_OUTPUT_JSON" ]]; then
+            echo "❌ ERROR: DOCKER_METADATA_OUTPUT_JSON is empty for RC!"
+            exit 1
+          fi
+          
+          echo "RC Metadata JSON:"
+          echo "$DOCKER_METADATA_OUTPUT_JSON" | jq '.'
+          
+          # Extract GHCR tags safely
+          GHCR_TAGS=$(echo "$DOCKER_METADATA_OUTPUT_JSON" | jq -cr '.tags | map("-t " + .) | join(" ")')
+          
+          if [[ -z "$GHCR_TAGS" || "$GHCR_TAGS" == "null" ]]; then
+            echo "❌ ERROR: No GHCR RC tags found!"
+            exit 1
+          fi
+          
+          echo "GHCR RC tags to create: $GHCR_TAGS"
+          
+          # Create GHCR RC manifest
+          docker buildx imagetools create $GHCR_TAGS \
+            $(printf '${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect Release Candidate
+        run: |
+          echo "✅ Release Candidate built successfully!"
+          echo "📦 Available RC tags:"
+          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n' | sed 's/^/  - /'
+          echo ""
+          echo "🧪 Testing RC image:"
+          if [[ "${{ steps.meta.outputs.version }}" != "" ]]; then
+            docker buildx imagetools inspect ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          fi
+          echo ""
+          echo "🚀 RC Usage:"
+          echo "  docker pull ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest"
+          echo "  docker pull ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          echo ""
+          echo "⚠️  Note: RC images are only available on GHCR, not Docker Hub"
+
+  test-rc:
+    runs-on: ubuntu-latest
+    needs:
+      - merge-rc
+    strategy:
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-rc
+            type=raw,value=${{ github.event.inputs.rc_version }},enable=${{ github.event.inputs.rc_version != '' }}
+            type=raw,value=rc-latest
+            type=sha,prefix=rc-{{branch}}-
+
+      - name: Test RC multi-arch image
+        run: |
+          echo "🧪 Testing RC image on ${{ matrix.platform }}..."
+          
+          # Test that the RC image can be pulled and basic commands work
+          docker pull --platform ${{ matrix.platform }} ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest
+          
+          # Test basic functionality
+          docker run --rm --platform ${{ matrix.platform }} \
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest \
+            sh -c 'echo "Testing RC functionality on ${{ matrix.platform }}" && python3 --version && openvpn --version | head -1 && transmission-daemon --version | head -1 && curl --version | head -1 && echo "All basic tools available in RC"'
+
+      - name: Test RC platform-specific optimizations
+        run: |
+          # Test architecture detection
+          docker run --rm --platform ${{ matrix.platform }} \
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest \
+            sh -c 'echo "RC Architecture: $(uname -m)" && echo "RC Platform: $(uname -s)" && (cat /proc/cpuinfo | grep -E "(processor|model name|Hardware|Revision)" | head -5 || echo "CPU info not available")'
+
+      - name: Test RC custom metrics server
+        run: |
+          # Test that our custom metrics server is available in RC
+          docker run --rm --platform ${{ matrix.platform }} \
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest \
+            sh -c 'ls -la /usr/local/bin/transmission-metrics-server.py && python3 -c "import requests; print(\"Python requests library available in RC\")"' 
