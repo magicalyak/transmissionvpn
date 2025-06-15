@@ -10,6 +10,8 @@ import time
 import json
 import logging
 import requests
+import subprocess
+import socket
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 
@@ -24,9 +26,10 @@ METRICS_PORT = int(os.getenv('METRICS_PORT', '9099'))
 METRICS_INTERVAL = int(os.getenv('METRICS_INTERVAL', '30'))
 METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'true').lower() == 'true'
 
-# Global variables for metrics
+# Global variables for metrics and health
 transmission_stats = {}
 session_stats = {}
+health_data = {}
 last_update = 0
 
 # Setup logging
@@ -97,6 +100,198 @@ class TransmissionAPI:
             "leechers", "downloadedEver", "uploadedEver"
         ]
         return self._make_request("torrent-get", {"fields": fields})
+
+def get_system_info():
+    """Get system information"""
+    try:
+        # Get hostname
+        hostname = socket.gethostname()
+        
+        # Get uptime
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+        
+        # Get load average
+        with open('/proc/loadavg', 'r') as f:
+            load_avg = f.readline().split()[:3]
+        
+        # Get memory info
+        memory_info = {}
+        with open('/proc/meminfo', 'r') as f:
+            for line in f:
+                if line.startswith(('MemTotal:', 'MemAvailable:', 'MemFree:')):
+                    key, value = line.split(':')
+                    memory_info[key.strip()] = int(value.strip().split()[0]) * 1024  # Convert to bytes
+        
+        # Get disk usage for /downloads
+        try:
+            result = subprocess.run(['df', '/downloads'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                if len(lines) > 1:
+                    fields = lines[1].split()
+                    disk_info = {
+                        'total_bytes': int(fields[1]) * 1024,
+                        'used_bytes': int(fields[2]) * 1024,
+                        'available_bytes': int(fields[3]) * 1024,
+                        'usage_percent': int(fields[4].rstrip('%'))
+                    }
+                else:
+                    disk_info = {}
+            else:
+                disk_info = {}
+        except:
+            disk_info = {}
+        
+        return {
+            'hostname': hostname,
+            'uptime_seconds': int(uptime_seconds),
+            'load_average': [float(x) for x in load_avg],
+            'memory': memory_info,
+            'disk': disk_info
+        }
+    except Exception as e:
+        logger.error(f"Failed to get system info: {e}")
+        return {}
+
+def get_vpn_info():
+    """Get VPN interface information"""
+    try:
+        vpn_info = {
+            'interface': None,
+            'status': 'down',
+            'ip_address': None,
+            'external_ip': None,
+            'connected': False
+        }
+        
+        # Check for VPN interfaces
+        result = subprocess.run(['ip', 'link', 'show'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            for line in result.stdout.split('\n'):
+                if 'tun0' in line and 'UP' in line:
+                    vpn_info['interface'] = 'tun0'
+                    vpn_info['status'] = 'up'
+                    break
+                elif 'wg0' in line and 'UP' in line:
+                    vpn_info['interface'] = 'wg0'
+                    vpn_info['status'] = 'up'
+                    break
+        
+        # Get IP address if interface is up
+        if vpn_info['interface']:
+            result = subprocess.run(['ip', 'addr', 'show', vpn_info['interface']], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'inet ' in line and not line.strip().startswith('inet 127.'):
+                        vpn_info['ip_address'] = line.split()[1].split('/')[0]
+                        vpn_info['connected'] = True
+                        break
+        
+        # Get external IP
+        try:
+            result = subprocess.run(['curl', '-s', '--max-time', '10', 'ifconfig.me'], 
+                                  capture_output=True, text=True, timeout=15)
+            if result.returncode == 0 and result.stdout.strip():
+                vpn_info['external_ip'] = result.stdout.strip()
+        except:
+            pass
+        
+        return vpn_info
+    except Exception as e:
+        logger.error(f"Failed to get VPN info: {e}")
+        return {'interface': None, 'status': 'unknown', 'connected': False}
+
+def get_transmission_health():
+    """Get Transmission health information"""
+    try:
+        health = {
+            'web_ui_accessible': False,
+            'rpc_accessible': False,
+            'daemon_running': False,
+            'response_time_ms': None,
+            'version': None,
+            'session_id': None
+        }
+        
+        # Check if daemon process is running
+        try:
+            result = subprocess.run(['pgrep', '-f', 'transmission-daemon'], 
+                                  capture_output=True, text=True, timeout=5)
+            health['daemon_running'] = result.returncode == 0
+        except:
+            pass
+        
+        # Check web UI accessibility
+        start_time = time.time()
+        try:
+            response = requests.get(f"http://{TRANSMISSION_HOST}:{TRANSMISSION_PORT}/transmission/web/", 
+                                  timeout=5)
+            if response.status_code == 200:
+                health['web_ui_accessible'] = True
+                health['response_time_ms'] = int((time.time() - start_time) * 1000)
+        except:
+            pass
+        
+        # Check RPC accessibility
+        try:
+            response = requests.post(TRANSMISSION_URL, json={"method": "session-get"}, timeout=5)
+            if response.status_code in [200, 409]:
+                health['rpc_accessible'] = True
+                if response.status_code == 409:
+                    health['session_id'] = response.headers.get('X-Transmission-Session-Id')
+        except:
+            pass
+        
+        return health
+    except Exception as e:
+        logger.error(f"Failed to get Transmission health: {e}")
+        return {'web_ui_accessible': False, 'rpc_accessible': False, 'daemon_running': False}
+
+def update_health_data():
+    """Update comprehensive health data"""
+    global health_data
+    
+    try:
+        health_data = {
+            'timestamp': int(time.time()),
+            'status': 'healthy',
+            'version': '4.0.6-r12',
+            'system': get_system_info(),
+            'vpn': get_vpn_info(),
+            'transmission': get_transmission_health(),
+            'metrics': {
+                'torrents': transmission_stats.get('torrent_count', 0),
+                'active_torrents': transmission_stats.get('active_torrents', 0),
+                'download_rate': transmission_stats.get('total_download_rate', 0),
+                'upload_rate': transmission_stats.get('total_upload_rate', 0),
+                'last_update': last_update
+            }
+        }
+        
+        # Determine overall status
+        issues = []
+        if not health_data['transmission']['daemon_running']:
+            issues.append('transmission_daemon_down')
+        if not health_data['transmission']['web_ui_accessible']:
+            issues.append('web_ui_inaccessible')
+        if not health_data['vpn']['connected']:
+            issues.append('vpn_disconnected')
+        
+        if issues:
+            health_data['status'] = 'degraded' if health_data['transmission']['daemon_running'] else 'unhealthy'
+            health_data['issues'] = issues
+        
+        logger.debug("Health data updated successfully")
+        
+    except Exception as e:
+        logger.error(f"Failed to update health data: {e}")
+        health_data = {
+            'timestamp': int(time.time()),
+            'status': 'error',
+            'error': str(e)
+        }
 
 def update_metrics():
     """Update metrics from Transmission"""
@@ -191,10 +386,26 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(generate_prometheus_metrics().encode('utf-8'))
         elif self.path == '/health':
+            # Update health data before serving
+            update_health_data()
+            
             self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
+            self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(b'OK')
+            self.wfile.write(json.dumps(health_data, indent=2).encode('utf-8'))
+        elif self.path == '/health/simple':
+            # Simple health check for basic monitoring
+            transmission_health = get_transmission_health()
+            if transmission_health['web_ui_accessible'] and transmission_health['daemon_running']:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'OK')
+            else:
+                self.send_response(503)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Service Unavailable')
         else:
             self.send_response(404)
             self.end_headers()
@@ -206,6 +417,7 @@ def metrics_updater():
     """Background thread to update metrics"""
     while True:
         update_metrics()
+        update_health_data()
         time.sleep(METRICS_INTERVAL)
 
 def main():

@@ -12,28 +12,29 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # TransmissionVPN built-in metrics exporter
+  # TransmissionVPN custom metrics server (single container solution)
   - job_name: 'transmissionvpn'
     static_configs:
-      - targets: ['transmissionvpn:9099']  # Use container name if on same network
-      # - targets: ['host.docker.internal:9099']  # Use this if containers on different networks
-    scrape_interval: 15s
+      - targets: ['transmissionvpn:9099']  # Use container name if on same Docker network
+      # Alternative for external access:
+      # - targets: ['rocky.gamull.com:9099']  # Use your server hostname/IP
+    scrape_interval: 30s
     scrape_timeout: 10s
     metrics_path: /metrics
+    honor_labels: true
 
-  # TransmissionVPN health metrics (VPN status, container health)
+  # TransmissionVPN health endpoint (comprehensive health data)
   - job_name: 'transmissionvpn-health'
     static_configs:
-      - targets: ['health-metrics:8080']  # Health metrics service
-      # - targets: ['host.docker.internal:8080']  # Use this if running externally
-    scrape_interval: 30s
-    scrape_timeout: 10s
-    metrics_path: /metrics
+      - targets: ['transmissionvpn:9099']  # Same server, different endpoint
+      # Alternative for external access:
+      # - targets: ['rocky.gamull.com:9099']
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    metrics_path: /health
+    honor_labels: true
 
-  # If you're still running external metrics server
-  - job_name: 'transmissionvpn-external'
-    static_configs:
-      - targets: ['host.docker.internal:8081']  # For external server on host
-    scrape_interval: 30s
-    scrape_timeout: 10s
-    metrics_path: /prometheus 
+  # Example: Add your own services here
+  # - job_name: 'my-other-service'
+  #   static_configs:
+  #     - targets: ['my-service:8080'] 
