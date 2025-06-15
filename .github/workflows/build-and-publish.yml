@@ -48,6 +48,7 @@ jobs:
           echo "Owner: ${{ github.repository_owner }}"
           echo "Image: ${{ env.IMAGE_NAME }}"
           echo "Ref: ${{ github.ref }}"
+          echo "Ref Name: ${{ github.ref_name }}"
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
@@ -67,15 +68,19 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: magicalyak/transmissionvpn
+          images: |
+            magicalyak/transmissionvpn
+            ghcr.io/magicalyak/transmissionvpn
           tags: |
-            # A git tag is a pointer to a specific commit. When a tag is pushed,
-            # this workflow will run and create a Docker image with that tag.
-            # Example: v4.0.5-r0 -> 4.0.5-r0, 4.0.5, 4.0, 4
+            # For version tags like v4.0.6-r11, create multiple tag formats
+            type=match,pattern=v(.*),group=1
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-
+            
+            # Handle custom versioning format like v4.0.6-r11
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
+            
             # When a commit is pushed to the `main` branch, the `latest` tag
             # will be updated.
             type=raw,value=latest,enable={{is_default_branch}}
