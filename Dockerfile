@@ -1,11 +1,3 @@
-# Multi-stage build for transmission-exporter
-FROM golang:1.21-alpine AS exporter-builder
-WORKDIR /src
-RUN apk add --no-cache git
-RUN git clone https://github.com/metalmatze/transmission-exporter.git .
-# Use master branch since tags might not be available
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o transmission-exporter ./cmd/transmission-exporter
-
 # Main image
 FROM lscr.io/linuxserver/transmission:latest
 
@@ -50,9 +42,10 @@ ARG TRANSMISSION_WEB_UI_AUTO
 ARG HEALTH_CHECK_HOST
 ARG LOG_TO_STDOUT
 
-# Add ARG for built-in exporter
-ARG TRANSMISSION_EXPORTER_ENABLED
-ARG TRANSMISSION_EXPORTER_PORT
+# Add ARG for built-in metrics
+ARG METRICS_ENABLED
+ARG METRICS_PORT
+ARG METRICS_INTERVAL
 
 # Set ENV from ARG
 ENV VPN_USER=$VPN_USER
@@ -97,17 +90,18 @@ ENV TRANSMISSION_WEB_UI_AUTO=${TRANSMISSION_WEB_UI_AUTO:-}
 ENV HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
 ENV LOG_TO_STDOUT=${LOG_TO_STDOUT:-false}
 
-# Built-in Prometheus exporter settings
-ENV TRANSMISSION_EXPORTER_ENABLED=${TRANSMISSION_EXPORTER_ENABLED:-false}
-ENV TRANSMISSION_EXPORTER_PORT=${TRANSMISSION_EXPORTER_PORT:-9099}
+# Built-in custom metrics server settings
+ENV METRICS_ENABLED=${METRICS_ENABLED:-false}
+ENV METRICS_PORT=${METRICS_PORT:-9099}
+ENV METRICS_INTERVAL=${METRICS_INTERVAL:-30}
 
-# Install OpenVPN, WireGuard, Privoxy and tools
-RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip git && \
+# Install OpenVPN, WireGuard, Privoxy, Python and tools
+RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip git python3 py3-requests && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
 
-# Copy transmission-exporter binary from builder stage
-COPY --from=exporter-builder /src/transmission-exporter /usr/local/bin/transmission-exporter
-RUN chmod +x /usr/local/bin/transmission-exporter
+# Copy custom metrics server
+COPY scripts/transmission-metrics-server.py /usr/local/bin/transmission-metrics-server.py
+RUN chmod +x /usr/local/bin/transmission-metrics-server.py
 
 # Expose metrics port
 EXPOSE 9099
@@ -126,18 +120,18 @@ COPY root/healthcheck.sh /root/healthcheck.sh
 COPY config/privoxy/config /etc/privoxy/config.template
 COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
 
-# Copy transmission-exporter s6 service
-COPY root_s6/transmission-exporter/run /etc/s6-overlay/s6-rc.d/transmission-exporter/run
+# Copy custom metrics s6 service
+COPY root_s6/custom-metrics/run /etc/s6-overlay/s6-rc.d/custom-metrics/run
 
 # Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \
-    echo "longrun" > /etc/s6-overlay/s6-rc.d/transmission-exporter/type && \
+    echo "longrun" > /etc/s6-overlay/s6-rc.d/custom-metrics/type && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy && \
-    touch /etc/s6-overlay/s6-rc.d/user/contents.d/transmission-exporter
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics
 
 # Make scripts executable
-RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/transmission-exporter/run
+RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/custom-metrics/run
 
 # Healthcheck
 HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \

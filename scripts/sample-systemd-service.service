@@ -1,0 +1,31 @@
+[Unit]
+Description=Transmission VPN Container
+After=docker.service
+Requires=docker.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=forking
+RemainAfterExit=yes
+ExecStart=/opt/containerd/start-transmission-wrapper.sh
+ExecStop=/usr/bin/docker stop transmissionvpn
+ExecStopPost=/usr/bin/docker rm -f transmissionvpn
+TimeoutStartSec=300
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=30
+User=root
+Group=root
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=transmission
+
+# Security (optional hardening)
+NoNewPrivileges=false
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target 

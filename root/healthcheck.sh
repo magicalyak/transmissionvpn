@@ -91,17 +91,17 @@ check_transmission() {
 get_vpn_interface() {
     local vpn_if=""
     
-    if [ -f "$VPN_INTERFACE_FILE" ]; then
+if [ -f "$VPN_INTERFACE_FILE" ]; then
         vpn_if=$(cat "$VPN_INTERFACE_FILE")
         log "DEBUG" "VPN interface from file: $vpn_if"
-    else
+else
         log "WARN" "VPN interface file not found, attempting to detect..."
         
         # Try to detect VPN interface
-        if ip link show wg0 &> /dev/null; then
+  if ip link show wg0 &> /dev/null; then
             vpn_if="wg0"
             log "DEBUG" "Detected WireGuard interface: wg0"
-        elif ip link show tun0 &> /dev/null; then
+  elif ip link show tun0 &> /dev/null; then
             vpn_if="tun0"
             log "DEBUG" "Detected OpenVPN interface: tun0"
         else

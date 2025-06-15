@@ -109,9 +109,10 @@ services:
 | `ENABLE_PRIVOXY` | Enable HTTP proxy | `no` | `yes` |
 | `DEBUG` | Enable debug logging | `false` | `true` |
 | `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) | `flood` |
-| `TRANSMISSION_EXPORTER_ENABLED` | Enable built-in Prometheus exporter | `false` | `true` |
-| `TRANSMISSION_EXPORTER_PORT` | Prometheus metrics port | `9099` | `9099` |
-| `METRICS_ENABLED` | Enable internal health metrics | `false` | `true` |
+| `METRICS_ENABLED` | Enable built-in custom metrics server | `false` | `true` |
+| `METRICS_PORT` | Prometheus metrics port | `9099` | `9099` |
+| `METRICS_INTERVAL` | Metrics update interval (seconds) | `30` | `60` |
+| `INTERNAL_METRICS_ENABLED` | Enable internal health metrics | `false` | `true` |
 | `CHECK_DNS_LEAK` | Enable DNS leak detection | `false` | `true` |
 | `CHECK_IP_LEAK` | Enable IP leak detection | `false` | `true` |
 
@@ -170,16 +171,17 @@ docker exec transmissionvpn /root/healthcheck-fixed.sh
 
 This container provides **two complementary monitoring systems**:
 
-### 🔧 Built-in Prometheus Exporter (Recommended)
+### 🔧 Built-in Custom Metrics Server (Recommended)
 
-**Optional built-in Prometheus exporter** that exposes Transmission metrics directly from within the container. No separate services required!
+**Built-in custom metrics server** that exposes Transmission metrics directly from within the container. No separate services required! This replaces the problematic transmission-exporter with a reliable Python-based solution.
 
 #### 🚀 Quick Setup
 
-1. **Enable the exporter** in your `.env` file:
+1. **Enable the metrics server** in your `.env` file:
    ```bash
-   TRANSMISSION_EXPORTER_ENABLED=true
-   TRANSMISSION_EXPORTER_PORT=9099
+   METRICS_ENABLED=true
+   METRICS_PORT=9099
+   METRICS_INTERVAL=30
    ```
 
 2. **Expose the port** in your `docker-compose.yml`:
@@ -197,6 +199,7 @@ This container provides **two complementary monitoring systems**:
 4. **Verify metrics** are available:
    ```bash
    curl http://localhost:9099/metrics
+   curl http://localhost:9099/health
    ```
 
 #### 📈 Prometheus Configuration
@@ -208,25 +211,30 @@ scrape_configs:
   - job_name: 'transmissionvpn'
     static_configs:
       - targets: ['localhost:9099']  # or your Docker host IP
-    scrape_interval: 15s
+    scrape_interval: 30s
 ```
 
 #### 📊 Grafana Dashboards
 
-Import a pre-built dashboard for Transmission metrics:
+The custom metrics server provides these key metrics for dashboards:
 
-1. **Dashboard ID**: `14355` (Transmission Dashboard)
-2. **Alternative**: `13265` (Simple Transmission Exporter)
-3. **Data Source**: Point to your Prometheus instance
+- **`transmission_torrent_count`** - Total number of torrents
+- **`transmission_active_torrents`** - Number of active torrents
+- **`transmission_downloading_torrents`** - Number of downloading torrents
+- **`transmission_seeding_torrents`** - Number of seeding torrents
+- **`transmission_download_rate_bytes_per_second`** - Current download rate
+- **`transmission_upload_rate_bytes_per_second`** - Current upload rate
+- **`transmission_session_downloaded_bytes`** - Session downloaded bytes
+- **`transmission_session_uploaded_bytes`** - Session uploaded bytes
 
-#### 🔧 Available Metrics
+#### 🔧 Features
 
-The exporter provides comprehensive metrics including:
-
-- **Torrent Statistics**: Active, downloading, seeding counts
-- **Transfer Rates**: Download/upload speeds and totals  
-- **Session Info**: Uptime, version, configuration
-- **Queue Status**: Torrent queue sizes and states
+✅ **Reliable**: No hanging issues like transmission-exporter
+✅ **Lightweight**: Pure Python, minimal dependencies
+✅ **Session-aware**: Properly handles Transmission's CSRF protection
+✅ **Environment-driven**: Configured via environment variables
+✅ **Health endpoint**: `/health` for monitoring checks
+✅ **Error-resilient**: Continues working even if Transmission restarts
 
 ### 🩺 Internal Health Metrics (Advanced)
 
@@ -235,9 +243,9 @@ The exporter provides comprehensive metrics including:
 #### Configuration
 
 ```bash
-METRICS_ENABLED=true          # Enable internal metrics collection
-CHECK_DNS_LEAK=true          # Enable DNS leak detection
-CHECK_IP_LEAK=true           # Enable IP leak detection
+INTERNAL_METRICS_ENABLED=true   # Enable internal metrics collection
+CHECK_DNS_LEAK=true             # Enable DNS leak detection
+CHECK_IP_LEAK=true              # Enable IP leak detection
 ```
 
 #### Available Internal Metrics
@@ -262,7 +270,7 @@ docker exec transmissionvpn cat /tmp/healthcheck.log
 
 **InfluxDB v2 Scraper:**
 - **Target URL**: `http://your-host:9099/metrics`
-- **Schedule**: `1m` (or desired interval)
+- **Schedule**: `30s` (or desired interval)
 - **Bucket**: Choose your metrics bucket
 
 **Docker Networks:**
@@ -275,14 +283,15 @@ networks:
 
 ### 📋 Metrics Comparison
 
-| Feature | Prometheus Exporter | Internal Health Metrics |
-|---------|-------------------|------------------------|
+| Feature | Custom Metrics Server | Internal Health Metrics |
+|---------|----------------------|------------------------|
 | **Purpose** | External monitoring | Internal debugging |
 | **Format** | Prometheus standard | Custom text format |
 | **Access** | HTTP endpoint | File inside container |
 | **Metrics** | Transmission-focused | System health focused |
 | **Use Case** | Grafana dashboards | Troubleshooting |
 | **Default** | Disabled | Disabled |
+| **Reliability** | High (custom solution) | High |
 
 ## 🛡️ VPN Providers
 

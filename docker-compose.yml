@@ -28,7 +28,7 @@ services:
     ports:
       - "9091:9091"    # Transmission Web UI
       - "8118:8118"    # Privoxy HTTP proxy (if enabled)
-      - "9099:9099"    # Prometheus metrics endpoint (if enabled)
+      - "9099:9099"    # Custom metrics endpoint (if enabled)
     
     # Volume mappings
     volumes:
@@ -53,10 +53,11 @@ services:
       retries: 3
       start_period: 60s
 
-# Notes on Built-in Metrics:
-# The container now includes an optional built-in Prometheus exporter.
-# Set TRANSMISSION_EXPORTER_ENABLED=true in your .env file to enable it.
+# Notes on Built-in Custom Metrics:
+# The container now includes a built-in custom metrics server for Prometheus.
+# Set METRICS_ENABLED=true in your .env file to enable it.
 # Metrics will be available at http://localhost:9099/metrics
+# Health endpoint available at http://localhost:9099/health
 
 # Uncomment for Docker secrets (production deployments)
 # secrets:

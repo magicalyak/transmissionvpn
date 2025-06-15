@@ -1,0 +1,23 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+# Check if custom metrics are enabled
+if [[ "${METRICS_ENABLED,,}" != "true" ]]; then
+    echo "[custom-metrics] Metrics are disabled. Set METRICS_ENABLED=true to enable."
+    sleep infinity
+    exit 0
+fi
+
+echo "[custom-metrics] Starting custom Transmission metrics server on port ${METRICS_PORT}"
+
+# Wait for Transmission to be ready
+echo "[custom-metrics] Waiting for Transmission to be ready..."
+while ! curl -s http://127.0.0.1:9091/transmission/rpc >/dev/null 2>&1; do
+    echo "[custom-metrics] Waiting for Transmission..."
+    sleep 2
+done
+
+echo "[custom-metrics] Transmission is ready, starting metrics server"
+
+# Start the custom metrics server
+exec s6-setuidgid abc python3 /usr/local/bin/transmission-metrics-server.py 
