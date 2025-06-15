@@ -1,223 +1,244 @@
 #!/bin/bash
 
-# Fix Prometheus Issues Script for TransmissionVPN
-# This script helps diagnose and fix common Prometheus monitoring issues
+# Fix Prometheus Issues Script
+# Comprehensive troubleshooting and fixes for Prometheus monitoring
 
 set -e
-
-echo "=== TransmissionVPN Prometheus Troubleshooting ==="
-echo
-
-# Configuration
-TRANSMISSION_CONTAINER="transmission"
-PROMETHEUS_CONTAINER="prometheus"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
+# Configuration
+TRANSMISSION_CONTAINER=${TRANSMISSION_CONTAINER:-transmission}
+PROMETHEUS_CONTAINER=${PROMETHEUS_CONTAINER:-prometheus}
+GRAFANA_CONTAINER=${GRAFANA_CONTAINER:-grafana}
+METRICS_PORT=${METRICS_PORT:-9099}
 
-print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
+echo -e "${BLUE}=== TransmissionVPN Prometheus Monitoring Fix ===${NC}"
+echo "This script will diagnose and fix common Prometheus monitoring issues"
+echo
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if containers are running
-check_containers() {
-    print_status "Checking container status..."
-    
-    if docker ps --format "table {{.Names}}" | grep -q "^${TRANSMISSION_CONTAINER}$"; then
-        print_status "✓ TransmissionVPN container is running"
+# Function to check if container exists and is running
+check_container() {
+    local container_name=$1
+    if docker ps --format "table {{.Names}}" | grep -q "^${container_name}$"; then
+        echo -e "${GREEN}✓${NC} Container $container_name is running"
+        return 0
+    elif docker ps -a --format "table {{.Names}}" | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠${NC} Container $container_name exists but is not running"
+        return 1
     else
-        print_error "✗ TransmissionVPN container is not running"
-        echo "  Fix: Start the container with: docker start $TRANSMISSION_CONTAINER"
+        echo -e "${RED}✗${NC} Container $container_name does not exist"
+        return 2
+    fi
+}
+
+# Function to test endpoint
+test_endpoint() {
+    local url=$1
+    local description=$2
+    
+    echo -n "Testing $description... "
+    if curl -s --max-time 10 "$url" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓${NC}"
+        return 0
+    else
+        echo -e "${RED}✗${NC}"
         return 1
     fi
-    
-    if docker ps --format "table {{.Names}}" | grep -q "^${PROMETHEUS_CONTAINER}$"; then
-        print_status "✓ Prometheus container is running"
-    else
-        print_warning "⚠ Prometheus container is not running"
-        echo "  Fix: Start monitoring stack with: cd monitoring && docker-compose up -d"
-    fi
 }
 
-# Check network connectivity
+# Function to check network connectivity
 check_network() {
-    print_status "Checking network connectivity..."
+    local from_container=$1
+    local to_container=$2
+    local port=$3
     
-    # Check if containers are on the same network
-    TRANSMISSION_NETWORKS=$(docker inspect $TRANSMISSION_CONTAINER --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}')
-    print_status "TransmissionVPN networks: $TRANSMISSION_NETWORKS"
-    
-    if docker ps --format "table {{.Names}}" | grep -q "^${PROMETHEUS_CONTAINER}$"; then
-        PROMETHEUS_NETWORKS=$(docker inspect $PROMETHEUS_CONTAINER --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}')
-        print_status "Prometheus networks: $PROMETHEUS_NETWORKS"
-        
-        # Test connectivity from Prometheus to TransmissionVPN
-        if docker exec $PROMETHEUS_CONTAINER wget -q --spider --timeout=5 http://transmissionvpn:9099/metrics 2>/dev/null; then
-            print_status "✓ Network connectivity: Prometheus can reach TransmissionVPN:9099"
-        else
-            print_error "✗ Network connectivity: Prometheus cannot reach TransmissionVPN:9099"
-            echo "  Fix: Ensure both containers are on the same Docker network"
-        fi
-    fi
-}
-
-# Check metrics endpoints
-check_metrics() {
-    print_status "Checking metrics endpoints..."
-    
-    # Check built-in exporter endpoint
-    if curl -s --connect-timeout 5 http://localhost:9099/metrics > /dev/null; then
-        print_status "✓ Built-in Prometheus exporter responding on port 9099"
-        
-        # Check if we get actual metrics
-        METRICS_COUNT=$(curl -s http://localhost:9099/metrics | grep -c "^transmission_" || echo "0")
-        if [ "$METRICS_COUNT" -gt 0 ]; then
-            print_status "✓ Found $METRICS_COUNT transmission metrics"
-        else
-            print_warning "⚠ Endpoint responding but no transmission metrics found"
-        fi
+    echo -n "Testing network connectivity from $from_container to $to_container:$port... "
+    if docker exec "$from_container" nc -z "$to_container" "$port" 2>/dev/null; then
+        echo -e "${GREEN}✓${NC}"
+        return 0
     else
-        print_error "✗ Built-in Prometheus exporter not responding on port 9099"
-        echo "  Fix: Ensure TRANSMISSION_EXPORTER_ENABLED=true in your env file"
-    fi
-    
-    # Check if external metrics server is running
-    if curl -s --connect-timeout 5 http://localhost:8081/prometheus > /dev/null; then
-        print_warning "⚠ External metrics server detected on port 8081"
-        echo "  This might be conflicting with built-in metrics"
-        echo "  Consider using only one metrics approach"
+        echo -e "${RED}✗${NC}"
+        return 1
     fi
 }
 
-# Check environment configuration
-check_env_config() {
-    print_status "Checking environment configuration..."
-    
-    # Extract environment variables from running container
-    EXPORTER_ENABLED=$(docker exec $TRANSMISSION_CONTAINER printenv TRANSMISSION_EXPORTER_ENABLED 2>/dev/null || echo "not_set")
-    EXPORTER_PORT=$(docker exec $TRANSMISSION_CONTAINER printenv TRANSMISSION_EXPORTER_PORT 2>/dev/null || echo "not_set")
-    METRICS_ENABLED=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_ENABLED 2>/dev/null || echo "not_set")
-    
-    print_status "Current configuration:"
-    echo "  TRANSMISSION_EXPORTER_ENABLED: $EXPORTER_ENABLED"
-    echo "  TRANSMISSION_EXPORTER_PORT: $EXPORTER_PORT"
-    echo "  METRICS_ENABLED: $METRICS_ENABLED"
-    
-    # Check for issues
-    if [ "$EXPORTER_ENABLED" != "true" ]; then
-        print_error "✗ Built-in Prometheus exporter is disabled"
-        echo "  Fix: Set TRANSMISSION_EXPORTER_ENABLED=true in your env file"
-    fi
-    
-    if [ "$METRICS_ENABLED" != "true" ]; then
-        print_warning "⚠ Internal health metrics are disabled"
-        echo "  Fix: Set METRICS_ENABLED=true for enhanced health monitoring"
-    fi
-}
+echo -e "${BLUE}1. Checking Container Status${NC}"
+echo "================================"
 
-# Generate fixed configuration
-generate_fixed_config() {
-    print_status "Generating fixed configuration..."
-    
-    cat > transmission-fixed.env << 'EOF'
-# Fixed TransmissionVPN Configuration for Prometheus Monitoring
+# Check TransmissionVPN container
+if ! check_container "$TRANSMISSION_CONTAINER"; then
+    echo -e "${RED}Error: TransmissionVPN container is not running${NC}"
+    echo "  Fix: Start the TransmissionVPN container first"
+    echo "  Command: docker start $TRANSMISSION_CONTAINER"
+    exit 1
+fi
 
-# Enable built-in Prometheus exporter (REQUIRED for Prometheus integration)
-TRANSMISSION_EXPORTER_ENABLED=true
-TRANSMISSION_EXPORTER_PORT=9099
+# Check Prometheus container
+if ! check_container "$PROMETHEUS_CONTAINER"; then
+    echo -e "${YELLOW}Warning: Prometheus container is not running${NC}"
+    echo "  Fix: Start the monitoring stack"
+    echo "  Command: cd monitoring/docker-compose && docker-compose up -d"
+fi
 
-# Enable internal health metrics (RECOMMENDED for comprehensive monitoring)
+# Check Grafana container
+if ! check_container "$GRAFANA_CONTAINER"; then
+    echo -e "${YELLOW}Warning: Grafana container is not running${NC}"
+    echo "  Fix: Start the monitoring stack"
+    echo "  Command: cd monitoring/docker-compose && docker-compose up -d"
+fi
+
+echo
+echo -e "${BLUE}2. Checking TransmissionVPN Configuration${NC}"
+echo "=========================================="
+
+# Check if metrics are enabled
+METRICS_ENABLED=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_ENABLED 2>/dev/null || echo "not_set")
+METRICS_PORT_ENV=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_PORT 2>/dev/null || echo "not_set")
+METRICS_INTERVAL=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_INTERVAL 2>/dev/null || echo "not_set")
+
+echo "Current TransmissionVPN configuration:"
+echo "  METRICS_ENABLED: $METRICS_ENABLED"
+echo "  METRICS_PORT: $METRICS_PORT_ENV"
+echo "  METRICS_INTERVAL: $METRICS_INTERVAL"
+
+# Check if metrics are properly enabled
+if [ "$METRICS_ENABLED" != "true" ]; then
+    echo -e "${RED}✗${NC} Metrics are not enabled"
+    echo "  Fix: Set METRICS_ENABLED=true for enhanced health monitoring"
+    echo
+    echo "Add this to your .env file or docker-compose.yml:"
+    echo "---"
+    cat << 'EOF'
+# TransmissionVPN Metrics Configuration
 METRICS_ENABLED=true
-
-# Enable leak detection for security monitoring
-CHECK_DNS_LEAK=true
-CHECK_IP_LEAK=true
-
-# Health check configuration
-HEALTH_CHECK_HOST=8.8.8.8
-
-# Add these to your existing transmission.env file
+METRICS_PORT=9099
+METRICS_INTERVAL=30
 EOF
-    
-    print_status "✓ Created transmission-fixed.env with correct settings"
-    print_status "Copy these settings to your existing transmission.env file"
-}
+    echo "---"
+    echo
+    echo "Then restart the container:"
+    echo "  docker restart $TRANSMISSION_CONTAINER"
+    echo
+fi
 
-# Test Prometheus scraping
-test_prometheus_scraping() {
-    if docker ps --format "table {{.Names}}" | grep -q "^${PROMETHEUS_CONTAINER}$"; then
-        print_status "Testing Prometheus scraping..."
-        
-        # Check if targets are up
-        if curl -s http://localhost:9090/api/v1/targets | grep -q "transmissionvpn"; then
-            print_status "✓ Prometheus has TransmissionVPN targets configured"
-            
-            # Check target health
-            UP_TARGETS=$(curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | select(.labels.job | contains("transmission")) | .health' 2>/dev/null | grep -c "up" || echo "0")
-            TOTAL_TARGETS=$(curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | select(.labels.job | contains("transmission")) | .health' 2>/dev/null | wc -l || echo "0")
-            
-            print_status "Target health: $UP_TARGETS/$TOTAL_TARGETS targets up"
+echo
+echo -e "${BLUE}3. Testing TransmissionVPN Endpoints${NC}"
+echo "===================================="
+
+# Get container IP for testing
+TRANSMISSION_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$TRANSMISSION_CONTAINER" 2>/dev/null || echo "unknown")
+echo "TransmissionVPN container IP: $TRANSMISSION_IP"
+
+# Test endpoints
+if [ "$TRANSMISSION_IP" != "unknown" ] && [ "$TRANSMISSION_IP" != "" ]; then
+    test_endpoint "http://$TRANSMISSION_IP:9091/transmission/web/" "Transmission Web UI"
+    test_endpoint "http://$TRANSMISSION_IP:$METRICS_PORT/metrics" "Prometheus metrics endpoint"
+    test_endpoint "http://$TRANSMISSION_IP:$METRICS_PORT/health" "Health endpoint"
+    test_endpoint "http://$TRANSMISSION_IP:$METRICS_PORT/health/simple" "Simple health endpoint"
+else
+    echo -e "${YELLOW}⚠${NC} Cannot determine container IP, skipping direct endpoint tests"
+fi
+
+echo
+echo -e "${BLUE}4. Checking Network Connectivity${NC}"
+echo "================================="
+
+# Check if Prometheus can reach TransmissionVPN
+if check_container "$PROMETHEUS_CONTAINER" >/dev/null 2>&1; then
+    check_network "$PROMETHEUS_CONTAINER" "$TRANSMISSION_CONTAINER" "9091"
+    check_network "$PROMETHEUS_CONTAINER" "$TRANSMISSION_CONTAINER" "$METRICS_PORT"
+else
+    echo "Skipping network tests (Prometheus not running)"
+fi
+
+echo
+echo -e "${BLUE}5. Checking Prometheus Configuration${NC}"
+echo "===================================="
+
+if check_container "$PROMETHEUS_CONTAINER" >/dev/null 2>&1; then
+    echo "Checking Prometheus targets..."
+    
+    # Get Prometheus targets
+    PROMETHEUS_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$PROMETHEUS_CONTAINER" 2>/dev/null)
+    if [ "$PROMETHEUS_IP" != "" ]; then
+        if curl -s "http://$PROMETHEUS_IP:9090/api/v1/targets" | grep -q "$TRANSMISSION_CONTAINER"; then
+            echo -e "${GREEN}✓${NC} TransmissionVPN target found in Prometheus configuration"
         else
-            print_error "✗ No TransmissionVPN targets found in Prometheus"
+            echo -e "${RED}✗${NC} TransmissionVPN target not found in Prometheus configuration"
             echo "  Fix: Check prometheus.yml configuration"
         fi
-    else
-        print_warning "⚠ Cannot test Prometheus scraping - Prometheus not running"
     fi
-}
+else
+    echo "Prometheus not running, skipping configuration check"
+fi
 
-# Provide solution steps
-provide_solutions() {
-    print_status "=== SOLUTION STEPS ==="
-    echo
-    print_status "1. Update your transmission.env file:"
-    echo "   Add these lines to /opt/containerd/env/transmission.env:"
-    echo "   TRANSMISSION_EXPORTER_ENABLED=true"
-    echo "   METRICS_ENABLED=true"
-    echo "   CHECK_DNS_LEAK=true"
-    echo "   CHECK_IP_LEAK=true"
-    echo
-    print_status "2. Restart the TransmissionVPN container:"
-    echo "   docker restart $TRANSMISSION_CONTAINER"
-    echo
-    print_status "3. Update your Prometheus configuration:"
-    echo "   Ensure prometheus.yml targets use container names, not localhost:"
-    echo "   - targets: ['transmissionvpn:9099']  # Not localhost:9099"
-    echo
-    print_status "4. Restart Prometheus:"
-    echo "   docker restart $PROMETHEUS_CONTAINER"
-    echo
-    print_status "5. Verify metrics are working:"
-    echo "   curl http://localhost:9099/metrics | grep transmission_"
-    echo "   curl http://localhost:9090/api/v1/targets"
-    echo
-}
+echo
+echo -e "${BLUE}6. Generating Fix Commands${NC}"
+echo "=========================="
 
-# Main execution
-main() {
-    check_containers || exit 1
-    check_network
-    check_metrics
-    check_env_config
-    generate_fixed_config
-    test_prometheus_scraping
-    provide_solutions
-    
-    echo
-    print_status "=== TROUBLESHOOTING COMPLETE ==="
-    print_status "Follow the solution steps above to fix the issues"
-}
+echo "If you're still having issues, try these commands:"
+echo
+echo "# Restart TransmissionVPN with metrics enabled:"
+echo "docker stop $TRANSMISSION_CONTAINER"
+echo "docker run -d --name $TRANSMISSION_CONTAINER \\"
+echo "  -e METRICS_ENABLED=true \\"
+echo "  -e METRICS_PORT=$METRICS_PORT \\"
+echo "  -e METRICS_INTERVAL=30 \\"
+echo "  -p 9091:9091 \\"
+echo "  -p $METRICS_PORT:$METRICS_PORT \\"
+echo "  [other options] \\"
+echo "  magicalyak/transmissionvpn:latest"
+echo
+echo "# Test endpoints manually:"
+echo "curl http://localhost:9091/transmission/web/"
+echo "curl http://localhost:$METRICS_PORT/metrics"
+echo "curl http://localhost:$METRICS_PORT/health"
+echo
+echo "# Check Prometheus targets:"
+echo "curl http://localhost:9090/api/v1/targets"
+echo
+echo "# View container logs:"
+echo "docker logs $TRANSMISSION_CONTAINER"
+echo "docker logs $PROMETHEUS_CONTAINER"
 
-# Run main function
-main "$@" 
+echo
+echo -e "${BLUE}7. Quick Health Check${NC}"
+echo "===================="
+
+# Final health check
+echo "Performing final health check..."
+
+HEALTH_STATUS="unknown"
+if [ "$TRANSMISSION_IP" != "unknown" ] && [ "$TRANSMISSION_IP" != "" ]; then
+    if curl -s --max-time 5 "http://$TRANSMISSION_IP:$METRICS_PORT/health/simple" | grep -q "OK"; then
+        HEALTH_STATUS="healthy"
+        echo -e "${GREEN}✓${NC} TransmissionVPN health check: PASSED"
+    else
+        HEALTH_STATUS="unhealthy"
+        echo -e "${RED}✗${NC} TransmissionVPN health check: FAILED"
+    fi
+else
+    echo -e "${YELLOW}⚠${NC} Cannot perform health check (container IP unknown)"
+fi
+
+echo
+echo -e "${BLUE}=== Summary ===${NC}"
+if [ "$HEALTH_STATUS" = "healthy" ] && [ "$METRICS_ENABLED" = "true" ]; then
+    echo -e "${GREEN}✓ All checks passed! Monitoring should be working.${NC}"
+elif [ "$METRICS_ENABLED" != "true" ]; then
+    echo -e "${YELLOW}⚠ Metrics are disabled. Enable with METRICS_ENABLED=true${NC}"
+else
+    echo -e "${RED}✗ Issues detected. Review the output above for fixes.${NC}"
+fi
+
+echo
+echo "For more help, check:"
+echo "  - Main README: https://github.com/magicalyak/transmissionvpn"
+echo "  - Monitoring docs: monitoring/README.md"
+echo "  - Health check options: HEALTHCHECK_OPTIONS.md" 

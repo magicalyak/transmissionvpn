@@ -1,0 +1,99 @@
+version: "3.8"
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb2
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=transmissionvpn123
+      - DOCKER_INFLUXDB_INIT_ORG=transmissionvpn
+      - DOCKER_INFLUXDB_INIT_BUCKET=metrics
+      - DOCKER_INFLUXDB_INIT_RETENTION=365d
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=transmissionvpn-super-secret-token
+    restart: unless-stopped
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  telegraf:
+    image: telegraf:1.28
+    container_name: telegraf
+    volumes:
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/rootfs/sys:ro
+      - /proc:/rootfs/proc:ro
+      - /etc:/rootfs/etc:ro
+    environment:
+      - HOST_PROC=/rootfs/proc
+      - HOST_SYS=/rootfs/sys
+      - HOST_ETC=/rootfs/etc
+      - INFLUX_TOKEN=transmissionvpn-super-secret-token
+      - INFLUX_ORG=transmissionvpn
+      - INFLUX_BUCKET=metrics
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - influxdb
+    privileged: true
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: grafana-influx
+    ports:
+      - "3001:3000"  # Different port to avoid conflict with Prometheus setup
+    volumes:
+      - grafana-influx-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel
+      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - influxdb
+
+  # Optional: Chronograf for InfluxDB management
+  chronograf:
+    image: chronograf:1.10
+    container_name: chronograf
+    ports:
+      - "8888:8888"
+    volumes:
+      - chronograf-data:/var/lib/chronograf
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=transmissionvpn123
+    restart: unless-stopped
+    networks:
+      - monitoring
+    depends_on:
+      - influxdb
+
+volumes:
+  influxdb-data:
+  influxdb-config:
+  grafana-influx-data:
+  chronograf-data:
+
+networks:
+  monitoring:
+    name: monitoring-influx
+    driver: bridge 
