@@ -1,186 +1,181 @@
-# TransmissionVPN Monitoring
+# Monitoring Setup for TransmissionVPN
 
-Monitoring solutions for TransmissionVPN - from simple single-container to full Prometheus/Grafana stack.
+## 🎯 **Overview**
 
-## 🎯 **Single Container Setup (Recommended)**
+This directory contains monitoring configurations for TransmissionVPN using the **built-in custom metrics server** (v4.0.6-r11+).
 
-**Perfect for users who want health monitoring without additional containers.**
-
-### **Quick Setup**
-```bash
-# 1. Enable built-in health metrics
-echo "METRICS_ENABLED=true" >> /opt/containerd/env/transmission.env
-docker restart transmission
-
-# 2. View health status
-docker exec transmission /root/healthcheck.sh
-docker exec transmission cat /tmp/metrics.txt
-
-# 3. Optional: Run health bridge for HTTP access
-python3 scripts/health-bridge.py
-# Access: http://localhost:8080/metrics
-```
-
-📖 **[Complete Single Container Guide →](docs/single-container-guide.md)**
+### **✅ What's Included:**
+- **Prometheus + Grafana** setup with Docker Compose
+- **InfluxDB v2** integration for time-series data
+- **Pre-configured dashboards** for Transmission metrics
+- **Automated setup scripts** for quick deployment
 
 ---
 
-## 🚀 **Full Monitoring Stack (Advanced)**
+## **🚀 Quick Start**
 
-**For users who want comprehensive monitoring with Prometheus and Grafana.**
+### **1. Enable Built-in Metrics**
 
-### **Quick Start**
+Add to your `.env` file:
 ```bash
-cd monitoring/docker-compose
-docker-compose up -d
-```
-
-**Access:**
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **Prometheus**: http://localhost:9090
-- **TransmissionVPN**: http://localhost:9091
-
-The dashboard is automatically loaded in Grafana with transmission metrics!
-
-## 📁 Directory Structure
-
-```
-monitoring/
-├── README.md                           # This guide
-├── scripts/                            # Health monitoring scripts
-│   ├── health-bridge.py                # Single-container health bridge
-│   └── README.md                       # Scripts documentation
-├── docs/                               # Documentation
-│   ├── single-container-guide.md       # Single container setup
-│   ├── single-container-setup.md       # Alternative setup guide
-│   └── single-container-instructions.md # Step-by-step instructions
-└── docker-compose/                     # Full monitoring stack
-    ├── docker-compose.yml              # Complete monitoring stack
-    ├── prometheus.yml                  # Prometheus configuration
-    └── grafana/                        # Grafana configuration
-        ├── dashboards/
-        │   └── transmissionvpn-dashboard.json
-        └── provisioning/
-            ├── datasources/prometheus.yml
-            └── dashboards/dashboard.yml
-```
-
-## 📊 Dashboard Features
-
-- **📈 Real-time Transfer Speeds** (download/upload)
-- **📊 Torrent Statistics** (total, active, paused)
-- **💾 System Info** (disk usage, free space)
-- **📈 Transfer History** (cumulative and session stats)
-- **🎨 Clean, responsive design**
-
-## 🔧 Prerequisites
-
-Your TransmissionVPN container needs these environment variables:
-
-```bash
-# Required for transmission metrics
-TRANSMISSION_EXPORTER_ENABLED=true
-TRANSMISSION_EXPORTER_PORT=9099
-
-# Optional for enhanced health monitoring (single container)
+# Custom Metrics Server (v4.0.6-r11+)
 METRICS_ENABLED=true
-CHECK_DNS_LEAK=true
-CHECK_IP_LEAK=true
+METRICS_PORT=9099
+METRICS_INTERVAL=30
 ```
 
-## 📈 Available Metrics
-
-### Transmission Core Metrics (Always Available)
-- `transmission_session_stats_download_speed_bytes` - Current download speed
-- `transmission_session_stats_upload_speed_bytes` - Current upload speed
-- `transmission_session_stats_torrents_total` - Total number of torrents
-- `transmission_session_stats_torrents_active` - Currently active torrents
-- `transmission_session_stats_torrents_paused` - Paused torrents
-
-### Transfer Statistics
-- `transmission_session_stats_downloaded_bytes{type="cumulative"}` - All-time downloads
-- `transmission_session_stats_uploaded_bytes{type="cumulative"}` - All-time uploads
-- `transmission_session_stats_downloaded_bytes{type="current"}` - Session downloads
-- `transmission_session_stats_uploaded_bytes{type="current"}` - Session uploads
-
-### System Metrics
-- `transmission_free_space` - Available disk space
-- `transmission_cache_size_bytes` - Cache memory usage
-- `transmission_version` - Transmission version info
-- `transmission_global_peer_limit` - Maximum global peers
-- `transmission_speed_limit_down_bytes` - Download speed limit
-- `transmission_speed_limit_up_bytes` - Upload speed limit
-
-**View all metrics:**
+### **2. Restart TransmissionVPN**
 ```bash
-# Transmission metrics
-curl http://localhost:9099/metrics | grep transmission_
+docker-compose restart transmissionvpn
 ```
 
-## 🚨 Troubleshooting
-
-### No metrics showing?
-
-**Quick fix:**
+### **3. Verify Metrics**
 ```bash
-cd monitoring/scripts
-chmod +x quick-network-fix.sh
-./quick-network-fix.sh
+curl http://localhost:9099/metrics
+curl http://localhost:9099/health
 ```
 
-**Common issues:**
-1. **Missing env vars**: Add `TRANSMISSION_EXPORTER_ENABLED=true` to your `.env` file
-2. **Network isolation**: Containers on different Docker networks
-3. **Port conflicts**: Port 9099 not exposed or in use
-
-### Comprehensive diagnostics:
+### **4. Deploy Monitoring Stack**
 ```bash
-cd monitoring/scripts
-chmod +x fix-prometheus-issues.sh
-./fix-prometheus-issues.sh
-```
-
-## 🎯 Setup Options
-
-### Option 1: Single Container (Recommended)
-Perfect for most users - no additional containers needed:
-
-```bash
-# Enable health metrics in your existing container
-echo "METRICS_ENABLED=true" >> /opt/containerd/env/transmission.env
-docker restart transmission
-
-# Optional: Run health bridge for HTTP access
-python3 monitoring/scripts/health-bridge.py
-```
-
-### Option 2: Full Monitoring Stack
-Includes Prometheus and Grafana for advanced monitoring:
-
-```bash
-# Start full monitoring stack
+# Option A: Prometheus + Grafana
 cd monitoring/docker-compose
+docker-compose up -d
+
+# Option B: InfluxDB v2 + Grafana  
+cd monitoring/grafana-influx
 docker-compose up -d
 ```
 
-## 🔗 Useful Commands
+---
 
+## **📊 Available Metrics**
+
+The custom metrics server provides these Prometheus metrics:
+
+### **Torrent Counts**
+- `transmission_torrent_count` - Total number of torrents
+- `transmission_active_torrents` - Number of active torrents
+- `transmission_downloading_torrents` - Number of downloading torrents
+- `transmission_seeding_torrents` - Number of seeding torrents
+
+### **Transfer Rates**
+- `transmission_download_rate_bytes_per_second` - Current download rate
+- `transmission_upload_rate_bytes_per_second` - Current upload rate
+
+### **Session Statistics**
+- `transmission_session_downloaded_bytes` - Session downloaded bytes
+- `transmission_session_uploaded_bytes` - Session uploaded bytes
+
+### **System**
+- `transmission_metrics_last_update_timestamp` - Last metrics update time
+
+---
+
+## **🔧 Configuration Options**
+
+### **Environment Variables**
 ```bash
-# Check Prometheus targets
-curl http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | select(.labels.job | contains("transmission")) | .health'
+# Required
+METRICS_ENABLED=true           # Enable custom metrics server
+METRICS_PORT=9099             # Metrics endpoint port
+METRICS_INTERVAL=30           # Update interval in seconds
 
-# Test metrics endpoints
-curl http://localhost:9099/metrics | head -10  # Transmission metrics
-
-# View container logs
-docker logs transmission | grep -i metric
-docker logs prometheus | grep -i transmission
-docker logs grafana
+# Optional
+TRANSMISSION_RPC_USERNAME=admin
+TRANSMISSION_RPC_PASSWORD=your_password
 ```
 
-## 🆘 Need Help?
+### **Prometheus Scrape Config**
+```yaml
+scrape_configs:
+  - job_name: 'transmissionvpn'
+    static_configs:
+      - targets: ['transmissionvpn:9099']
+    scrape_interval: 30s
+    metrics_path: /metrics
+```
 
-1. **Single Container Issues**: See [Single Container Guide](docs/single-container-guide.md)
-2. **Run diagnostics**: `./scripts/fix-prometheus-issues.sh`
-3. **Check container status**: `docker ps`
-4. **Test connectivity**: `curl -v http://localhost:9099/metrics` 
+---
+
+## **🏗️ Deployment Options**
+
+### **Option 1: Prometheus + Grafana (Recommended)**
+- **Location**: `monitoring/docker-compose/`
+- **Services**: Prometheus, Grafana, AlertManager
+- **Best for**: Production monitoring with alerting
+
+### **Option 2: InfluxDB v2 + Grafana**
+- **Location**: `monitoring/grafana-influx/`
+- **Services**: InfluxDB v2, Grafana, Telegraf
+- **Best for**: Time-series analysis and long-term storage
+
+### **Option 3: External Monitoring**
+- **Use case**: Existing Prometheus/Grafana setup
+- **Setup**: Add scrape target to existing Prometheus config
+
+---
+
+## **🚨 Troubleshooting**
+
+### **Metrics Not Available**
+1. **Missing env vars**: Add `METRICS_ENABLED=true` to your `.env` file
+2. **Container not updated**: Pull latest image `magicalyak/transmissionvpn:v4.0.6-r11`
+3. **Port not exposed**: Ensure port 9099 is mapped in docker-compose.yml
+4. **Firewall**: Check if port 9099 is accessible
+
+### **Migration from transmission-exporter**
+If upgrading from older versions:
+```bash
+# Old variables (remove these)
+TRANSMISSION_EXPORTER_ENABLED=true  # Remove
+TRANSMISSION_EXPORTER_PORT=9099     # Remove
+
+# New variables (add these)
+METRICS_ENABLED=true
+METRICS_PORT=9099
+METRICS_INTERVAL=30
+```
+
+---
+
+## **📈 Dashboard Examples**
+
+### **Key Metrics to Monitor**
+- **Active Torrents**: Track downloading/seeding activity
+- **Transfer Rates**: Monitor bandwidth usage
+- **Session Statistics**: Track total data transferred
+- **System Health**: Monitor container and VPN status
+
+### **Grafana Queries**
+```promql
+# Active torrents
+transmission_active_torrents
+
+# Download rate in MB/s
+rate(transmission_session_downloaded_bytes[5m]) / 1024 / 1024
+
+# Upload rate in MB/s  
+rate(transmission_session_uploaded_bytes[5m]) / 1024 / 1024
+
+# Total torrents by status
+sum by (status) (transmission_torrent_count)
+```
+
+---
+
+## **🔗 Related Documentation**
+
+- **[Main README](../README.md)** - TransmissionVPN setup
+- **[Release Notes](../RELEASE_NOTES_v4.0.6-r11.md)** - Custom metrics details
+- **[Configuration Guide](../docs/ROCKY_SERVER_UPGRADE_GUIDE.md)** - Server upgrade guide
+
+---
+
+## **💡 Tips**
+
+1. **Start simple**: Use built-in metrics first, add external monitoring later
+2. **Monitor trends**: Focus on long-term patterns, not instant values
+3. **Set alerts**: Configure alerts for VPN disconnections or failed downloads
+4. **Regular cleanup**: Archive old metrics data to save storage space
+
+The custom metrics server provides reliable, lightweight monitoring without the complexity of external exporters! 🚀 

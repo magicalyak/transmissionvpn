@@ -544,9 +544,10 @@ If you're getting "*directory does not appear to exist inside the container*" er
 |----------|-------------|---------|
 | `ENABLE_PRIVOXY` | HTTP proxy | `no` |
 | `DEBUG` | Debug logging | `false` |
-| `TRANSMISSION_EXPORTER_ENABLED` | Built-in Prometheus exporter | `false` |
-| `TRANSMISSION_EXPORTER_PORT` | Metrics endpoint port | `9099` |
-| `METRICS_ENABLED` | Internal health metrics | `false` |
+| `METRICS_ENABLED` | Built-in custom metrics server | `false` |
+| `METRICS_PORT` | Metrics endpoint port | `9099` |
+| `METRICS_INTERVAL` | Metrics update interval (seconds) | `30` |
+| `INTERNAL_METRICS_ENABLED` | Internal health metrics | `false` |
 | `CHECK_DNS_LEAK` | DNS leak detection | `false` |
 | `CHECK_IP_LEAK` | IP leak detection | `false` |
 | `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) |

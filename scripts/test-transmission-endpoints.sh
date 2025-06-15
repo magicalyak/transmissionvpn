@@ -87,7 +87,7 @@ if curl -sf --max-time 5 http://localhost:9099/metrics > /dev/null 2>&1; then
     
 else
     print_status "FAIL" "Prometheus metrics endpoint not accessible"
-    echo "Note: Enable with TRANSMISSION_EXPORTER_ENABLED=true"
+    echo "Note: Enable with METRICS_ENABLED=true"
 fi
 
 echo ""
@@ -237,4 +237,19 @@ echo "docker exec $CONTAINER_NAME curl -s ifconfig.me"
 echo ""
 echo "# Container health status"
 echo "docker ps --format 'table {{.Names}}\t{{.Status}}'"
-echo "docker inspect --format='{{.State.Health.Status}}' $CONTAINER_NAME" 
+echo "docker inspect --format='{{.State.Health.Status}}' $CONTAINER_NAME"
+
+echo ""
+echo "4. TESTING METRICS ENDPOINT:"
+echo "=========================="
+echo "Testing Prometheus metrics endpoint..."
+
+# Test metrics endpoint
+if curl -s --connect-timeout 5 http://localhost:9099/metrics >/dev/null 2>&1; then
+    echo "✅ Metrics endpoint is accessible"
+    echo "Sample metrics:"
+    curl -s http://localhost:9099/metrics | head -5
+else
+    echo "❌ Metrics endpoint is not accessible"
+    echo "Note: Enable with METRICS_ENABLED=true"
+fi 

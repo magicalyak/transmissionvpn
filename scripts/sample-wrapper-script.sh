@@ -5,11 +5,23 @@
 
 set -e
 
+# Function to log with timestamp
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Check if Docker is running
+if ! docker info >/dev/null 2>&1; then
+    log "ERROR: Docker is not running"
+    exit 1
+fi
+
 # Load environment variables
 ENV_FILE="/opt/containerd/env/transmission.env"
 if [ -f "$ENV_FILE" ]; then
     echo "Loading environment from $ENV_FILE"
     source "$ENV_FILE"
+    log "INFO: Loaded environment variables"
 else
     echo "ERROR: Environment file not found at $ENV_FILE"
     exit 1
@@ -30,12 +42,14 @@ mkdir -p "${WATCH_PATH:-/opt/transmission/watch}"
 echo "Starting Transmission container: $CONTAINER_NAME"
 echo "Using image: $IMAGE_NAME"
 
-# Stop and remove existing container if it exists
-if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "Stopping existing container: $CONTAINER_NAME"
-    docker stop "$CONTAINER_NAME" || true
-    docker rm "$CONTAINER_NAME" || true
-fi
+# Check for and remove existing containers
+for CONTAINER in "transmission" "transmissionvpn"; do
+  if docker ps -a --format '{{.Names}}' | grep -q "^$CONTAINER$"; then
+    log "INFO: Stopping and removing existing container $CONTAINER"
+    docker stop "$CONTAINER" 2>/dev/null || true
+    docker rm "$CONTAINER" 2>/dev/null || true
+  fi
+done
 
 # Pull latest image
 echo "Pulling latest image: $IMAGE_NAME"
@@ -75,17 +89,11 @@ docker run -d \
     --restart unless-stopped \
     "$IMAGE_NAME"
 
-echo "Container started successfully!"
-echo "Web UI: http://$(hostname):${HOST_PORT_WEB}/transmission/web/"
-echo "Metrics: http://$(hostname):${HOST_PORT_METRICS}/metrics"
-
-# Wait a moment and check container status
-sleep 5
-if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    echo "✅ Container is running"
-    docker logs --tail 10 "$CONTAINER_NAME"
+if [[ $? -eq 0 ]]; then
+    log "INFO: Container started successfully"
+    log "INFO: Web UI available at: http://$(hostname):${HOST_PORT_WEB}"
+    log "INFO: Metrics available at: http://$(hostname):${HOST_PORT_METRICS}/metrics"
 else
-    echo "❌ Container failed to start"
-    docker logs "$CONTAINER_NAME"
+    log "ERROR: Failed to start container"
     exit 1
 fi 
