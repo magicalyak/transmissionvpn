@@ -1,10 +1,16 @@
 ---
-name: Build and Publish Docker Image
+name: Build and Publish Multi-Architecture Docker Images
 
 # This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
 # separate terms of service, privacy policy, and support
 # documentation.
+
+# Grant permissions for GITHUB_TOKEN to push to GitHub Container Registry
+permissions:
+  contents: read
+  packages: write
+  security-events: write
 
 on:
   push:
@@ -17,117 +23,434 @@ on:
   pull_request:
     branches:
       - main
+      - develop
+  schedule:
+    # Build nightly at 2 AM UTC (useful for security patches)
+    - cron: '0 2 * * *'
   workflow_dispatch:
+    inputs:
+      push_to_registry:
+        description: 'Push to Docker registries'
+        required: false
+        default: true
+        type: boolean
+      platforms:
+        description: 'Target platforms (comma-separated)'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: string
 
 env:
-  REGISTRY: docker.io
-  IMAGE_NAME: ${{ github.repository_owner }}/transmissionvpn
+  REGISTRY_DOCKERHUB: docker.io
+  REGISTRY_GHCR: ghcr.io
+  IMAGE_NAME: magicalyak/transmissionvpn
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
-      id-token: write
+    # Skip scheduled builds for PRs and non-main branches (except for tags)
+    if: github.event_name != 'schedule' || github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate Docker Hub credentials
+        id: validate-creds
+        if: github.event_name != 'pull_request'
+        run: |
+          if [[ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]]; then
+            echo "❌ DOCKERHUB_USERNAME secret is not set"
+            echo "has-creds=false" >> $GITHUB_OUTPUT
+            exit 1
+          elif [[ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
+            echo "❌ DOCKERHUB_TOKEN secret is not set"
+            echo "has-creds=false" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "✅ Docker Hub credentials are configured"
+            echo "has-creds=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Debug registry information
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Using Docker Hub registry: ${{ env.REGISTRY_DOCKERHUB }}"
+          echo "Using image name: ${{ env.IMAGE_NAME }}"
+          echo "Username length: ${#DOCKERHUB_USERNAME}"
+          echo "Token length: ${#DOCKERHUB_TOKEN}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Ref Name: ${{ github.ref_name }}"
+          echo "Platform: ${{ matrix.platform }}"
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            # For version tags like v4.0.6-r11, create multiple tag formats
+            type=match,pattern=v(.*),group=1
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # Handle custom versioning format like v4.0.6-r11
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=sha,prefix={{branch}}-
+          labels: |
+            org.opencontainers.image.title=transmissionvpn
+            org.opencontainers.image.description=Transmission with VPN integration - Multi-architecture support
+            org.opencontainers.image.vendor=magicalyak
+            org.opencontainers.image.licenses=GPL-3.0
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Debug environment
-        run: |
-          echo "Repository: ${{ github.repository }}"
-          echo "Owner: ${{ github.repository_owner }}"
-          echo "Image: ${{ env.IMAGE_NAME }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Ref Name: ${{ github.ref_name }}"
+        with:
+          platforms: linux/amd64,linux/arm64
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
+          registry: ${{ env.REGISTRY_DOCKERHUB }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract platform pair
+        id: platform
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          echo "PLATFORM_ARCH=${platform##*/}" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+          build-args: |
+            BUILDPLATFORM=${{ matrix.platform }}
+            TARGETPLATFORM=${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            # For version tags like v4.0.6-r11, create multiple tag formats
+            type=match,pattern=v(.*),group=1
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # Handle custom versioning format like v4.0.6-r11
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=sha,prefix={{branch}}-
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_DOCKERHUB }}
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker meta
+      - name: Create manifest list and push to Docker Hub
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map(select(contains("docker.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Create manifest list and push to GHCR
+        working-directory: /tmp/digests
+        run: |
+          # Create tags for GHCR
+          GHCR_TAGS=$(jq -cr '.tags | map(select(contains("ghcr.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          docker buildx imagetools create $GHCR_TAGS \
+            $(printf '${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+  test-multiarch:
+    runs-on: ubuntu-latest
+    needs:
+      - merge
+    if: github.event_name != 'pull_request'
+    strategy:
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            magicalyak/transmissionvpn
-            ghcr.io/magicalyak/transmissionvpn
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=ref,event=branch
+            type=ref,event=pr
             # For version tags like v4.0.6-r11, create multiple tag formats
             type=match,pattern=v(.*),group=1
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            
             # Handle custom versioning format like v4.0.6-r11
             type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
-            
-            # When a commit is pushed to the `main` branch, the `latest` tag
-            # will be updated.
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=sha,prefix={{branch}}-
 
-            # When a commit is pushed to any other branch, a tag with the
-            # branch name will be created.
-            # Example: develop -> develop
-            type=ref,event=branch
+      - name: Debug metadata output
+        run: |
+          echo "Available tags:"
+          echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n'
+          echo "Version: ${{ steps.meta.outputs.version }}"
 
-            # A sha-<hash> tag is created for every commit, regardless of
-            # the branch or event type. This is useful for debugging.
-            type=sha
+      - name: Test multi-arch image
+        run: |
+          # Test that the image can be pulled and basic commands work
+          docker pull --platform ${{ matrix.platform }} ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          
+          # Test basic functionality
+          docker run --rm --platform ${{ matrix.platform }} \
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
+            sh -c 'echo "Testing basic functionality on ${{ matrix.platform }}" && python3 --version && openvpn --version | head -1 && transmission-daemon --version | head -1 && curl --version | head -1 && echo "All basic tools available"'
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - name: Test platform-specific optimizations
+        run: |
+          # Test architecture detection
+          docker run --rm --platform ${{ matrix.platform }} \
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
+            sh -c 'echo "Architecture: $(uname -m)" && echo "Platform: $(uname -s)" && (cat /proc/cpuinfo | grep -E "(processor|model name|Hardware|Revision)" | head -5 || echo "CPU info not available")'
+
+      - name: Test custom metrics server
+        run: |
+          # Test that our custom metrics server is available
+          docker run --rm --platform ${{ matrix.platform }} \
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
+            sh -c 'ls -la /usr/local/bin/transmission-metrics-server.py && python3 -c "import requests; print(\"Python requests library available\")"'
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs:
+      - merge
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
-          # build-args: |
-          #   TRANSMISSION_VERSION=${{ steps.meta.outputs.version }}
-          #   VCS_REF=${{ steps.meta.outputs.version }}
-          #   BUILD_DATE=${{ steps.meta.outputs.created }}
+          fetch-depth: 0  # Ensure the entire history is fetched
+
+      - name: Set up Trivy cache directory
+        run: |
+          mkdir -p ${{ github.workspace }}/.cache/trivy
+          chmod -R 755 ${{ github.workspace }}/.cache/trivy
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            # For version tags like v4.0.6-r11, create multiple tag formats
+            type=match,pattern=v(.*),group=1
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            # Handle custom versioning format like v4.0.6-r11
+            type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=sha,prefix={{branch}}-
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  update-readme:
+    runs-on: ubuntu-latest
+    needs:
+      - merge
+      - test-multiarch
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Hub credentials
+        id: validate-creds
+        run: |
+          if [[ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]]; then
+            echo "❌ DOCKERHUB_USERNAME secret is not set"
+            echo "has-creds=false" >> $GITHUB_OUTPUT
+          elif [[ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
+            echo "❌ DOCKERHUB_TOKEN secret is not set"
+            echo "has-creds=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Docker Hub credentials are configured"
+            echo "has-creds=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update Docker Hub README
+        if: steps.validate-creds.outputs.has-creds == 'true'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE_NAME }}
+          readme-filepath: ./README.md
+        continue-on-error: true
+
+      - name: README update status
+        run: |
+          if [[ "${{ steps.validate-creds.outputs.has-creds }}" == "false" ]]; then
+            echo "⚠️ Docker Hub README update skipped due to missing credentials"
+            echo "Please check repository secrets: DOCKERHUB_USERNAME and DOCKERHUB_TOKEN"
+          else
+            echo "✅ Docker Hub README update attempted"
+            echo "If it failed, check Docker Hub token permissions and expiration"
+          fi
 
   # Optional: Create GitHub Release when a new Git tag is pushed
   create-release:
-    needs: build-and-push # Run after build and push
-    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/4.') # Only run for tag pushes
+    needs: 
+      - merge
+      - test-multiarch
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/4.')
     runs-on: ubuntu-latest
     permissions:
-      contents: write # To create releases
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Needed for release-drafter to get full commit history
+          fetch-depth: 0
 
       - name: Draft release notes
         id: draft_release
         uses: release-drafter/release-drafter@v6
         with:
-          config-name: release-drafter.yml # Optional: if you have custom config
-          publish: true # Automatically publish the release
+          config-name: release-drafter.yml
+          publish: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
