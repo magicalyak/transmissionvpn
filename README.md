@@ -110,8 +110,10 @@ services:
 | `DEBUG` | Enable debug logging | `false` | `true` |
 | `TRANSMISSION_WEB_UI_AUTO` | Auto-download web UI | (none) | `flood` |
 | `METRICS_ENABLED` | Enable built-in custom metrics server | `false` | `true` |
-| `METRICS_PORT` | Prometheus metrics port | `9099` | `9099` |
+| `METRICS_PORT` | Prometheus metrics port | `9099` | `8080` |
 | `METRICS_INTERVAL` | Metrics update interval (seconds) | `30` | `60` |
+| `TRANSMISSION_PEER_PORT` | BitTorrent peer port | (none) | `51413` |
+| `PRIVOXY_PORT` | Privoxy HTTP proxy port | `8118` | `8119` |
 | `INTERNAL_METRICS_ENABLED` | Enable internal health metrics | `false` | `true` |
 | `CHECK_DNS_LEAK` | Enable DNS leak detection | `false` | `true` |
 | `CHECK_IP_LEAK` | Enable IP leak detection | `false` | `true` |
@@ -126,11 +128,19 @@ services:
 
 ## 🌐 Ports
 
-| Port | Function | Required |
-|------|----------|----------|
-| `9091` | Transmission Web UI | Yes |
-| `8118` | Privoxy HTTP proxy | No |
-| `9099` | Prometheus metrics endpoint | No |
+| Port | Function | Required | Configurable |
+|------|----------|----------|--------------|
+| `9091` | Transmission Web UI | Yes | No |
+| `8118` | Privoxy HTTP proxy | No | Via `PRIVOXY_PORT` |
+| `9099` | Prometheus metrics endpoint | No | Via `METRICS_PORT` |
+| `51413` | BitTorrent peer port | No | Via `TRANSMISSION_PEER_PORT` |
+
+**Dynamic Port Configuration:**
+- **Metrics Port**: Set `METRICS_PORT=8080` to use port 8080 instead of 9099
+- **BitTorrent Port**: Set `TRANSMISSION_PEER_PORT=6881` to use port 6881 instead of 51413
+- **Privoxy Port**: Set `PRIVOXY_PORT=8119` to use port 8119 instead of 8118
+
+The container automatically configures iptables rules for your custom ports. No manual firewall configuration needed!
 
 ## 🔧 Setup Instructions
 
