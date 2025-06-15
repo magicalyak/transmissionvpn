@@ -1,0 +1,109 @@
+# TransmissionVPN Template Sensors
+# Add this to your configuration.yaml under 'template:' section
+# or include it as: template: !include template_sensors.yaml
+
+template:
+  - sensor:
+      # Combined health status with detailed information
+      - name: "TransmissionVPN Health Summary"
+        unique_id: transmissionvpn_health_summary
+        state: >
+          {% set status = states('sensor.transmissionvpn_status') %}
+          {% set vpn = states('binary_sensor.transmissionvpn_vpn_connected') %}
+          {% set daemon = states('binary_sensor.transmissionvpn_daemon_running') %}
+          
+          {% if daemon == 'off' %}
+            Critical: Daemon Down
+          {% elif vpn == 'off' %}
+            Warning: VPN Disconnected
+          {% elif status == 'healthy' %}
+            Healthy
+          {% elif status == 'degraded' %}
+            Degraded
+          {% elif status == 'unhealthy' %}
+            Unhealthy
+          {% else %}
+            Unknown
+          {% endif %}
+        attributes:
+          status: "{{ states('sensor.transmissionvpn_status') }}"
+          vpn_connected: "{{ states('binary_sensor.transmissionvpn_vpn_connected') }}"
+          daemon_running: "{{ states('binary_sensor.transmissionvpn_daemon_running') }}"
+          external_ip: "{{ states('sensor.transmissionvpn_external_ip') }}"
+          active_torrents: "{{ states('sensor.transmissionvpn_active_torrents') }}"
+          download_speed: "{{ states('sensor.transmissionvpn_download_speed') }} MB/s"
+          upload_speed: "{{ states('sensor.transmissionvpn_upload_speed') }} MB/s"
+          memory_usage: "{{ states('sensor.transmissionvpn_memory_usage') }}%"
+          cpu_usage: "{{ states('sensor.transmissionvpn_cpu_usage') }}%"
+          disk_usage: "{{ states('sensor.transmissionvpn_disk_usage') }}%"
+        icon: >
+          {% set status = states('sensor.transmissionvpn_status') %}
+          {% if status == 'healthy' %}
+            mdi:check-circle
+          {% elif status == 'degraded' %}
+            mdi:alert-circle
+          {% elif status == 'unhealthy' %}
+            mdi:close-circle
+          {% else %}
+            mdi:help-circle
+          {% endif %}
+
+      # Data usage tracking
+      - name: "TransmissionVPN Data Usage"
+        unique_id: transmissionvpn_data_usage
+        state: >
+          {% set down = states('sensor.transmissionvpn_download_speed') | float %}
+          {% set up = states('sensor.transmissionvpn_upload_speed') | float %}
+          {{ (down + up) | round(2) }}
+        unit_of_measurement: "MB/s"
+        attributes:
+          download_speed: "{{ states('sensor.transmissionvpn_download_speed') }}"
+          upload_speed: "{{ states('sensor.transmissionvpn_upload_speed') }}"
+          total_speed: "{{ (states('sensor.transmissionvpn_download_speed') | float + states('sensor.transmissionvpn_upload_speed') | float) | round(2) }}"
+        icon: mdi:speedometer
+
+  - binary_sensor:
+      # Alert when service needs attention
+      - name: "TransmissionVPN Needs Attention"
+        unique_id: transmissionvpn_needs_attention
+        state: >
+          {% set status = states('sensor.transmissionvpn_status') %}
+          {% set vpn = states('binary_sensor.transmissionvpn_vpn_connected') %}
+          {% set daemon = states('binary_sensor.transmissionvpn_daemon_running') %}
+          {% set memory = states('sensor.transmissionvpn_memory_usage') | float %}
+          {% set disk = states('sensor.transmissionvpn_disk_usage') | float %}
+          
+          {{ daemon == 'off' or vpn == 'off' or status == 'unhealthy' or memory > 90 or disk > 90 }}
+        attributes:
+          reasons: >
+            {% set reasons = [] %}
+            {% if states('binary_sensor.transmissionvpn_daemon_running') == 'off' %}
+              {% set reasons = reasons + ['Daemon not running'] %}
+            {% endif %}
+            {% if states('binary_sensor.transmissionvpn_vpn_connected') == 'off' %}
+              {% set reasons = reasons + ['VPN disconnected'] %}
+            {% endif %}
+            {% if states('sensor.transmissionvpn_status') == 'unhealthy' %}
+              {% set reasons = reasons + ['Service unhealthy'] %}
+            {% endif %}
+            {% if states('sensor.transmissionvpn_memory_usage') | float > 90 %}
+              {% set reasons = reasons + ['High memory usage'] %}
+            {% endif %}
+            {% if states('sensor.transmissionvpn_disk_usage') | float > 90 %}
+              {% set reasons = reasons + ['High disk usage'] %}
+            {% endif %}
+            {{ reasons | join(', ') }}
+        device_class: problem
+        icon: mdi:alert
+
+      # High activity indicator
+      - name: "TransmissionVPN High Activity"
+        unique_id: transmissionvpn_high_activity
+        state: >
+          {% set active = states('sensor.transmissionvpn_active_torrents') | int %}
+          {% set speed = (states('sensor.transmissionvpn_download_speed') | float + states('sensor.transmissionvpn_upload_speed') | float) %}
+          {{ active > 0 or speed > 1 }}
+        attributes:
+          active_torrents: "{{ states('sensor.transmissionvpn_active_torrents') }}"
+          total_speed: "{{ (states('sensor.transmissionvpn_download_speed') | float + states('sensor.transmissionvpn_upload_speed') | float) | round(2) }} MB/s"
+        icon: mdi:download-network 

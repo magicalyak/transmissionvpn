@@ -1,0 +1,88 @@
+# TransmissionVPN REST Sensors (Alternative to command_line - more efficient)
+# Add this to your configuration.yaml
+
+rest:
+  # TransmissionVPN Health Monitoring
+  - resource: "http://10.1.10.20:9099/health"
+    scan_interval: 60
+    timeout: 30
+    sensor:
+      # Main service status
+      - name: "TransmissionVPN Status"
+        unique_id: transmissionvpn_status
+        value_template: "{{ value_json.status | default('unknown') }}"
+        json_attributes:
+          - timestamp
+          - uptime_seconds
+          - warnings
+          - version
+        
+      # VPN External IP
+      - name: "TransmissionVPN External IP"
+        unique_id: transmissionvpn_external_ip
+        value_template: "{{ value_json.vpn.external_ip | default('unknown') }}"
+        
+      # Active Torrents
+      - name: "TransmissionVPN Active Torrents"
+        unique_id: transmissionvpn_active_torrents
+        value_template: "{{ value_json.metrics.active_torrents | default(0) }}"
+        unit_of_measurement: "torrents"
+        
+      # Download Speed (MB/s)
+      - name: "TransmissionVPN Download Speed"
+        unique_id: transmissionvpn_download_speed
+        value_template: "{{ (value_json.metrics.download_rate | default(0) | float / 1024 / 1024) | round(2) }}"
+        unit_of_measurement: "MB/s"
+        
+      # Upload Speed (MB/s)
+      - name: "TransmissionVPN Upload Speed"
+        unique_id: transmissionvpn_upload_speed
+        value_template: "{{ (value_json.metrics.upload_rate | default(0) | float / 1024 / 1024) | round(2) }}"
+        unit_of_measurement: "MB/s"
+        
+      # System Memory Usage
+      - name: "TransmissionVPN Memory Usage"
+        unique_id: transmissionvpn_memory_usage
+        value_template: "{{ value_json.system.memory.percent | default(0) }}"
+        unit_of_measurement: "%"
+        
+      # System CPU Usage
+      - name: "TransmissionVPN CPU Usage"
+        unique_id: transmissionvpn_cpu_usage
+        value_template: "{{ value_json.system.cpu.usage_percent | default(0) }}"
+        unit_of_measurement: "%"
+        
+      # Disk Usage
+      - name: "TransmissionVPN Disk Usage"
+        unique_id: transmissionvpn_disk_usage
+        value_template: "{{ value_json.system.disk.usage_percent | default(0) | round(1) }}"
+        unit_of_measurement: "%"
+
+    binary_sensor:
+      # Main service online/offline
+      - name: "TransmissionVPN Online"
+        unique_id: transmissionvpn_online
+        value_template: "{{ value_json.status in ['healthy', 'degraded'] }}"
+        device_class: connectivity
+        
+      # VPN Connection Status
+      - name: "TransmissionVPN VPN Connected"
+        unique_id: transmissionvpn_vpn_connected
+        value_template: "{{ value_json.vpn.connected | default(false) }}"
+        device_class: connectivity
+        
+      # Transmission Daemon Running
+      - name: "TransmissionVPN Daemon Running"
+        unique_id: transmissionvpn_daemon_running
+        value_template: "{{ value_json.transmission.daemon_running | default(false) }}"
+        device_class: running
+
+  # Simple health check endpoint for basic monitoring
+  - resource: "http://10.1.10.20:9099/health/simple"
+    scan_interval: 30
+    timeout: 30
+    binary_sensor:
+      - name: "TransmissionVPN Simple Health"
+        unique_id: transmissionvpn_simple_health
+        value_template: "{{ value == 'OK' }}"
+        device_class: connectivity 

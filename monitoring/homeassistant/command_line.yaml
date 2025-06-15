@@ -1,0 +1,61 @@
+# TransmissionVPN Health Monitoring
+# Replace your existing nzbget sensor with these improved sensors
+
+# Main health check - replaces your port check
+- sensor:
+    name: transmissionvpn service
+    unique_id: transmissionvpn_health_check
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health/simple 2>/dev/null && echo "ON" || echo "OFF"'
+    value_template: '{{ value }}'
+    scan_interval: 60  # Check every minute
+
+# Detailed status (healthy/degraded/unhealthy)
+- sensor:
+    name: transmissionvpn status
+    unique_id: transmissionvpn_detailed_status
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health 2>/dev/null | jq -r ".status // \"unknown\""'
+    value_template: '{{ value }}'
+    scan_interval: 120  # Check every 2 minutes
+
+# VPN connection status
+- sensor:
+    name: transmissionvpn vpn
+    unique_id: transmissionvpn_vpn_status
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health 2>/dev/null | jq -r "if .vpn.connected == true then \"ON\" else \"OFF\" end"'
+    value_template: '{{ value }}'
+    scan_interval: 120
+
+# External IP (to verify VPN is working)
+- sensor:
+    name: transmissionvpn external ip
+    unique_id: transmissionvpn_external_ip
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health 2>/dev/null | jq -r ".vpn.external_ip // \"unknown\""'
+    value_template: '{{ value }}'
+    scan_interval: 300  # Check every 5 minutes
+
+# Active torrents count
+- sensor:
+    name: transmissionvpn active torrents
+    unique_id: transmissionvpn_active_torrents
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health 2>/dev/null | jq -r ".metrics.active_torrents // 0"'
+    value_template: '{{ value | int }}'
+    unit_of_measurement: "torrents"
+    scan_interval: 180  # Check every 3 minutes
+
+# Download speed
+- sensor:
+    name: transmissionvpn download speed
+    unique_id: transmissionvpn_download_speed
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health 2>/dev/null | jq -r ".metrics.download_rate // 0"'
+    value_template: '{{ (value | float / 1024 / 1024) | round(2) }}'
+    unit_of_measurement: "MB/s"
+    scan_interval: 60
+
+# Upload speed  
+- sensor:
+    name: transmissionvpn upload speed
+    unique_id: transmissionvpn_upload_speed
+    command: 'curl -sf --max-time 30 http://10.1.10.20:9099/health 2>/dev/null | jq -r ".metrics.upload_rate // 0"'
+    value_template: '{{ (value | float / 1024 / 1024) | round(2) }}'
+    unit_of_measurement: "MB/s"
+    scan_interval: 60 
