@@ -66,13 +66,11 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           if [[ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]]; then
-            echo "❌ DOCKERHUB_USERNAME secret is not set"
+            echo "⚠️ DOCKERHUB_USERNAME secret is not set"
             echo "has-creds=false" >> $GITHUB_OUTPUT
-            exit 1
           elif [[ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]]; then
-            echo "❌ DOCKERHUB_TOKEN secret is not set"
+            echo "⚠️ DOCKERHUB_TOKEN secret is not set"
             echo "has-creds=false" >> $GITHUB_OUTPUT
-            exit 1
           else
             echo "✅ Docker Hub credentials are configured"
             echo "has-creds=true" >> $GITHUB_OUTPUT
@@ -100,13 +98,19 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Only create clean version tags for releases
+            # Version tags for releases
             type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Latest tag only for version tag releases
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Stable tag for version tags
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Branch-based tags for development
+            type=ref,event=branch,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
+            # PR tags
+            type=ref,event=pr
+            # Fallback tag for any other case
+            type=raw,value=dev-{{sha}},enable=${{ !startsWith(github.ref, 'refs/tags/v') && github.ref_type != 'branch' && github.event_name != 'pull_request' }}
           flavor: |
             # Don't auto-generate latest tag
             latest=false
@@ -176,12 +180,13 @@ jobs:
           platforms: linux/amd64,linux/arm64
 
       - name: Log in to Docker Hub
-        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY_DOCKERHUB }}
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -207,7 +212,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          outputs: type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v') }}
+          outputs: type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
           cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
           build-args: |
@@ -232,7 +237,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
-    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request'
     
     steps:
       - name: Download digests
@@ -253,13 +258,19 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Only create clean version tags for releases
+            # Version tags for releases
             type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Latest tag only for version tag releases
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Stable tag for version tags
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Branch-based tags for development
+            type=ref,event=branch,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
+            # PR tags
+            type=ref,event=pr
+            # Fallback tag for any other case
+            type=raw,value=dev-{{sha}},enable=${{ !startsWith(github.ref, 'refs/tags/v') && github.ref_type != 'branch' && github.event_name != 'pull_request' }}
           flavor: |
             # Don't auto-generate latest tag
             latest=false
@@ -316,6 +327,7 @@ jobs:
           registry: ${{ env.REGISTRY_DOCKERHUB }}
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -326,6 +338,7 @@ jobs:
 
       - name: Create manifest list and push to Docker Hub
         working-directory: /tmp/digests
+        continue-on-error: true
         run: |
           echo "🔍 Creating Docker Hub manifest..."
           
@@ -342,8 +355,8 @@ jobs:
           DOCKERHUB_TAGS=$(echo "$DOCKER_METADATA_OUTPUT_JSON" | jq -cr '.tags | map(select(contains("docker.io")) | "-t " + .) | join(" ")')
           
           if [[ -z "$DOCKERHUB_TAGS" || "$DOCKERHUB_TAGS" == "null" ]]; then
-            echo "❌ ERROR: No Docker Hub tags found!"
-            exit 1
+            echo "⚠️ WARNING: No Docker Hub tags found, skipping Docker Hub push"
+            exit 0
           fi
           
           echo "Docker Hub tags to create: $DOCKERHUB_TAGS"
@@ -386,7 +399,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - merge
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request'
     strategy:
       matrix:
         platform:
@@ -414,13 +427,19 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Only create clean version tags for releases
+            # Version tags for releases
             type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Latest tag only for version tag releases
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Stable tag for version tags
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Branch-based tags for development
+            type=ref,event=branch,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
+            # PR tags
+            type=ref,event=pr
+            # Fallback tag for any other case
+            type=raw,value=dev-{{sha}},enable=${{ !startsWith(github.ref, 'refs/tags/v') && github.ref_type != 'branch' && github.event_name != 'pull_request' }}
           flavor: |
             # Don't auto-generate latest tag
             latest=false
@@ -459,7 +478,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - merge
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request'
     
     steps:
       - name: Checkout repository
@@ -480,13 +499,19 @@ jobs:
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Only create clean version tags for releases
+            # Version tags for releases
             type=match,pattern=v(.*),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=match,pattern=v(\d+\.\d+\.\d+-r\d+),group=1,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Latest tag only for version tag releases
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             # Stable tag for version tags
             type=raw,value=stable,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Branch-based tags for development
+            type=ref,event=branch,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
+            # PR tags
+            type=ref,event=pr
+            # Fallback tag for any other case
+            type=raw,value=dev-{{sha}},enable=${{ !startsWith(github.ref, 'refs/tags/v') && github.ref_type != 'branch' && github.event_name != 'pull_request' }}
           flavor: |
             # Don't auto-generate latest tag
             latest=false
