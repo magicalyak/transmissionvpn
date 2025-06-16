@@ -456,17 +456,28 @@ def update_health_data():
         if not health_data['transmission']['rpc_accessible']:
             issues.append('rpc_inaccessible')
         
-        # Warnings
+        # Warnings (actual problems that affect functionality)
         if not health_data['vpn']['connected']:
             warnings.append('vpn_disconnected')
         if health_data['system']['disk'].get('usage_percent', 0) > 90:
             warnings.append('disk_space_low')
         if health_data['system']['memory'].get('percent', 0) > 90:
             warnings.append('memory_usage_high')
-        if health_data['transmission'].get('port_test') is False:
-            warnings.append('port_not_open')
         
-        # Set status based on issues
+        # Informational notices (expected behavior, not problems)
+        notices = []
+        port_test_failed = health_data['transmission'].get('port_test') is False
+        vpn_connected = health_data['vpn']['connected']
+        
+        # Only treat port issues as warnings if VPN is disconnected
+        # When VPN is connected, closed ports are often expected (no port forwarding support)
+        if port_test_failed:
+            if vpn_connected:
+                notices.append('port_not_open_vpn_expected')
+            else:
+                warnings.append('port_not_open_no_vpn')
+        
+        # Set status based on issues and warnings
         if issues:
             health_data['status'] = 'unhealthy'
             health_data['issues'] = issues
@@ -475,6 +486,10 @@ def update_health_data():
             health_data['warnings'] = warnings
         else:
             health_data['status'] = 'healthy'
+        
+        # Always include notices for informational purposes
+        if notices:
+            health_data['notices'] = notices
         
         logger.debug("Health data updated successfully")
         
@@ -618,7 +633,19 @@ def generate_prometheus_metrics():
         port_open = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
         metrics.append(f"transmissionvpn_port_open {port_open}")
         
-        # Overall health status
+        # Port forwarding capability (separate from overall health)
+        metrics.append("# HELP transmissionvpn_port_forwarding_available Port forwarding is available")
+        metrics.append("# TYPE transmissionvpn_port_forwarding_available gauge")
+        port_forwarding_available = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
+        metrics.append(f"transmissionvpn_port_forwarding_available {port_forwarding_available}")
+        
+        # VPN with port forwarding support indicator
+        metrics.append("# HELP transmissionvpn_vpn_supports_port_forwarding VPN provider supports port forwarding")
+        metrics.append("# TYPE transmissionvpn_vpn_supports_port_forwarding gauge")
+        vpn_supports_pf = 1 if (health_data.get('vpn', {}).get('connected', False) and health_data.get('transmission', {}).get('port_test', False)) else 0
+        metrics.append(f"transmissionvpn_vpn_supports_port_forwarding {vpn_supports_pf}")
+        
+        # Overall health status (now considers port issues as informational when VPN is connected)
         metrics.append("# HELP transmissionvpn_healthy Overall service health")
         metrics.append("# TYPE transmissionvpn_healthy gauge")
         healthy = 1 if health_data.get('status') == 'healthy' else 0
