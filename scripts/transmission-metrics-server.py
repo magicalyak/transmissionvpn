@@ -528,7 +528,7 @@ def generate_prometheus_metrics():
     """Generate Prometheus format metrics"""
     metrics = []
     
-    # Add help and type information
+    # Transmission torrent metrics
     metrics.append("# HELP transmission_torrent_count Total number of torrents")
     metrics.append("# TYPE transmission_torrent_count gauge")
     metrics.append(f"transmission_torrent_count {transmission_stats.get('torrent_count', 0)}")
@@ -564,6 +564,65 @@ def generate_prometheus_metrics():
         metrics.append("# HELP transmission_session_uploaded_bytes Session uploaded bytes")
         metrics.append("# TYPE transmission_session_uploaded_bytes counter")
         metrics.append(f"transmission_session_uploaded_bytes {current_stats.get('uploadedBytes', 0)}")
+    
+    # TransmissionVPN system metrics (for Grafana dashboard compatibility)
+    if health_data:
+        # Container/Service status
+        metrics.append("# HELP transmissionvpn_container_running Container is running")
+        metrics.append("# TYPE transmissionvpn_container_running gauge")
+        container_running = 1 if health_data.get('transmission', {}).get('daemon_running', False) else 0
+        metrics.append(f"transmissionvpn_container_running {container_running}")
+        
+        # VPN connection status
+        metrics.append("# HELP transmissionvpn_vpn_connected VPN is connected")
+        metrics.append("# TYPE transmissionvpn_vpn_connected gauge")
+        vpn_connected = 1 if health_data.get('vpn', {}).get('connected', False) else 0
+        metrics.append(f"transmissionvpn_vpn_connected {vpn_connected}")
+        
+        # Web UI status
+        metrics.append("# HELP transmissionvpn_web_ui_up Web UI is accessible")
+        metrics.append("# TYPE transmissionvpn_web_ui_up gauge")
+        web_ui_up = 1 if health_data.get('transmission', {}).get('web_ui_accessible', False) else 0
+        metrics.append(f"transmissionvpn_web_ui_up {web_ui_up}")
+        
+        # System metrics
+        system_data = health_data.get('system', {})
+        
+        # Disk usage
+        metrics.append("# HELP transmissionvpn_disk_usage_percent Disk usage percentage")
+        metrics.append("# TYPE transmissionvpn_disk_usage_percent gauge")
+        disk_usage = system_data.get('disk', {}).get('usage_percent', 0)
+        metrics.append(f"transmissionvpn_disk_usage_percent {disk_usage}")
+        
+        # Memory usage
+        metrics.append("# HELP transmissionvpn_memory_usage_percent Memory usage percentage")
+        metrics.append("# TYPE transmissionvpn_memory_usage_percent gauge")
+        memory_usage = system_data.get('memory', {}).get('percent', 0)
+        metrics.append(f"transmissionvpn_memory_usage_percent {memory_usage}")
+        
+        # CPU usage
+        metrics.append("# HELP transmissionvpn_cpu_usage_percent CPU usage percentage")
+        metrics.append("# TYPE transmissionvpn_cpu_usage_percent gauge")
+        cpu_usage = system_data.get('cpu', {}).get('usage_percent', 0)
+        metrics.append(f"transmissionvpn_cpu_usage_percent {cpu_usage}")
+        
+        # VPN interface status
+        metrics.append("# HELP transmissionvpn_vpn_interface_up VPN interface is up")
+        metrics.append("# TYPE transmissionvpn_vpn_interface_up gauge")
+        vpn_interface_up = 1 if health_data.get('vpn', {}).get('status') == 'up' else 0
+        metrics.append(f"transmissionvpn_vpn_interface_up {vpn_interface_up}")
+        
+        # Port test status
+        metrics.append("# HELP transmissionvpn_port_open Peer port is open")
+        metrics.append("# TYPE transmissionvpn_port_open gauge")
+        port_open = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
+        metrics.append(f"transmissionvpn_port_open {port_open}")
+        
+        # Overall health status
+        metrics.append("# HELP transmissionvpn_healthy Overall service health")
+        metrics.append("# TYPE transmissionvpn_healthy gauge")
+        healthy = 1 if health_data.get('status') == 'healthy' else 0
+        metrics.append(f"transmissionvpn_healthy {healthy}")
     
     # Add last update timestamp
     metrics.append("# HELP transmission_metrics_last_update_timestamp Last time metrics were updated")
