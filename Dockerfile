@@ -58,7 +58,8 @@ ENV ENABLE_PRIVOXY=${ENABLE_PRIVOXY:-no}
 ENV DEBUG=${DEBUG:-false}
 # Default umask, gives rwxr-xr-x for dirs, rw-r--r-- for files. Handled by LSIO base scripts.
 ENV UMASK=${UMASK:-022}
-ENV NAME_SERVERS=${NAME_SERVERS:-}
+# Default to public DNS to avoid local DNS blocking issues
+ENV NAME_SERVERS=${NAME_SERVERS:-8.8.8.8,1.1.1.1}
 ENV VPN_OPTIONS=${VPN_OPTIONS:-}
 ENV LAN_NETWORK=${LAN_NETWORK:-}
 ENV ADDITIONAL_PORTS=${ADDITIONAL_PORTS:-}
@@ -96,7 +97,22 @@ ENV METRICS_PORT=${METRICS_PORT:-9099}
 ENV METRICS_INTERVAL=${METRICS_INTERVAL:-30}
 
 # Install OpenVPN, WireGuard, Privoxy, Python and tools
-RUN apk add --no-cache openvpn iptables bash curl iproute2 wireguard-tools privoxy unzip git python3 py3-requests py3-psutil && \
+# Add jq for better JSON parsing, bind-tools for DNS utilities
+RUN apk add --no-cache \
+    openvpn \
+    iptables \
+    bash \
+    curl \
+    iproute2 \
+    wireguard-tools \
+    privoxy \
+    unzip \
+    git \
+    python3 \
+    py3-requests \
+    py3-psutil \
+    jq \
+    bind-tools && \
     for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
 
 # Copy custom metrics server

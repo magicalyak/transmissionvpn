@@ -1,0 +1,2 @@
+- This is a repo for transmission using a vpn in a docker container.  I am running this locally on rocky.gamull.com as a systemctl service called transmission /etc/systemd/system/transmission.service that calls a script  /opt/containerd/start-transmission-wrapper.sh  and env /opt/containerd/env/transmission.env and mount file /opt/containerd/mounts/transmission.mounts
+- We use github actions to build the images and releases

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.6-r20] - 2025-08-13
+
+### Added
+- **Default DNS Servers**: Added default public DNS servers (8.8.8.8, 1.1.1.1) to prevent VPN connection issues from local DNS blocking
+- **Enhanced Tools**: Added `jq` for JSON parsing and `bind-tools` for DNS debugging utilities
+- **DNS Configuration**: NAME_SERVERS now defaults to public DNS to avoid local DNS filtering issues
+
+### Enhanced
+- **Base Image**: Updated to latest LinuxServer.io transmission base image
+- **Dependencies**: Updated all Alpine packages to latest versions
+- **Code Formatting**: Improved Dockerfile readability with multi-line package installation
+
+### Fixed
+- **VPN Connection Issues**: Resolved DNS blocking problems that prevented VPN connections when local DNS servers filter VPN hostnames
+- **Container Health**: Fixed unhealthy container state caused by VPN failing to connect due to DNS resolution returning 0.0.0.0
+
 ## [4.0.6-r14] - 2024-01-XX
 
 ### Added
