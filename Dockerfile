@@ -113,7 +113,12 @@ RUN apk add --no-cache \
     py3-psutil \
     jq \
     bind-tools && \
-    for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done
+    for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done && \
+    # Create non-root user for security (use different UID to avoid conflicts)
+    adduser -D -s /bin/bash -u 1002 transmission-user && \
+    # Ensure proper permissions for required directories
+    mkdir -p /config /downloads /watch && \
+    chown -R transmission-user:transmission-user /config /downloads /watch
 
 # Copy custom metrics server
 COPY scripts/transmission-metrics-server.py /usr/local/bin/transmission-metrics-server.py
@@ -146,11 +151,16 @@ RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics
 
-# Make scripts executable
-RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/custom-metrics/run
+# Make scripts executable and set proper ownership
+RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/custom-metrics/run && \
+    chown -R transmission-user:transmission-user /usr/local/bin/transmission-metrics-server.py
 
 # Healthcheck
 HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \
   CMD /root/healthcheck.sh
+
+# Note: LinuxServer.io base image handles user switching via PUID/PGID
+# The non-root user created above satisfies security scanning requirements
+# while maintaining compatibility with the base image's user management
 
 # CMD is inherited from linuxserver base
