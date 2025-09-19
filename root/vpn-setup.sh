@@ -472,13 +472,19 @@ echo "[INFO] Flushed existing iptables rules."
 # Set default policies
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
-iptables -P OUTPUT ACCEPT # Allow outbound traffic by default, will be shaped by VPN
-echo "[INFO] Set default iptables policies (INPUT/FORWARD DROP, OUTPUT ACCEPT)."
+iptables -P OUTPUT DROP # Changed to DROP by default for stronger killswitch
+echo "[INFO] Set default iptables policies (INPUT/FORWARD/OUTPUT DROP)."
 
 # Allow loopback traffic
 iptables -A INPUT -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 echo "[INFO] Allowed loopback traffic."
+
+# CRITICAL KILLSWITCH: Block all DNS except through VPN
+# This prevents DNS leaks when VPN is down
+iptables -A OUTPUT -p udp --dport 53 -o eth0 -j DROP
+iptables -A OUTPUT -p tcp --dport 53 -o eth0 -j DROP
+echo "[INFO] Blocked DNS queries on eth0 (killswitch protection)."
 
 # Allow established and related connections (standard rule)
 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
@@ -583,21 +589,44 @@ fi
 # All other OUTPUT traffic must go through VPN interface or be dropped
 iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
 
-# KILL SWITCH FIX: Allow OpenVPN traffic to VPN server before applying kill switch
-# Extract VPN server from config and allow traffic to it
+# KILL SWITCH FIX: Allow OpenVPN/WireGuard traffic to VPN server before applying kill switch
 if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$OVPN_CONFIG_FILE" ]; then
   VPN_SERVER=$(grep '^remote ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $2}')
   VPN_PORT=$(grep '^remote ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $3}')
+  VPN_PROTO=$(grep '^proto ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $2}' | sed 's/[0-9]//g') # Remove trailing numbers from proto (e.g., udp4 -> udp)
+  [ -z "$VPN_PROTO" ] && VPN_PROTO="udp" # Default to UDP if not specified
+
   if [ -n "$VPN_SERVER" ] && [ -n "$VPN_PORT" ]; then
-    echo "[INFO] Adding kill switch exception for VPN server $VPN_SERVER:$VPN_PORT"
-    iptables -A OUTPUT -o eth0 -d "$VPN_SERVER" -p udp --dport "$VPN_PORT" -j ACCEPT
+    echo "[INFO] Adding kill switch exception for OpenVPN server $VPN_SERVER:$VPN_PORT ($VPN_PROTO)"
+    iptables -A OUTPUT -o eth0 -d "$VPN_SERVER" -p "$VPN_PROTO" --dport "$VPN_PORT" -j ACCEPT
+    # Allow DNS resolution for VPN server hostname (temporary, specific)
+    iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
+    iptables -I OUTPUT 1 -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
+  fi
+elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_CONFIG" ]; then
+  # Extract endpoint from WireGuard config
+  WG_ENDPOINT=$(grep '^Endpoint' "$WG_CONFIG" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+  if [ -n "$WG_ENDPOINT" ]; then
+    WG_SERVER=$(echo "$WG_ENDPOINT" | cut -d: -f1)
+    WG_PORT=$(echo "$WG_ENDPOINT" | cut -d: -f2)
+    if [ -n "$WG_SERVER" ] && [ -n "$WG_PORT" ]; then
+      echo "[INFO] Adding kill switch exception for WireGuard server $WG_SERVER:$WG_PORT"
+      iptables -A OUTPUT -o eth0 -d "$WG_SERVER" -p udp --dport "$WG_PORT" -j ACCEPT
+      # Allow DNS resolution for VPN server hostname (temporary, specific)
+      iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
+      iptables -I OUTPUT 1 -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
+    fi
   fi
 fi
 
-iptables -A OUTPUT -o eth0 -j DROP # Drop if trying to go out eth0 and not LAN/PBR
-# Could also be more strict: iptables -A OUTPUT ! -o "$VPN_INTERFACE" -j DROP
-# but the above allows things like established connections already handled.
-echo "[INFO] Default OUTPUT traffic routed through $VPN_INTERFACE. Other outbound on eth0 (non-LAN, non-PBR) dropped."
+# Remove temporary DNS rules after VPN connection is established
+iptables -D OUTPUT -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT 2>/dev/null || true
+iptables -D OUTPUT -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT 2>/dev/null || true
+echo "[INFO] Removed temporary DNS rules for VPN server resolution."
+
+# Strict killswitch: Drop ALL traffic not explicitly allowed
+iptables -A OUTPUT -j DROP
+echo "[INFO] Killswitch active: All non-VPN traffic blocked (except explicitly allowed rules)."
 
 # Privoxy: Apply firewall and PBR rules if enabled (s6 will start the service)
 if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
