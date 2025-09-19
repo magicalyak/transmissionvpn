@@ -144,15 +144,20 @@ COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
 # Copy custom metrics s6 service
 COPY root_s6/custom-metrics/run /etc/s6-overlay/s6-rc.d/custom-metrics/run
 
+# Copy VPN monitor s6 service
+COPY root_s6/vpn-monitor/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run
+
 # Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/custom-metrics/type && \
+    echo "longrun" > /etc/s6-overlay/s6-rc.d/vpn-monitor/type && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy && \
-    touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/vpn-monitor
 
 # Make scripts executable and set proper ownership
-RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/custom-metrics/run && \
+RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/custom-metrics/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run && \
     chown -R transmission-user:transmission-user /usr/local/bin/transmission-metrics-server.py
 
 # Healthcheck

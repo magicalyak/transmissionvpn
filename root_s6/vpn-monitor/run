@@ -1,0 +1,86 @@
+#!/command/with-contenv bash
+# VPN Monitor - Monitors VPN connection and enforces killswitch
+
+set -e
+
+VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
+CHECK_INTERVAL=30  # Check every 30 seconds
+FAILURE_COUNT=0
+MAX_FAILURES=3
+
+log() {
+    echo "[VPN-MONITOR] $*"
+}
+
+# Wait for VPN to be initially set up
+while [ ! -f "/tmp/vpn_setup_complete" ]; do
+    log "Waiting for VPN setup to complete..."
+    sleep 5
+done
+
+log "VPN monitoring started"
+
+while true; do
+    # Get VPN interface
+    if [ -f "$VPN_INTERFACE_FILE" ]; then
+        VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
+    else
+        log "ERROR: VPN interface file not found"
+        sleep $CHECK_INTERVAL
+        continue
+    fi
+
+    # Check if VPN interface exists and has an IP
+    if ip addr show "$VPN_INTERFACE" 2>/dev/null | grep -q "inet "; then
+        # VPN is up, check connectivity
+        if ping -c 1 -W 5 -I "$VPN_INTERFACE" 1.1.1.1 >/dev/null 2>&1; then
+            if [ $FAILURE_COUNT -gt 0 ]; then
+                log "VPN connectivity restored"
+            fi
+            FAILURE_COUNT=0
+        else
+            FAILURE_COUNT=$((FAILURE_COUNT + 1))
+            log "WARNING: VPN connectivity check failed ($FAILURE_COUNT/$MAX_FAILURES)"
+
+            if [ $FAILURE_COUNT -ge $MAX_FAILURES ]; then
+                log "ERROR: VPN appears to be down after $MAX_FAILURES checks"
+
+                # Stop Transmission to prevent leaks
+                if pgrep transmission-daemon >/dev/null 2>&1; then
+                    log "Stopping Transmission due to VPN failure"
+                    pkill transmission-daemon || true
+                fi
+
+                # Ensure killswitch is enforced - block ALL outbound traffic except VPN
+                log "Reinforcing killswitch - blocking all non-VPN traffic"
+
+                # Flush OUTPUT chain and re-apply strict rules
+                iptables -F OUTPUT
+                iptables -A OUTPUT -o lo -j ACCEPT
+                iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
+                iptables -A OUTPUT -j DROP
+
+                log "Killswitch reinforced. Waiting for VPN to reconnect..."
+            fi
+        fi
+    else
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        log "ERROR: VPN interface $VPN_INTERFACE is down ($FAILURE_COUNT/$MAX_FAILURES)"
+
+        if [ $FAILURE_COUNT -ge $MAX_FAILURES ]; then
+            # Stop Transmission immediately
+            if pgrep transmission-daemon >/dev/null 2>&1; then
+                log "Stopping Transmission - VPN interface is down"
+                pkill transmission-daemon || true
+            fi
+
+            # Ensure nothing can leak
+            log "Applying emergency killswitch"
+            iptables -F OUTPUT
+            iptables -A OUTPUT -o lo -j ACCEPT
+            iptables -A OUTPUT -j DROP
+        fi
+    fi
+
+    sleep $CHECK_INTERVAL
+done
