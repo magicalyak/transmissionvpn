@@ -25,8 +25,10 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.0.6-r23` - Enhanced VPN kill switch with strict iptables rules, DNS leak prevention, and active monitoring
+- `v4.0.6-r22` - Enhanced security posture to address Docker Scout findings
 - `v4.0.6-r21` - Improved Docker tagging strategy, cleanup stale docs, fix workflow for convenience tags
-- `v4.0.6-r20` - Latest stable release
+- `v4.0.6-r20` - DNS fixes and updated dependencies
 - `v4.0.6-r19` - Previous release
 - `v4.0.6-r18` - Previous release
 - `v4.0.6-r17` - Previous release

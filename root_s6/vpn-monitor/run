@@ -1,86 +1,260 @@
 #!/command/with-contenv bash
-# VPN Monitor - Monitors VPN connection and enforces killswitch
+# VPN Monitor - Enhanced monitoring service with kill switch enforcement
+# Monitors VPN connection health and stops Transmission if VPN fails
 
 set -e
 
+# Configuration from environment variables with defaults
+VPN_CHECK_INTERVAL=${VPN_CHECK_INTERVAL:-30}  # Seconds between checks
+VPN_MAX_FAILURES=${VPN_MAX_FAILURES:-3}       # Max failures before action
+CHECK_DNS=${CHECK_DNS:-true}                  # Enable DNS resolution testing
+CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}  # Check external IP through VPN
+AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}   # Auto-restart VPN on failure
+
+# File paths
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
-CHECK_INTERVAL=30  # Check every 30 seconds
+VPN_SETUP_COMPLETE="/tmp/vpn_setup_complete"
+EXTERNAL_IP_FILE="/tmp/last_external_ip"
+VPN_STATUS_FILE="/tmp/vpn_status"
+
+# State tracking
 FAILURE_COUNT=0
-MAX_FAILURES=3
+TRANSMISSION_WAS_RUNNING=false
+LAST_VPN_CHECK=$(date +%s)
 
 log() {
-    echo "[VPN-MONITOR] $*"
+    echo "[VPN-MONITOR] $(date '+%Y-%m-%d %H:%M:%S') $*"
 }
 
-# Wait for VPN to be initially set up
-while [ ! -f "/tmp/vpn_setup_complete" ]; do
-    log "Waiting for VPN setup to complete..."
+check_dns_resolution() {
+    if [ "${CHECK_DNS,,}" != "true" ]; then
+        return 0
+    fi
+
+    # Test DNS resolution through VPN
+    if nslookup google.com 1.1.1.1 >/dev/null 2>&1; then
+        return 0
+    else
+        log "WARNING: DNS resolution check failed"
+        return 1
+    fi
+}
+
+check_external_ip() {
+    if [ "${CHECK_EXTERNAL_IP,,}" != "true" ]; then
+        return 0
+    fi
+
+    # Get current external IP
+    CURRENT_IP=$(curl -s --max-time 10 --interface "$1" ifconfig.me 2>/dev/null || echo "FAILED")
+
+    if [ "$CURRENT_IP" = "FAILED" ]; then
+        log "WARNING: Failed to get external IP"
+        return 1
+    fi
+
+    # Check if IP has changed unexpectedly (potential leak)
+    if [ -f "$EXTERNAL_IP_FILE" ]; then
+        PREVIOUS_IP=$(cat "$EXTERNAL_IP_FILE")
+        if [ "$PREVIOUS_IP" != "$CURRENT_IP" ] && [ -n "$PREVIOUS_IP" ]; then
+            log "WARNING: External IP changed from $PREVIOUS_IP to $CURRENT_IP"
+        fi
+    fi
+
+    echo "$CURRENT_IP" > "$EXTERNAL_IP_FILE"
+    return 0
+}
+
+enforce_killswitch() {
+    local vpn_if="$1"
+
+    log "Enforcing kill switch - blocking ALL non-VPN traffic"
+
+    # Clear existing OUTPUT rules and apply strict kill switch
+    iptables -F OUTPUT
+    iptables -A OUTPUT -o lo -j ACCEPT
+    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Allow Transmission UI access
+    iptables -A OUTPUT -o eth0 -p tcp --sport 9091 -j ACCEPT
+
+    # If VPN interface exists, allow traffic through it
+    if [ -n "$vpn_if" ] && ip link show "$vpn_if" >/dev/null 2>&1; then
+        iptables -A OUTPUT -o "$vpn_if" -j ACCEPT
+    fi
+
+    # Block everything else
+    iptables -A OUTPUT -j DROP
+
+    # Also reinforce DNS leak prevention
+    iptables -I OUTPUT 1 -p udp --dport 53 ! -o "$vpn_if" -j DROP
+    iptables -I OUTPUT 1 -p tcp --dport 53 ! -o "$vpn_if" -j DROP
+
+    log "Kill switch enforced - all non-VPN traffic blocked"
+}
+
+stop_transmission() {
+    if pgrep transmission-daemon >/dev/null 2>&1; then
+        TRANSMISSION_WAS_RUNNING=true
+        log "CRITICAL: Stopping Transmission to prevent IP leaks"
+
+        # Try graceful shutdown first
+        if command -v s6-svc >/dev/null 2>&1; then
+            s6-svc -d /var/run/s6/services/transmission 2>/dev/null || true
+        else
+            pkill -TERM transmission-daemon 2>/dev/null || true
+            sleep 2
+            # Force kill if still running
+            pkill -KILL transmission-daemon 2>/dev/null || true
+        fi
+
+        echo "stopped" > "$VPN_STATUS_FILE"
+    fi
+}
+
+restart_transmission() {
+    if [ "$TRANSMISSION_WAS_RUNNING" = "true" ]; then
+        log "Restarting Transmission after VPN recovery"
+
+        if command -v s6-svc >/dev/null 2>&1; then
+            s6-svc -u /var/run/s6/services/transmission 2>/dev/null || true
+        else
+            /usr/bin/transmission-daemon --config-dir /config &
+        fi
+
+        TRANSMISSION_WAS_RUNNING=false
+        echo "running" > "$VPN_STATUS_FILE"
+    fi
+}
+
+attempt_vpn_restart() {
+    if [ "${AUTO_RESTART_VPN,,}" != "true" ]; then
+        return 1
+    fi
+
+    log "Attempting to restart VPN connection"
+
+    # Determine VPN type and restart
+    if [ "${VPN_CLIENT,,}" = "wireguard" ]; then
+        wg-quick down "$VPN_INTERFACE" 2>/dev/null || true
+        sleep 2
+        wg-quick up "$VPN_CONFIG" 2>/dev/null && return 0
+    elif [ "${VPN_CLIENT,,}" = "openvpn" ]; then
+        pkill openvpn 2>/dev/null || true
+        sleep 2
+        # Re-run VPN setup script
+        /etc/cont-init.d/50-vpn-setup 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+
+# Wait for initial VPN setup
+log "Starting VPN monitor service (interval: ${VPN_CHECK_INTERVAL}s, max failures: ${VPN_MAX_FAILURES})"
+while [ ! -f "$VPN_SETUP_COMPLETE" ]; do
+    log "Waiting for initial VPN setup to complete..."
     sleep 5
 done
 
-log "VPN monitoring started"
+log "VPN monitoring started - protecting against IP leaks"
+echo "running" > "$VPN_STATUS_FILE"
 
+# Main monitoring loop
 while true; do
-    # Get VPN interface
+    # Get VPN interface name
     if [ -f "$VPN_INTERFACE_FILE" ]; then
         VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
     else
         log "ERROR: VPN interface file not found"
-        sleep $CHECK_INTERVAL
+        stop_transmission
+        enforce_killswitch ""
+        sleep "$VPN_CHECK_INTERVAL"
         continue
     fi
 
-    # Check if VPN interface exists and has an IP
-    if ip addr show "$VPN_INTERFACE" 2>/dev/null | grep -q "inet "; then
-        # VPN is up, check connectivity
-        if ping -c 1 -W 5 -I "$VPN_INTERFACE" 1.1.1.1 >/dev/null 2>&1; then
-            if [ $FAILURE_COUNT -gt 0 ]; then
-                log "VPN connectivity restored"
-            fi
-            FAILURE_COUNT=0
-        else
-            FAILURE_COUNT=$((FAILURE_COUNT + 1))
-            log "WARNING: VPN connectivity check failed ($FAILURE_COUNT/$MAX_FAILURES)"
+    # Comprehensive VPN health checks
+    VPN_HEALTHY=true
 
-            if [ $FAILURE_COUNT -ge $MAX_FAILURES ]; then
-                log "ERROR: VPN appears to be down after $MAX_FAILURES checks"
+    # Check 1: Interface exists and is UP
+    if ! ip link show "$VPN_INTERFACE" 2>/dev/null | grep -q "state UP\|state UNKNOWN"; then
+        log "ERROR: VPN interface $VPN_INTERFACE is not UP"
+        VPN_HEALTHY=false
+    fi
 
-                # Stop Transmission to prevent leaks
-                if pgrep transmission-daemon >/dev/null 2>&1; then
-                    log "Stopping Transmission due to VPN failure"
-                    pkill transmission-daemon || true
-                fi
+    # Check 2: Interface has an IP address
+    if ! ip addr show "$VPN_INTERFACE" 2>/dev/null | grep -q "inet "; then
+        log "ERROR: VPN interface $VPN_INTERFACE has no IP address"
+        VPN_HEALTHY=false
+    fi
 
-                # Ensure killswitch is enforced - block ALL outbound traffic except VPN
-                log "Reinforcing killswitch - blocking all non-VPN traffic"
-
-                # Flush OUTPUT chain and re-apply strict rules
-                iptables -F OUTPUT
-                iptables -A OUTPUT -o lo -j ACCEPT
-                iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
-                iptables -A OUTPUT -j DROP
-
-                log "Killswitch reinforced. Waiting for VPN to reconnect..."
-            fi
-        fi
-    else
-        FAILURE_COUNT=$((FAILURE_COUNT + 1))
-        log "ERROR: VPN interface $VPN_INTERFACE is down ($FAILURE_COUNT/$MAX_FAILURES)"
-
-        if [ $FAILURE_COUNT -ge $MAX_FAILURES ]; then
-            # Stop Transmission immediately
-            if pgrep transmission-daemon >/dev/null 2>&1; then
-                log "Stopping Transmission - VPN interface is down"
-                pkill transmission-daemon || true
-            fi
-
-            # Ensure nothing can leak
-            log "Applying emergency killswitch"
-            iptables -F OUTPUT
-            iptables -A OUTPUT -o lo -j ACCEPT
-            iptables -A OUTPUT -j DROP
+    # Check 3: Can ping through VPN interface
+    if [ "$VPN_HEALTHY" = "true" ]; then
+        if ! ping -c 1 -W 5 -I "$VPN_INTERFACE" 1.1.1.1 >/dev/null 2>&1; then
+            log "WARNING: Cannot ping through VPN interface"
+            VPN_HEALTHY=false
         fi
     fi
 
-    sleep $CHECK_INTERVAL
+    # Check 4: DNS resolution (optional)
+    if [ "$VPN_HEALTHY" = "true" ] && [ "${CHECK_DNS,,}" = "true" ]; then
+        if ! check_dns_resolution; then
+            VPN_HEALTHY=false
+        fi
+    fi
+
+    # Check 5: External IP verification (optional)
+    if [ "$VPN_HEALTHY" = "true" ] && [ "${CHECK_EXTERNAL_IP,,}" = "true" ]; then
+        if ! check_external_ip "$VPN_INTERFACE"; then
+            VPN_HEALTHY=false
+        fi
+    fi
+
+    # Handle VPN health status
+    if [ "$VPN_HEALTHY" = "true" ]; then
+        # VPN is healthy
+        if [ $FAILURE_COUNT -gt 0 ]; then
+            log "VPN connectivity restored after $FAILURE_COUNT failures"
+            restart_transmission
+        fi
+        FAILURE_COUNT=0
+    else
+        # VPN is unhealthy
+        FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        log "VPN health check failed ($FAILURE_COUNT/$VPN_MAX_FAILURES)"
+
+        if [ $FAILURE_COUNT -ge $VPN_MAX_FAILURES ]; then
+            log "CRITICAL: VPN failed after $VPN_MAX_FAILURES consecutive checks"
+
+            # Stop Transmission immediately
+            stop_transmission
+
+            # Enforce strict kill switch
+            enforce_killswitch "$VPN_INTERFACE"
+
+            # Attempt VPN restart if enabled
+            if [ "${AUTO_RESTART_VPN,,}" = "true" ]; then
+                log "Attempting automatic VPN restart"
+                if attempt_vpn_restart; then
+                    log "VPN restart initiated, waiting for reconnection"
+                    FAILURE_COUNT=0
+                else
+                    log "VPN restart failed - manual intervention required"
+                fi
+            else
+                log "Auto-restart disabled - manual intervention required"
+            fi
+        fi
+    fi
+
+    # Log status periodically
+    if [ $(($(date +%s) - LAST_VPN_CHECK)) -ge 300 ]; then
+        if [ "$VPN_HEALTHY" = "true" ]; then
+            log "Status: VPN healthy, Transmission protected"
+        else
+            log "Status: VPN unhealthy, Transmission stopped, kill switch active"
+        fi
+        LAST_VPN_CHECK=$(date +%s)
+    fi
+
+    sleep "$VPN_CHECK_INTERVAL"
 done
