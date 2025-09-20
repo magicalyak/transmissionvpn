@@ -1,5 +1,5 @@
-# Main image
-FROM lscr.io/linuxserver/transmission:latest
+# Main image - Pin to specific version for better security tracking
+FROM lscr.io/linuxserver/transmission:4.0.6
 
 # TRANSMISSION_VERSION is inherited from the upstream linuxserver/transmission image
 ENV PUID=911
@@ -96,9 +96,12 @@ ENV METRICS_ENABLED=${METRICS_ENABLED:-false}
 ENV METRICS_PORT=${METRICS_PORT:-9099}
 ENV METRICS_INTERVAL=${METRICS_INTERVAL:-30}
 
-# Install OpenVPN, WireGuard, Privoxy, Python and tools
-# Add jq for better JSON parsing, bind-tools for DNS utilities
-RUN apk add --no-cache \
+# Update package index and upgrade existing packages first for security
+# Then install required packages
+# hadolint ignore=DL3018
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache \
     openvpn \
     iptables \
     bash \
@@ -107,13 +110,15 @@ RUN apk add --no-cache \
     wireguard-tools \
     privoxy \
     unzip \
-    git \
     python3 \
     py3-requests \
     py3-psutil \
     jq \
     bind-tools && \
-    for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}"; done && \
+    # Remove git as it's not needed at runtime (reduces attack surface)
+    # Clean up package cache
+    rm -rf /var/cache/apk/* && \
+    for f in /etc/privoxy/*.new; do mv -n "$f" "${f%.new}" 2>/dev/null || true; done && \
     # Create non-root user for security (use different UID to avoid conflicts)
     adduser -D -s /bin/bash -u 1002 transmission-user && \
     # Ensure proper permissions for required directories
@@ -121,31 +126,30 @@ RUN apk add --no-cache \
     chown -R transmission-user:transmission-user /config /downloads /watch
 
 # Copy custom metrics server
-COPY scripts/transmission-metrics-server.py /usr/local/bin/transmission-metrics-server.py
-RUN chmod +x /usr/local/bin/transmission-metrics-server.py
+COPY --chmod=755 scripts/transmission-metrics-server.py /usr/local/bin/transmission-metrics-server.py
 
 # Expose metrics port
 EXPOSE 9099
 
-# Copy s6-overlay init scripts
-COPY root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
-COPY root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
-COPY root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
-COPY root/etc/cont-init.d/04-setup-web-ui-auto-download.sh /etc/cont-init.d/04-setup-web-ui-auto-download
-COPY root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
+# Copy s6-overlay init scripts with proper permissions
+COPY --chmod=755 root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
+COPY --chmod=755 root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
+COPY --chmod=755 root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
+COPY --chmod=755 root/etc/cont-init.d/04-setup-web-ui-auto-download.sh /etc/cont-init.d/04-setup-web-ui-auto-download
+COPY --chmod=755 root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 
 # Copy healthcheck script
-COPY root/healthcheck.sh /root/healthcheck.sh
+COPY --chmod=755 root/healthcheck.sh /root/healthcheck.sh
 
 # Copy Privoxy configuration template and s6 service files
 COPY config/privoxy/config /etc/privoxy/config.template
-COPY root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
+COPY --chmod=755 root_s6/privoxy/run /etc/s6-overlay/s6-rc.d/privoxy/run
 
 # Copy custom metrics s6 service
-COPY root_s6/custom-metrics/run /etc/s6-overlay/s6-rc.d/custom-metrics/run
+COPY --chmod=755 root_s6/custom-metrics/run /etc/s6-overlay/s6-rc.d/custom-metrics/run
 
 # Copy VPN monitor s6 service
-COPY root_s6/vpn-monitor/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run
+COPY --chmod=755 root_s6/vpn-monitor/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run
 
 # Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
@@ -154,11 +158,17 @@ RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/vpn-monitor/type && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics && \
-    touch /etc/s6-overlay/s6-rc.d/user/contents.d/vpn-monitor
-
-# Make scripts executable and set proper ownership
-RUN chmod +x /etc/cont-init.d/* /root/healthcheck.sh /etc/s6-overlay/s6-rc.d/privoxy/run /etc/s6-overlay/s6-rc.d/custom-metrics/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/vpn-monitor && \
+    # Set proper ownership for metrics script
     chown -R transmission-user:transmission-user /usr/local/bin/transmission-metrics-server.py
+
+# Add security labels
+LABEL security.scan="enabled" \
+      security.updates="auto" \
+      org.opencontainers.image.title="transmissionvpn" \
+      org.opencontainers.image.description="Transmission with VPN kill switch" \
+      org.opencontainers.image.vendor="magicalyak" \
+      org.opencontainers.image.licenses="GPL-3.0"
 
 # Healthcheck
 HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \
