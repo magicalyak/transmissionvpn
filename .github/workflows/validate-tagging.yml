@@ -1,4 +1,6 @@
 name: Validate Docker Hub Tagging
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
