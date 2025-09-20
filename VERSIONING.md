@@ -25,6 +25,18 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.0.6-r21` - Improved Docker tagging strategy, cleanup stale docs, fix workflow for convenience tags
+- `v4.0.6-r20` - Latest stable release
+- `v4.0.6-r19` - Previous release
+- `v4.0.6-r18` - Previous release
+- `v4.0.6-r17` - Previous release
+- `v4.0.6-r16` - Previous release
+- `v4.0.6-r15` - Previous release
+- `v4.0.6-r14` - Previous release
+- `v4.0.6-r13` - Previous release
+- `v4.0.6-r12` - Previous release
+- `v4.0.6-r11` - Previous release
+- `v4.0.6-r10` - Previous release
 - `v4.0.6-r9` - Critical kill switch fix: Allow VPN server traffic before applying kill switch
 - `v4.0.6-r8` - Fix VPN connection and health check bugs, restructure monitoring
 - `v4.0.6-r7` - Previous release
