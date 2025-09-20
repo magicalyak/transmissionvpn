@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.6-r23] - 2025-09-20
+
+### Added
+- **Enhanced VPN Kill Switch**: Implemented strict iptables rules with default DROP policies on all chains
+- **DNS Leak Prevention**: Block all DNS queries (port 53) on non-VPN interfaces
+- **Active VPN Monitoring Service**: Continuous health checks with configurable intervals
+- **Auto-Recovery**: Optional automatic VPN restart on failure (AUTO_RESTART_VPN)
+- **External IP Verification**: Monitor for IP leaks by checking external IP
+- **DNS Resolution Testing**: Verify DNS is working through VPN
+- **Kill Switch Test Script**: Automated verification tool (test-killswitch.sh)
+- **Emergency Kill Switch**: Immediate traffic blocking when VPN fails
+- **VPN Monitor Finish Script**: Proper cleanup when service stops
+
+### Enhanced
+- **VPN Monitor Service**: Now supports environment variables for configuration
+  - VPN_CHECK_INTERVAL: Configurable check frequency (default: 30s)
+  - VPN_MAX_FAILURES: Failures before action (default: 3)
+  - CHECK_DNS: Enable/disable DNS testing (default: true)
+  - CHECK_EXTERNAL_IP: Enable/disable IP verification (default: true)
+- **Security Posture**: Multiple layers of protection against IP leaks
+- **BitTorrent Port Handling**: Ensure peer ports only work through VPN
+- **Documentation**: Added comprehensive security documentation
+
+### Fixed
+- **Kill Switch Reliability**: Ensured no traffic leaks even during VPN reconnection
+- **DNS Leak Prevention**: Fixed potential DNS leaks during VPN establishment
+- **Transmission Protection**: Stops immediately when VPN fails
+
 ## [4.0.6-r20] - 2025-08-13
 
 ### Added
