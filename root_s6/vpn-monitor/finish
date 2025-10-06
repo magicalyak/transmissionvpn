@@ -1,0 +1,27 @@
+#!/command/with-contenv bash
+# VPN Monitor cleanup script - runs when service stops
+
+log() {
+    echo "[VPN-MONITOR] $(date '+%Y-%m-%d %H:%M:%S') FINISH: $*"
+}
+
+log "VPN monitor service stopping"
+
+# Ensure Transmission is stopped if VPN monitor is stopping
+if pgrep transmission-daemon >/dev/null 2>&1; then
+    log "Stopping Transmission as VPN monitor is shutting down"
+    pkill -TERM transmission-daemon 2>/dev/null || true
+    sleep 2
+    pkill -KILL transmission-daemon 2>/dev/null || true
+fi
+
+# Enforce final kill switch to prevent any leaks
+log "Applying final kill switch before shutdown"
+iptables -F OUTPUT
+iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A OUTPUT -j DROP
+
+# Clean up status files
+rm -f /tmp/vpn_status /tmp/last_external_ip
+
+log "VPN monitor cleanup complete"

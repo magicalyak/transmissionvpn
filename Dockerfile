@@ -97,6 +97,13 @@ ENV METRICS_ENABLED=${METRICS_ENABLED:-false}
 ENV METRICS_PORT=${METRICS_PORT:-9099}
 ENV METRICS_INTERVAL=${METRICS_INTERVAL:-30}
 
+# VPN Monitoring and Kill Switch settings
+ENV VPN_CHECK_INTERVAL=${VPN_CHECK_INTERVAL:-30}
+ENV VPN_MAX_FAILURES=${VPN_MAX_FAILURES:-3}
+ENV CHECK_DNS=${CHECK_DNS:-true}
+ENV CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}
+ENV AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}
+
 # Update package index and upgrade existing packages first for security
 # Then install required packages
 # hadolint ignore=DL3018
@@ -151,6 +158,10 @@ COPY --chmod=755 root_s6/custom-metrics/run /etc/s6-overlay/s6-rc.d/custom-metri
 
 # Copy VPN monitor s6 service
 COPY --chmod=755 root_s6/vpn-monitor/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run
+COPY --chmod=755 root_s6/vpn-monitor/finish /etc/s6-overlay/s6-rc.d/vpn-monitor/finish
+
+# Copy enhanced kill switch script
+COPY --chmod=755 root/vpn-killswitch.sh /usr/local/bin/vpn-killswitch.sh
 
 # Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \

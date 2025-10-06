@@ -6,13 +6,15 @@ An all-in-one Docker container that provides an Alpine-based Transmission Bittor
 
 ## ✨ Key Features
 
-* **🛡️ Secure & Private:** All traffic is routed through a kill-switch enabled VPN.
-* **⚡ Lightweight:** Built on Alpine Linux for a minimal footprint.
-* **🧩 Extensible:** Supports custom scripts and alternative web UIs.
-* **🏥 Smart Health Checks:** Container health focuses on Transmission functionality, not VPN status.
-* **🔧 VPN Bug Fixes:** Resolved OpenVPN configuration issues that prevented VPN connections.
-* **📊 Accurate Metrics:** Dashboard metrics verified to match actual container capabilities.
-* **🌐 DNS Over-HTTPS:** Encrypts DNS queries to prevent snooping.
+* **🛡️ Enhanced Kill Switch:** Strict iptables rules with default DROP policies prevent any IP leaks
+* **🔒 DNS Leak Prevention:** Blocks all DNS queries (port 53) on non-VPN interfaces
+* **👁️ Active VPN Monitoring:** Continuously monitors VPN health and stops Transmission if VPN fails
+* **⚡ Auto-Recovery:** Optional automatic VPN restart on failure (configurable)
+* **🏥 Smart Health Checks:** Container health focuses on Transmission functionality, not VPN status
+* **⚡ Lightweight:** Built on Alpine Linux for a minimal footprint
+* **🧩 Extensible:** Supports custom scripts and alternative web UIs
+* **📊 Metrics & Monitoring:** Built-in Prometheus-compatible metrics endpoint
+* **🌐 DNS Over-HTTPS:** Encrypts DNS queries to prevent snooping
 
 ## 🏷️ Versioning
 
@@ -371,6 +373,40 @@ environment:
 
 **Note:** No username/password needed for WireGuard.
 
+## 🔒 Security Features
+
+### Enhanced VPN Kill Switch
+The container implements a multi-layer kill switch to prevent IP leaks:
+
+* **Strict iptables rules** - Default DROP policies on all chains
+* **DNS leak prevention** - Blocks port 53 on all non-VPN interfaces
+* **Active monitoring** - VPN monitor service checks connectivity every 30 seconds
+* **Automatic protection** - Stops Transmission immediately if VPN fails
+
+### Testing the Kill Switch
+```bash
+# Run the automated test script
+./test-killswitch.sh
+
+# Or manually verify
+docker exec transmissionvpn /usr/local/bin/vpn-killswitch.sh verify
+```
+
+### VPN Monitoring
+The VPN monitor service continuously checks:
+- VPN interface status
+- Network connectivity through VPN
+- DNS resolution (optional)
+- External IP verification (optional)
+
+Configure monitoring behavior:
+```yaml
+environment:
+  - VPN_CHECK_INTERVAL=30      # Check every 30 seconds
+  - VPN_MAX_FAILURES=3         # Stop after 3 failures
+  - AUTO_RESTART_VPN=true      # Auto-restart VPN on failure
+```
+
 ## 🚦 Health Checks
 
 The container includes automatic health monitoring:
@@ -378,6 +414,7 @@ The container includes automatic health monitoring:
 * **VPN Connectivity** - Verifies tunnel is active
 * **IP Leak Protection** - Blocks traffic if VPN fails
 * **DNS Leak Prevention** - Routes DNS through VPN
+* **Kill Switch Status** - Monitors firewall rules
 
 Check container health:
 
@@ -522,6 +559,16 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `VPN_USER` | VPN username | (required for OpenVPN) |
 | `VPN_PASS` | VPN password | (required for OpenVPN) |
 | `VPN_OPTIONS` | Additional VPN options | (none) |
+
+### VPN Monitoring & Kill Switch
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VPN_CHECK_INTERVAL` | Seconds between VPN health checks | `30` |
+| `VPN_MAX_FAILURES` | Max failures before stopping Transmission | `3` |
+| `CHECK_DNS` | Enable DNS resolution testing | `true` |
+| `CHECK_EXTERNAL_IP` | Verify external IP through VPN | `true` |
+| `AUTO_RESTART_VPN` | Auto-restart VPN on failure | `false` |
 
 ### Network Configuration
 
