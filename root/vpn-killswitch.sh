@@ -124,6 +124,64 @@ apply_strict_killswitch() {
         log "Allowed output to LAN: $LAN_NETWORK"
     fi
 
+    # === POLICY-BASED ROUTING FOR LAN-ACCESSIBLE SERVICES ===
+    # Get eth0 gateway and IP for policy routing
+    local eth0_gateway=$(ip route | grep default | grep eth0 | awk '{print $3}')
+    if [ -z "$eth0_gateway" ]; then
+        eth0_gateway=$(ip route show dev eth0 | awk '/default via/ {print $3}')
+    fi
+    local eth0_ip=$(ip -4 addr show dev eth0 | awk '/inet/ {print $2}' | cut -d/ -f1)
+
+    if [ -n "$eth0_gateway" ]; then
+        log "Setting up policy-based routing for LAN services via gateway: $eth0_gateway"
+
+        # Ensure routing table 100 exists with route to eth0 gateway
+        if ! ip route show table 100 | grep -q "default via $eth0_gateway"; then
+            ip route add default via "$eth0_gateway" dev eth0 table 100 2>/dev/null || \
+                ip route replace default via "$eth0_gateway" dev eth0 table 100
+            log "Added/updated route in table 100: default via $eth0_gateway dev eth0"
+        fi
+
+        # Ensure fwmark rule exists for table 100
+        if ! ip rule list | grep -q "fwmark 0x1 lookup 100"; then
+            ip rule add fwmark 0x1 lookup 100 priority 1000
+            log "Added ip rule for fwmark 0x1 -> table 100"
+        fi
+
+        # CONNMARK rules for Transmission UI (port 9091)
+        if [ -n "$eth0_ip" ]; then
+            iptables -t mangle -A PREROUTING -d "$eth0_ip" -p tcp --dport 9091 -j CONNMARK --set-mark 0x1
+        else
+            iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport 9091 -j CONNMARK --set-mark 0x1
+        fi
+        iptables -t mangle -A OUTPUT -p tcp --sport 9091 -j CONNMARK --restore-mark
+        log "Applied CONNMARK rules for Transmission UI (port 9091)"
+
+        # CONNMARK rules for metrics if enabled
+        if [ "${METRICS_ENABLED,,}" = "true" ]; then
+            if [ -n "$eth0_ip" ]; then
+                iptables -t mangle -A PREROUTING -d "$eth0_ip" -p tcp --dport "${METRICS_PORT:-9099}" -j CONNMARK --set-mark 0x1
+            else
+                iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport "${METRICS_PORT:-9099}" -j CONNMARK --set-mark 0x1
+            fi
+            iptables -t mangle -A OUTPUT -p tcp --sport "${METRICS_PORT:-9099}" -j CONNMARK --restore-mark
+            log "Applied CONNMARK rules for metrics (port ${METRICS_PORT:-9099})"
+        fi
+
+        # CONNMARK rules for Privoxy if enabled
+        if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
+            if [ -n "$eth0_ip" ]; then
+                iptables -t mangle -A PREROUTING -d "$eth0_ip" -p tcp --dport "${PRIVOXY_PORT:-8118}" -j CONNMARK --set-mark 0x1
+            else
+                iptables -t mangle -A PREROUTING -i eth0 -p tcp --dport "${PRIVOXY_PORT:-8118}" -j CONNMARK --set-mark 0x1
+            fi
+            iptables -t mangle -A OUTPUT -p tcp --sport "${PRIVOXY_PORT:-8118}" -j CONNMARK --restore-mark
+            log "Applied CONNMARK rules for Privoxy (port ${PRIVOXY_PORT:-8118})"
+        fi
+    else
+        log "WARNING: Could not determine eth0 gateway, skipping policy-based routing setup"
+    fi
+
     # === FORWARD CHAIN ===
     # Allow established connections
     iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
