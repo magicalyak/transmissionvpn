@@ -120,6 +120,7 @@ services:
 | `INTERNAL_METRICS_ENABLED` | Enable internal health metrics | `false` | `true` |
 | `CHECK_DNS_LEAK` | Enable DNS leak detection | `false` | `true` |
 | `CHECK_IP_LEAK` | Enable IP leak detection | `false` | `true` |
+| `PIA_PORT_FORWARD` | Enable PIA port forwarding (requires non-US server) | `false` | `true` |
 
 ## 📁 Volumes
 
@@ -319,6 +320,36 @@ This container works with any OpenVPN or WireGuard provider:
 * **Mullvad** - Generate configs from account page
 
 📖 **Provider-specific guides**: [VPN Setup Documentation](docs/VPN_PROVIDERS.md)
+
+### PIA Port Forwarding
+
+Private Internet Access (PIA) supports port forwarding on select servers. This allows incoming BitTorrent connections, improving download speeds and peer connectivity.
+
+**To enable PIA port forwarding:**
+
+```yaml
+environment:
+  - VPN_CLIENT=openvpn
+  - VPN_CONFIG=/config/openvpn/ca_toronto.ovpn  # Must be non-US server!
+  - VPN_USER=your_pia_username
+  - VPN_PASS=your_pia_password
+  - PIA_PORT_FORWARD=true
+```
+
+**Important notes:**
+
+* Port forwarding is **disabled on US servers** by PIA policy
+* Use servers like: CA Toronto, CA Montreal, Netherlands, Switzerland, Germany, UK, Sweden
+* The forwarded port is **dynamic** and assigned by PIA (not configurable)
+* The container automatically configures Transmission to use the forwarded port
+* A keepalive runs every 15 minutes to maintain the port binding
+* Check `/tmp/pia_forwarded_port` inside the container for the assigned port
+
+**Supported servers for port forwarding:**
+- Canada (Toronto, Montreal, Vancouver)
+- Europe (Netherlands, Switzerland, Germany, France, UK, Sweden, etc.)
+- Asia Pacific (Singapore, Japan, Australia)
+- South America (Brazil, Mexico)
 
 ## 🎨 Alternative Web UIs
 

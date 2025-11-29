@@ -1,0 +1,17 @@
+#!/command/with-contenv bash
+# shellcheck shell=bash
+# s6 service to run PIA port forwarding after VPN is established
+
+# Wait for VPN setup to complete
+echo "[pia-port-forward] Waiting for VPN setup to complete..."
+while [ ! -f /tmp/vpn_setup_complete ]; do
+  sleep 2
+done
+
+echo "[pia-port-forward] VPN setup complete. Starting PIA port forwarding..."
+
+# Give VPN a moment to stabilize
+sleep 5
+
+# Run the port forwarding script
+exec /usr/local/bin/pia-port-forward.sh
