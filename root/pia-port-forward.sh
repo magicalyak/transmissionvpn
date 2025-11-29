@@ -63,6 +63,14 @@ if [ -z "$PF_GATEWAY" ]; then
 fi
 log "Detected PIA gateway: $PF_GATEWAY"
 
+# Ensure iptables allows traffic to the PIA gateway for port forwarding API (port 19999)
+# This is usually on the VPN interface, but add explicit rule for safety
+if command -v iptables &> /dev/null; then
+  # Allow HTTPS to PIA gateway for port forwarding API
+  iptables -I OUTPUT -d "$PF_GATEWAY" -p tcp --dport 19999 -j ACCEPT 2>/dev/null || true
+  log "Added iptables rule for PIA port forwarding API ($PF_GATEWAY:19999)"
+fi
+
 # Determine PF_HOSTNAME from VPN config or use default
 # PIA NextGen servers use their hostname for certificate verification
 if [ -f "/tmp/config.ovpn" ]; then
