@@ -104,6 +104,10 @@ ENV CHECK_DNS=${CHECK_DNS:-true}
 ENV CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}
 ENV AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}
 
+# PIA Port Forwarding settings
+# Set to true to enable PIA port forwarding (requires non-US PIA server)
+ENV PIA_PORT_FORWARD=${PIA_PORT_FORWARD:-false}
+
 # Update package index and upgrade existing packages first for security
 # Then install required packages
 # hadolint ignore=DL3018
@@ -160,17 +164,26 @@ COPY --chmod=755 root_s6/custom-metrics/run /etc/s6-overlay/s6-rc.d/custom-metri
 COPY --chmod=755 root_s6/vpn-monitor/run /etc/s6-overlay/s6-rc.d/vpn-monitor/run
 COPY --chmod=755 root_s6/vpn-monitor/finish /etc/s6-overlay/s6-rc.d/vpn-monitor/finish
 
+# Copy PIA port forwarding s6 service
+COPY --chmod=755 root_s6/pia-port-forward/run /etc/s6-overlay/s6-rc.d/pia-port-forward/run
+
 # Copy enhanced kill switch script
 COPY --chmod=755 root/vpn-killswitch.sh /usr/local/bin/vpn-killswitch.sh
+
+# Copy PIA port forwarding script
+COPY --chmod=755 root/pia-port-forward.sh /usr/local/bin/pia-port-forward.sh
 
 # Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/privoxy/type && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/custom-metrics/type && \
     echo "longrun" > /etc/s6-overlay/s6-rc.d/vpn-monitor/type && \
+    echo "oneshot" > /etc/s6-overlay/s6-rc.d/pia-port-forward/type && \
+    echo "/etc/s6-overlay/s6-rc.d/pia-port-forward/run" > /etc/s6-overlay/s6-rc.d/pia-port-forward/up && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/privoxy && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/vpn-monitor && \
+    touch /etc/s6-overlay/s6-rc.d/user/contents.d/pia-port-forward && \
     # Set proper ownership for metrics script
     chown -R transmission-user:transmission-user /usr/local/bin/transmission-metrics-server.py
 
