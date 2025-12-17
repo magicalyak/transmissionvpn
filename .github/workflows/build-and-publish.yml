@@ -412,12 +412,13 @@ jobs:
     needs:
       - merge
     if: github.event_name != 'pull_request'
+    timeout-minutes: 15
     strategy:
       matrix:
         platform:
           - linux/amd64
           - linux/arm64
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -471,23 +472,23 @@ jobs:
         run: |
           # Test that the image can be pulled and basic commands work
           docker pull --platform ${{ matrix.platform }} ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-          
-          # Test basic functionality
-          docker run --rm --platform ${{ matrix.platform }} \
+
+          # Test basic functionality (override entrypoint to avoid VPN setup hanging)
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint="" \
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
             sh -c 'echo "Testing basic functionality on ${{ matrix.platform }}" && python3 --version && openvpn --version | head -1 && transmission-daemon --version | head -1 && curl --version | head -1 && echo "All basic tools available"'
 
       - name: Test platform-specific optimizations
         run: |
-          # Test architecture detection
-          docker run --rm --platform ${{ matrix.platform }} \
+          # Test architecture detection (override entrypoint to avoid VPN setup hanging)
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint="" \
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
             sh -c 'echo "Architecture: $(uname -m)" && echo "Platform: $(uname -s)" && (cat /proc/cpuinfo | grep -E "(processor|model name|Hardware|Revision)" | head -5 || echo "CPU info not available")'
 
       - name: Test custom metrics server
         run: |
-          # Test that our custom metrics server is available
-          docker run --rm --platform ${{ matrix.platform }} \
+          # Test that our custom metrics server is available (override entrypoint to avoid VPN setup hanging)
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint="" \
             ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
             sh -c 'ls -la /usr/local/bin/transmission-metrics-server.py && python3 -c "import requests; print(\"Python requests library available\")"'
 
