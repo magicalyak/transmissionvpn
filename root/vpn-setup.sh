@@ -526,9 +526,9 @@ fi
 # 2. Restore mark on packets belonging to these connections in OUTPUT chain
 iptables -t mangle -A OUTPUT -p tcp --sport 9091 -j CONNMARK --restore-mark
 # 3. Create a routing rule to use table 100 if mark is 0x1
-ip rule add fwmark 0x1 lookup 100 priority 1000
+ip rule add fwmark 0x1 lookup 100 priority 1000 2>/dev/null || true
 # 4. Add a default route to table 100 via "$ETH0_GATEWAY" dev eth0 table 100
-ip route add default via "$ETH0_GATEWAY" dev eth0 table 100
+ip route add default via "$ETH0_GATEWAY" dev eth0 table 100 2>/dev/null || true
 
 echo "[INFO] CONNMARK rules for Transmission UI (port 9091) applied."
 
