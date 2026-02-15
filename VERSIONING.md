@@ -25,6 +25,7 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.1.0-r1` - Update base image to Transmission 4.1.0-r0-ls329
 - `v4.0.6-r23` - Enhanced VPN kill switch with strict iptables rules, DNS leak prevention, and active monitoring
 - `v4.0.6-r22` - Enhanced security posture to address Docker Scout findings
 - `v4.0.6-r21` - Improved Docker tagging strategy, cleanup stale docs, fix workflow for convenience tags

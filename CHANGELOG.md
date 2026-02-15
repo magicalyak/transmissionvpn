@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.0-r1] - 2026-02-15
+
+### Updated
+- **Base Image**: Updated to LinuxServer Transmission 4.1.0-r0-ls329 (from 4.0.6-r5-ls323)
+
+### Upstream Changes (Transmission 4.1.0)
+- Major Transmission version bump from 4.0.6 to 4.1.0
+
 ## [v4.0.17] - 2026-01-07
 
 ### Fixed
