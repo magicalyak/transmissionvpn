@@ -1,6 +1,6 @@
 # Main image - Pin to specific version for better security tracking
-# Updated to latest stable release (4.1.0-r0-ls329 from 2026-02-15)
-FROM lscr.io/linuxserver/transmission:4.1.0-r0-ls329
+# Updated to latest stable release (4.1.0-r0-ls330 from 2026-02-19)
+FROM lscr.io/linuxserver/transmission:4.1.0-r0-ls330
 
 # TRANSMISSION_VERSION is inherited from the upstream linuxserver/transmission image
 ENV PUID=911
