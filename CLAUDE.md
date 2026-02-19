@@ -1,2 +1,6 @@
-- This is a repo for transmission using a vpn in a docker container.  I am running this locally on rocky.gamull.com as a systemctl service called transmission /etc/systemd/system/transmission.service that calls a script  /opt/containerd/start-transmission-wrapper.sh  and env /opt/containerd/env/transmission.env and mount file /opt/containerd/mounts/transmission.mounts
-- We use github actions to build the images and releases
+- Custom Transmission container with built-in VPN (OpenVPN/WireGuard) support
+- Base image: lscr.io/linuxserver/transmission (pinned version in Dockerfile)
+- Built and published via GitHub Actions (build-and-publish.yml) to docker.io/magicalyak/transmissionvpn
+- Deployed to k3s cluster in the media namespace via Flux GitOps (rocky repo: cluster/apps/media/transmission.yaml)
+- Flux image automation tracks new tags and auto-updates the deployment
+- Version checker in rocky repo monitors upstream linuxserver/transmission for new releases
