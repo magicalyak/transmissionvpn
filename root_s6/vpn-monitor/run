@@ -1,6 +1,7 @@
 #!/command/with-contenv bash
 # VPN Monitor - Enhanced monitoring service with kill switch enforcement
 # Monitors VPN connection health and stops Transmission if VPN fails
+# Auto-restart with cooldown, max attempts, and webhook notifications
 
 set -e
 
@@ -11,19 +12,95 @@ CHECK_DNS=${CHECK_DNS:-true}                  # Enable DNS resolution testing
 CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}  # Check external IP through VPN
 AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}   # Auto-restart VPN on failure
 
+# Auto-restart configuration
+RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-300}  # 5 min between attempts
+MAX_RESTART_ATTEMPTS=${MAX_RESTART_ATTEMPTS:-3}             # Give up after this many
+NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL:-}      # Optional webhook
+
 # File paths
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
 VPN_SETUP_COMPLETE="/tmp/vpn_setup_complete"
 EXTERNAL_IP_FILE="/tmp/last_external_ip"
 VPN_STATUS_FILE="/tmp/vpn_status"
 
+# Auto-restart state files
+LAST_RESTART_FILE="/tmp/last_vpn_restart"
+RESTART_COUNT_FILE="/tmp/vpn_restart_count"
+RESTART_LOG="/config/vpn-auto-restart.log"
+
 # State tracking
 FAILURE_COUNT=0
 TRANSMISSION_WAS_RUNNING=false
 LAST_VPN_CHECK=$(date +%s)
+CONSECUTIVE_HEALTHY=0
+HEALTHY_CHECKS_TO_RESET=5  # Reset restart counter after this many consecutive healthy checks
 
 log() {
     echo "[VPN-MONITOR] $(date '+%Y-%m-%d %H:%M:%S') $*"
+}
+
+log_restart() {
+    local message="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    echo "$message" >> "$RESTART_LOG" 2>/dev/null || true
+    log "$*"
+}
+
+check_cooldown() {
+    local current_time
+    current_time=$(date +%s)
+
+    if [ -f "$LAST_RESTART_FILE" ]; then
+        local last_restart
+        last_restart=$(cat "$LAST_RESTART_FILE")
+        local time_diff=$((current_time - last_restart))
+
+        if [ "$time_diff" -lt "$RESTART_COOLDOWN_SECONDS" ]; then
+            local remaining=$((RESTART_COOLDOWN_SECONDS - time_diff))
+            log "Restart in cooldown period (${remaining}s remaining)"
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+get_restart_count() {
+    if [ -f "$RESTART_COUNT_FILE" ]; then
+        cat "$RESTART_COUNT_FILE"
+    else
+        echo "0"
+    fi
+}
+
+increment_restart_count() {
+    local current_count
+    current_count=$(get_restart_count)
+    current_count=$((current_count + 1))
+    echo "$current_count" > "$RESTART_COUNT_FILE"
+    echo "$current_count"
+}
+
+reset_restart_count() {
+    echo "0" > "$RESTART_COUNT_FILE"
+    rm -f "$LAST_RESTART_FILE"
+}
+
+send_notification() {
+    local event="$1"
+    local message="$2"
+
+    if [ -z "$NOTIFICATION_WEBHOOK_URL" ]; then
+        return 0
+    fi
+
+    local payload="{\"event\":\"$event\",\"message\":\"$message\",\"timestamp\":\"$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')\",\"container\":\"transmissionvpn\"}"
+
+    curl -X POST \
+         -H "Content-Type: application/json" \
+         -d "$payload" \
+         --max-time 10 \
+         --silent \
+         "$NOTIFICATION_WEBHOOK_URL" >/dev/null 2>&1 || true
 }
 
 check_dns_resolution() {
@@ -132,25 +209,74 @@ attempt_vpn_restart() {
         return 1
     fi
 
-    log "Attempting to restart VPN connection"
-
-    # Determine VPN type and restart
-    if [ "${VPN_CLIENT,,}" = "wireguard" ]; then
-        wg-quick down "$VPN_INTERFACE" 2>/dev/null || true
-        sleep 2
-        wg-quick up "$VPN_CONFIG" 2>/dev/null && return 0
-    elif [ "${VPN_CLIENT,,}" = "openvpn" ]; then
-        pkill openvpn 2>/dev/null || true
-        sleep 2
-        # Re-run VPN setup script
-        /etc/cont-init.d/50-vpn-setup 2>/dev/null && return 0
+    # Check cooldown period
+    if ! check_cooldown; then
+        return 1
     fi
 
-    return 1
+    # Check restart count
+    local restart_count
+    restart_count=$(get_restart_count)
+    if [ "$restart_count" -ge "$MAX_RESTART_ATTEMPTS" ]; then
+        log_restart "ERROR: Maximum restart attempts ($MAX_RESTART_ATTEMPTS) exceeded - manual intervention required"
+        send_notification "vpn_restart_exhausted" "Maximum VPN restart attempts exceeded"
+        return 1
+    fi
+
+    # Increment count and record time
+    restart_count=$(increment_restart_count)
+    date +%s > "$LAST_RESTART_FILE"
+
+    log_restart "Attempting VPN restart (attempt $restart_count/$MAX_RESTART_ATTEMPTS)"
+    send_notification "vpn_restart_attempt" "Attempting VPN restart ($restart_count/$MAX_RESTART_ATTEMPTS)"
+
+    # Kill existing VPN processes
+    if [ "${VPN_CLIENT,,}" = "wireguard" ]; then
+        wg-quick down "$VPN_INTERFACE" 2>/dev/null || true
+    elif [ "${VPN_CLIENT,,}" = "openvpn" ]; then
+        pkill openvpn 2>/dev/null || true
+    fi
+
+    sleep 5
+
+    # Re-run VPN setup script
+    local restart_success=false
+    if /etc/cont-init.d/50-vpn-setup 2>/dev/null; then
+        restart_success=true
+    fi
+
+    if [ "$restart_success" = "true" ]; then
+        # Wait for VPN to stabilize and verify
+        sleep 10
+
+        # Re-read VPN interface name (may have changed)
+        if [ -f "$VPN_INTERFACE_FILE" ]; then
+            VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
+        fi
+
+        # Verify VPN interface is UP and has an IP
+        if ip link show "$VPN_INTERFACE" 2>/dev/null | grep -q "state UP\|state UNKNOWN" && \
+           ip addr show "$VPN_INTERFACE" 2>/dev/null | grep -q "inet "; then
+            log_restart "VPN restart successful - interface $VPN_INTERFACE is UP"
+            send_notification "vpn_restart_success" "VPN successfully restarted"
+            return 0
+        else
+            log_restart "VPN restart completed but interface verification failed"
+            send_notification "vpn_restart_failed" "VPN restart completed but interface not UP"
+            return 1
+        fi
+    else
+        log_restart "VPN setup script failed"
+        send_notification "vpn_restart_failed" "VPN setup script returned error"
+        return 1
+    fi
 }
 
 # Wait for initial VPN setup
 log "Starting VPN monitor service (interval: ${VPN_CHECK_INTERVAL}s, max failures: ${VPN_MAX_FAILURES})"
+if [ "${AUTO_RESTART_VPN,,}" = "true" ]; then
+    log "Auto-restart enabled (cooldown: ${RESTART_COOLDOWN_SECONDS}s, max attempts: ${MAX_RESTART_ATTEMPTS})"
+fi
 while [ ! -f "$VPN_SETUP_COMPLETE" ]; do
     log "Waiting for initial VPN setup to complete..."
     sleep 5
@@ -217,9 +343,22 @@ while true; do
             restart_transmission
         fi
         FAILURE_COUNT=0
+
+        # Track consecutive healthy checks to reset restart counter
+        CONSECUTIVE_HEALTHY=$((CONSECUTIVE_HEALTHY + 1))
+        if [ "$CONSECUTIVE_HEALTHY" -ge "$HEALTHY_CHECKS_TO_RESET" ]; then
+            local current_restart_count
+            current_restart_count=$(get_restart_count)
+            if [ "$current_restart_count" -gt 0 ]; then
+                log "VPN stable for $CONSECUTIVE_HEALTHY checks, resetting restart counter"
+                reset_restart_count
+            fi
+            CONSECUTIVE_HEALTHY=0
+        fi
     else
         # VPN is unhealthy
         FAILURE_COUNT=$((FAILURE_COUNT + 1))
+        CONSECUTIVE_HEALTHY=0
         log "VPN health check failed ($FAILURE_COUNT/$VPN_MAX_FAILURES)"
 
         if [ $FAILURE_COUNT -ge $VPN_MAX_FAILURES ]; then
@@ -233,12 +372,11 @@ while true; do
 
             # Attempt VPN restart if enabled
             if [ "${AUTO_RESTART_VPN,,}" = "true" ]; then
-                log "Attempting automatic VPN restart"
                 if attempt_vpn_restart; then
-                    log "VPN restart initiated, waiting for reconnection"
+                    log "VPN restart successful, resuming monitoring"
                     FAILURE_COUNT=0
                 else
-                    log "VPN restart failed - manual intervention required"
+                    log "VPN restart failed or skipped"
                 fi
             else
                 log "Auto-restart disabled - manual intervention required"
@@ -251,7 +389,9 @@ while true; do
         if [ "$VPN_HEALTHY" = "true" ]; then
             log "Status: VPN healthy, Transmission protected"
         else
-            log "Status: VPN unhealthy, Transmission stopped, kill switch active"
+            local restart_count
+            restart_count=$(get_restart_count)
+            log "Status: VPN unhealthy, Transmission stopped, kill switch active (restarts: $restart_count/$MAX_RESTART_ATTEMPTS)"
         fi
         LAST_VPN_CHECK=$(date +%s)
     fi
