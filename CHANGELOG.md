@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.0-r4] - 2026-03-07
+
+### Fixed
+- **VPN Monitor Race Condition**: Added configurable initial delay (VPN_INITIAL_DELAY, default 15s) after VPN setup completes before health checks begin. Prevents the monitor from declaring failure and enforcing the kill switch before OpenVPN routes are fully propagated, which would then block the working VPN connection.
+
 ## [v4.1.0-r1] - 2026-02-15
 
 ### Updated

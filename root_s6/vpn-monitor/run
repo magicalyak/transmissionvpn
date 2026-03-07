@@ -8,6 +8,7 @@ set -e
 # Configuration from environment variables with defaults
 VPN_CHECK_INTERVAL=${VPN_CHECK_INTERVAL:-30}  # Seconds between checks
 VPN_MAX_FAILURES=${VPN_MAX_FAILURES:-3}       # Max failures before action
+VPN_INITIAL_DELAY=${VPN_INITIAL_DELAY:-15}    # Seconds to wait after VPN setup before monitoring
 CHECK_DNS=${CHECK_DNS:-true}                  # Enable DNS resolution testing
 CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}  # Check external IP through VPN
 AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}   # Auto-restart VPN on failure
@@ -311,6 +312,9 @@ while [ ! -f "$VPN_SETUP_COMPLETE" ]; do
     sleep 5
 done
 
+log "VPN setup complete, waiting ${VPN_INITIAL_DELAY}s for routes to stabilize..."
+sleep "$VPN_INITIAL_DELAY"
+
 log "VPN monitoring started - protecting against IP leaks"
 echo "running" > "$VPN_STATUS_FILE"
 
@@ -402,7 +406,9 @@ while true; do
             # Attempt VPN restart if enabled
             if [ "${AUTO_RESTART_VPN,,}" = "true" ]; then
                 if attempt_vpn_restart; then
-                    log "VPN restart successful, resuming monitoring"
+                    log "VPN restart successful, waiting ${VPN_INITIAL_DELAY}s for routes to stabilize..."
+                    sleep "$VPN_INITIAL_DELAY"
+                    log "Resuming monitoring"
                     FAILURE_COUNT=0
                 else
                     log "VPN restart failed or skipped"

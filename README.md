@@ -597,6 +597,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 |----------|-------------|---------|
 | `VPN_CHECK_INTERVAL` | Seconds between VPN health checks | `30` |
 | `VPN_MAX_FAILURES` | Max failures before stopping Transmission | `3` |
+| `VPN_INITIAL_DELAY` | Seconds to wait after VPN setup before monitoring | `15` |
 | `CHECK_DNS` | Enable DNS resolution testing | `true` |
 | `CHECK_EXTERNAL_IP` | Verify external IP through VPN | `true` |
 | `AUTO_RESTART_VPN` | Auto-restart VPN on failure | `false` |
