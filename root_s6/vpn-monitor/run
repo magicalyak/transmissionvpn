@@ -416,7 +416,6 @@ while true; do
         # Track consecutive healthy checks to reset restart counter
         CONSECUTIVE_HEALTHY=$((CONSECUTIVE_HEALTHY + 1))
         if [ "$CONSECUTIVE_HEALTHY" -ge "$HEALTHY_CHECKS_TO_RESET" ]; then
-            local current_restart_count
             current_restart_count=$(get_restart_count)
             if [ "$current_restart_count" -gt 0 ]; then
                 log "VPN stable for $CONSECUTIVE_HEALTHY checks, resetting restart counter"
@@ -460,7 +459,6 @@ while true; do
         if [ "$VPN_HEALTHY" = "true" ]; then
             log "Status: VPN healthy, Transmission protected"
         else
-            local restart_count
             restart_count=$(get_restart_count)
             log "Status: VPN unhealthy, Transmission stopped, kill switch active (restarts: $restart_count/$MAX_RESTART_ATTEMPTS)"
         fi

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.0-r7] - 2026-03-08
+
+### Fixed
+- **VPN Monitor Crash After 2.5 Minutes**: The monitor script used `local` variables inside the main loop (outside any function), which is a bash error. With `set -e`, this crashed the script after 5 consecutive healthy checks (~2.5 minutes), triggering the finish script's kill switch which killed the VPN connection. Removed invalid `local` declarations from the main monitoring loop.
+
 ## [v4.1.0-r6] - 2026-03-08
 
 ### Fixed
