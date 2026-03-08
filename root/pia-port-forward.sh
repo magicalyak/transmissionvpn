@@ -51,10 +51,10 @@ fi
 VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
 
 # Get the gateway IP (PIA server we're connected to)
-PF_GATEWAY=$(ip route | grep "dev $VPN_INTERFACE" | grep -oP 'via \K[0-9.]+' | head -1)
+PF_GATEWAY=$(ip route show dev "$VPN_INTERFACE" | awk '/via/ {print $3}' | head -1)
 if [ -z "$PF_GATEWAY" ]; then
-  # Try alternate method
-  PF_GATEWAY=$(ip route show dev "$VPN_INTERFACE" | awk '/via/ {print $3}' | head -1)
+  # Try alternate method - parse from default route through VPN
+  PF_GATEWAY=$(ip route | grep "dev $VPN_INTERFACE" | awk '/via/ {print $3}' | head -1)
 fi
 
 if [ -z "$PF_GATEWAY" ]; then
@@ -85,8 +85,22 @@ fi
 log "PIA hostname for certificate verification: ${PF_HOSTNAME:-unknown}"
 
 # Step 1: Get PIA authentication token
+# Wait for DNS to be functional (may take a moment after VPN connects)
+log "Waiting for DNS resolution..."
+dns_retries=10
+while [ $dns_retries -gt 0 ]; do
+  if nslookup www.privateinternetaccess.com >/dev/null 2>&1; then
+    break
+  fi
+  sleep 3
+  dns_retries=$((dns_retries - 1))
+done
+if [ $dns_retries -eq 0 ]; then
+  log "WARNING: DNS resolution may not be working. Attempting token request anyway..."
+fi
+
 log "Obtaining PIA authentication token..."
-TOKEN_RESPONSE=$(curl -s -u "$VPN_USER:$VPN_PASS" \
+TOKEN_RESPONSE=$(curl -s -m 15 -u "$VPN_USER:$VPN_PASS" \
   "https://www.privateinternetaccess.com/api/client/v2/token" 2>&1)
 
 PIA_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token' 2>/dev/null)

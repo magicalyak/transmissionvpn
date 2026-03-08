@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.0-r8] - 2026-03-08
+
+### Fixed
+- **PIA Port Forwarding BusyBox Compatibility**: Gateway detection used `grep -oP` (Perl regex) which is not available in BusyBox/Alpine. Replaced with `awk` for compatible parsing.
+- **PIA Port Forwarding DNS Race**: Token API request failed because DNS was not yet configured when the port forwarding script started. Added DNS readiness check with retries before making API calls.
+
 ## [v4.1.0-r7] - 2026-03-08
 
 ### Fixed
