@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **PIA Port Forwarding BusyBox Compatibility**: Gateway detection used `grep -oP` (Perl regex) which is not available in BusyBox/Alpine. Replaced with `awk` for compatible parsing.
 - **PIA Port Forwarding DNS Race**: Token API request failed because DNS was not yet configured when the port forwarding script started. Added DNS readiness check with retries before making API calls.
+- **PIA Token API URL**: Updated from deprecated `/api/client/v2/token` endpoint to current `/gtoken/generateToken`.
+- **PIA Token URL Encoding**: Tokens containing `+` characters were corrupted in URL query parameters. Switched to `--data-urlencode` for all PIA API calls.
+- **PIA Gateway Certificate**: Simplified gateway API calls to use `-k` (skip verify) since the gateway is on the trusted VPN interface, fixing `--connect-to` cert verification failures.
+- **Transmission RPC Auth for Port Config**: Session ID retrieval and port configuration now include RPC authentication credentials, fixing 400/401 errors when `TRANSMISSION_RPC_AUTHENTICATION_REQUIRED` is enabled.
 
 ## [v4.1.0-r7] - 2026-03-08
 

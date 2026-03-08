@@ -101,7 +101,7 @@ fi
 
 log "Obtaining PIA authentication token..."
 TOKEN_RESPONSE=$(curl -s -m 15 -u "$VPN_USER:$VPN_PASS" \
-  "https://www.privateinternetaccess.com/api/client/v2/token" 2>&1)
+  "https://privateinternetaccess.com/gtoken/generateToken" 2>&1)
 
 PIA_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token' 2>/dev/null)
 
@@ -115,15 +115,11 @@ log "Successfully obtained PIA token."
 # Step 2: Get port forwarding signature from the gateway
 log "Requesting port forwarding signature from gateway..."
 
-# PIA uses a self-signed cert, we need to handle this
-# The gateway exposes port 19999 for the PF API
-SIGNATURE_RESPONSE=$(curl -s -m 10 \
-  --connect-to "${PF_HOSTNAME}:19999:${PF_GATEWAY}:19999" \
-  --cacert /config/openvpn/ca.rsa.4096.crt \
-  "https://${PF_HOSTNAME}:19999/getSignature?token=$PIA_TOKEN" 2>&1 || \
-  # Fallback without cert verification if ca cert not available
-  curl -s -m 10 -k \
-  "https://${PF_GATEWAY}:19999/getSignature?token=$PIA_TOKEN" 2>&1)
+# PIA gateway uses a self-signed cert on the VPN interface (trusted)
+# Use --data-urlencode because PIA tokens contain + characters
+SIGNATURE_RESPONSE=$(curl -s -m 10 -k -G \
+  --data-urlencode "token=$PIA_TOKEN" \
+  "https://${PF_GATEWAY}:19999/getSignature" 2>&1)
 
 SIGNATURE_STATUS=$(echo "$SIGNATURE_RESPONSE" | jq -r '.status' 2>/dev/null)
 
@@ -168,10 +164,17 @@ configure_transmission_port() {
   local port=$1
   log "Configuring Transmission to use port $port..."
 
+  # Build auth header if RPC authentication is enabled
+  local AUTH_HEADER=""
+  if [ -n "$TRANSMISSION_RPC_USERNAME" ] && [ -n "$TRANSMISSION_RPC_PASSWORD" ]; then
+    AUTH_HEADER="-u $TRANSMISSION_RPC_USERNAME:$TRANSMISSION_RPC_PASSWORD"
+  fi
+
   # Wait for Transmission to be ready
   local retries=30
   while [ $retries -gt 0 ]; do
-    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:9091/transmission/rpc" | grep -q "409"; then
+    # shellcheck disable=SC2086
+    if curl -s -o /dev/null -w "%{http_code}" $AUTH_HEADER "http://127.0.0.1:9091/transmission/rpc" | grep -q "409"; then
       break
     fi
     sleep 2
@@ -182,19 +185,14 @@ configure_transmission_port() {
     log "WARNING: Transmission RPC not responding. Will try to set port anyway."
   fi
 
-  # Get session-id for RPC
-  SESSION_ID=$(curl -s -i "http://127.0.0.1:9091/transmission/rpc" 2>/dev/null | \
-    grep -i "X-Transmission-Session-Id" | awk '{print $2}' | tr -d '\r')
+  # Get session-id for RPC (must include auth if enabled)
+  # shellcheck disable=SC2086
+  SESSION_ID=$(curl -s -i $AUTH_HEADER "http://127.0.0.1:9091/transmission/rpc" 2>/dev/null | \
+    grep "^X-Transmission-Session-Id:" | head -1 | awk '{print $2}' | tr -d '\r')
 
   if [ -z "$SESSION_ID" ]; then
     log "WARNING: Could not get Transmission session ID."
     return 1
-  fi
-
-  # Build auth header if RPC authentication is enabled
-  AUTH_HEADER=""
-  if [ -n "$TRANSMISSION_RPC_USERNAME" ] && [ -n "$TRANSMISSION_RPC_PASSWORD" ]; then
-    AUTH_HEADER="-u $TRANSMISSION_RPC_USERNAME:$TRANSMISSION_RPC_PASSWORD"
   fi
 
   # Set peer port via RPC
@@ -223,12 +221,10 @@ log "Starting port binding keepalive loop (every 15 minutes)..."
 
 bind_port() {
   local response
-  response=$(curl -s -m 10 \
-    --connect-to "${PF_HOSTNAME}:19999:${PF_GATEWAY}:19999" \
-    --cacert /config/openvpn/ca.rsa.4096.crt \
-    "https://${PF_HOSTNAME}:19999/bindPort?payload=$PF_PAYLOAD&signature=$PF_SIGNATURE" 2>&1 || \
-    curl -s -m 10 -k \
-    "https://${PF_GATEWAY}:19999/bindPort?payload=$PF_PAYLOAD&signature=$PF_SIGNATURE" 2>&1)
+  response=$(curl -s -m 10 -k -G \
+    --data-urlencode "payload=$PF_PAYLOAD" \
+    --data-urlencode "signature=$PF_SIGNATURE" \
+    "https://${PF_GATEWAY}:19999/bindPort" 2>&1)
 
   local status
   status=$(echo "$response" | jq -r '.status' 2>/dev/null)
