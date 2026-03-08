@@ -156,6 +156,42 @@ enforce_killswitch() {
     # Allow Transmission UI access
     iptables -A OUTPUT -o eth0 -p tcp --sport 9091 -j ACCEPT
 
+    # Allow VPN server traffic so OpenVPN/WireGuard can reconnect
+    if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
+        local ovpn_config="${VPN_CONFIG:-/config/openvpn/*.ovpn}"
+        ovpn_config=$(ls $ovpn_config 2>/dev/null | head -1)
+        if [ -f "$ovpn_config" ]; then
+            local vpn_server vpn_port vpn_proto
+            vpn_server=$(grep '^remote ' "$ovpn_config" | head -1 | awk '{print $2}')
+            vpn_port=$(grep '^remote ' "$ovpn_config" | head -1 | awk '{print $3}')
+            vpn_proto=$(grep '^proto ' "$ovpn_config" | head -1 | awk '{print $2}' | sed 's/[0-9]//g')
+            [ -z "$vpn_proto" ] && vpn_proto="udp"
+            if [ -n "$vpn_server" ] && [ -n "$vpn_port" ]; then
+                # Resolve hostname to IP if needed
+                local resolved_ip
+                resolved_ip=$(getent hosts "$vpn_server" 2>/dev/null | awk '{print $1}' | head -1)
+                [ -z "$resolved_ip" ] && resolved_ip="$vpn_server"
+                log "Kill switch: allowing VPN server traffic to $resolved_ip:$vpn_port/$vpn_proto"
+                iptables -A OUTPUT -o eth0 -d "$resolved_ip" -p "$vpn_proto" --dport "$vpn_port" -j ACCEPT
+            fi
+        fi
+    elif [ "${VPN_CLIENT,,}" = "wireguard" ]; then
+        local wg_config="${WG_CONFIG:-/config/wireguard/wg0.conf}"
+        if [ -f "$wg_config" ]; then
+            local wg_endpoint wg_server wg_port
+            wg_endpoint=$(grep '^Endpoint' "$wg_config" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+            wg_server=$(echo "$wg_endpoint" | cut -d: -f1)
+            wg_port=$(echo "$wg_endpoint" | cut -d: -f2)
+            if [ -n "$wg_server" ] && [ -n "$wg_port" ]; then
+                local resolved_ip
+                resolved_ip=$(getent hosts "$wg_server" 2>/dev/null | awk '{print $1}' | head -1)
+                [ -z "$resolved_ip" ] && resolved_ip="$wg_server"
+                log "Kill switch: allowing WireGuard server traffic to $resolved_ip:$wg_port/udp"
+                iptables -A OUTPUT -o eth0 -d "$resolved_ip" -p udp --dport "$wg_port" -j ACCEPT
+            fi
+        fi
+    fi
+
     # If VPN interface exists, allow traffic through it
     if [ -n "$vpn_if" ] && ip link show "$vpn_if" >/dev/null 2>&1; then
         iptables -A OUTPUT -o "$vpn_if" -j ACCEPT
@@ -168,7 +204,7 @@ enforce_killswitch() {
     iptables -I OUTPUT 1 -p udp --dport 53 ! -o "$vpn_if" -j DROP
     iptables -I OUTPUT 1 -p tcp --dport 53 ! -o "$vpn_if" -j DROP
 
-    log "Kill switch enforced - all non-VPN traffic blocked"
+    log "Kill switch enforced - all non-VPN traffic blocked (VPN server exempt)"
 }
 
 stop_transmission() {

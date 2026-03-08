@@ -25,6 +25,7 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.1.0-r5` - Fix kill switch deadlock: allow VPN server traffic for reconnection
 - `v4.1.0-r4` - Fix VPN monitor race condition: add initial delay before health checks
 - `v4.1.0-r1` - Update base image to Transmission 4.1.0-r0-ls329
 - `v4.0.6-r23` - Enhanced VPN kill switch with strict iptables rules, DNS leak prevention, and active monitoring
