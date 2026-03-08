@@ -25,6 +25,7 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.1.0-r9` - Add PIA port forward finish script, update documentation
 - `v4.1.0-r8` - Fix PIA port forwarding: BusyBox grep compatibility and DNS race condition
 - `v4.1.0-r7` - Fix monitor crash from invalid local variables in main loop
 - `v4.1.0-r6` - Fix finish script kill switch blocking VPN on monitor restart

@@ -54,7 +54,7 @@ services:
       - ./watch:/watch
     environment:
       - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/us_new_york_city.ovpn
+      - VPN_CONFIG=/config/openvpn/ca_toronto.ovpn
       - VPN_USER=your_pia_username
       - VPN_PASS=your_pia_password
       - LAN_NETWORK=192.168.1.0/24
@@ -62,6 +62,41 @@ services:
       - PGID=1000
     restart: unless-stopped
 ```
+
+### PIA with Port Forwarding Example
+
+Port forwarding allows incoming peer connections, improving torrent speeds significantly. Requires a non-US PIA server.
+
+```yaml
+version: "3.8"
+services:
+  transmissionvpn:
+    image: magicalyak/transmissionvpn:latest
+    container_name: transmissionvpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+      - ./watch:/watch
+    environment:
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/ca_toronto.ovpn
+      - VPN_USER=your_pia_username
+      - VPN_PASS=your_pia_password
+      - PIA_PORT_FORWARD=true
+      - LAN_NETWORK=192.168.1.0/24
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+    restart: unless-stopped
+```
+
+The forwarded port is dynamically assigned by PIA and automatically configured in Transmission. Check the assigned port with `docker exec transmissionvpn cat /tmp/pia_forwarded_port`.
 
 ### PrivadoVPN Example
 

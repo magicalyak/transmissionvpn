@@ -42,7 +42,7 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_PROVIDER=nordvpn
+      - VPN_CLIENT=openvpn
       - VPN_CONFIG=us9999.nordvpn.com.udp.ovpn
       - VPN_USER=your_nordvpn_username
       - VPN_PASS=your_nordvpn_password
@@ -128,8 +128,8 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_PROVIDER=surfshark
-      - VPN_CONFIG=us-dal.prod.surfshark.com_udp.ovpn
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/us-dal.prod.surfshark.com_udp.ovpn
       - VPN_USER=your_surfshark_username
       - VPN_PASS=your_surfshark_password
       - PUID=1000
@@ -166,8 +166,7 @@ services:
       - ./downloads:/downloads
     environment:
       - VPN_CLIENT=wireguard
-      - VPN_PROVIDER=surfshark
-      - VPN_CONFIG=surfshark.conf
+      - VPN_CONFIG=/config/wireguard/surfshark.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
@@ -241,8 +240,8 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_PROVIDER=mullvad
-      - VPN_CONFIG=mullvad_us-ny.ovpn
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/mullvad_us-ny.ovpn
       - VPN_USER=your_mullvad_account_number
       - VPN_PASS=m
       - PUID=1000
@@ -278,8 +277,7 @@ services:
       - ./downloads:/downloads
     environment:
       - VPN_CLIENT=wireguard
-      - VPN_PROVIDER=mullvad
-      - VPN_CONFIG=mullvad.conf
+      - VPN_CONFIG=/config/wireguard/mullvad.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
@@ -312,8 +310,8 @@ services:
       - ./config:/config
       - ./downloads:/downloads
     environment:
-      - VPN_PROVIDER=pia
-      - VPN_CONFIG=us_east.ovpn
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/ca_toronto.ovpn
       - VPN_USER=p1234567
       - VPN_PASS=supersecret
       - PUID=1000
@@ -350,12 +348,58 @@ services:
       - ./downloads:/downloads
     environment:
       - VPN_CLIENT=wireguard
-      - VPN_PROVIDER=pia
-      - VPN_CONFIG=pia.conf
+      - VPN_CONFIG=/config/wireguard/pia.conf
       - PUID=1000
       - PGID=1000
     restart: unless-stopped
 ```
+
+### Port Forwarding
+
+PIA supports port forwarding on non-US servers, which allows incoming peer connections for better torrent performance. To enable it, add `PIA_PORT_FORWARD=true` to your environment and use a non-US server.
+
+**Requirements:**
+- Must use a non-US PIA server (US servers do not support port forwarding)
+- Supported regions: Canada, Europe, Asia Pacific, South America
+- Works with both OpenVPN and WireGuard
+
+**How it works:**
+1. After the VPN connects, the container authenticates with PIA's token API
+2. Requests a port forwarding signature from the PIA gateway
+3. PIA assigns a dynamic port (not user-configurable)
+4. Transmission is automatically configured to use the assigned port
+5. Firewall rules are added to allow inbound traffic on the forwarded port
+6. A keepalive runs every 15 minutes to maintain the port binding
+
+**Docker Compose Example:**
+
+```yaml
+    environment:
+      - VPN_CLIENT=openvpn
+      - VPN_CONFIG=/config/openvpn/ca_toronto.ovpn
+      - VPN_USER=p1234567
+      - VPN_PASS=supersecret
+      - PIA_PORT_FORWARD=true
+      - PUID=1000
+      - PGID=1000
+```
+
+**Verifying port forwarding:**
+
+```bash
+# Check the assigned port
+docker exec transmissionvpn cat /tmp/pia_forwarded_port
+
+# Verify the port is open via Transmission RPC
+docker exec transmissionvpn curl -s http://127.0.0.1:9091/transmission/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"method":"port-test"}' | jq .arguments
+```
+
+**Troubleshooting:**
+- If you see "Login failed" on getSignature, verify you are using a non-US server
+- Check PIA port forwarding logs: `docker logs transmissionvpn 2>&1 | grep PIA-PF`
+- Ensure `VPN_USER` and `VPN_PASS` match your PIA account credentials
 
 ## PrivadoVPN
 

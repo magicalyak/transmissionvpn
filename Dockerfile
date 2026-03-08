@@ -169,6 +169,7 @@ COPY --chmod=755 root_s6/vpn-monitor/finish /etc/s6-overlay/s6-rc.d/vpn-monitor/
 
 # Copy PIA port forwarding s6 service
 COPY --chmod=755 root_s6/pia-port-forward/run /etc/s6-overlay/s6-rc.d/pia-port-forward/run
+COPY --chmod=755 root_s6/pia-port-forward/finish /etc/s6-overlay/s6-rc.d/pia-port-forward/finish
 
 # Copy enhanced kill switch script
 COPY --chmod=755 root/vpn-killswitch.sh /usr/local/bin/vpn-killswitch.sh

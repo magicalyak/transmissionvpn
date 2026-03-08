@@ -45,8 +45,8 @@ body:
       label: "Steps to Reproduce"
       description: "Please provide the exact steps to reproduce the behavior."
       placeholder: |
-        1. Set `VPN_PROVIDER` to `pia`.
-        2. Set `VPN_CLIENT` to `wireguard`.
+        1. Set `VPN_CLIENT` to `openvpn`.
+        2. Set `VPN_CONFIG` to `/config/openvpn/ca_toronto.ovpn`.
         3. Run `docker-compose up`.
         4. See error in logs.
     validations:
@@ -80,8 +80,8 @@ body:
         <summary>Click to expand</summary>
 
         ```
-        VPN_PROVIDER=pia
-        VPN_CLIENT=wireguard
+        VPN_CLIENT=openvpn
+        VPN_CONFIG=/config/openvpn/ca_toronto.ovpn
         # ...
         ```
         </details>

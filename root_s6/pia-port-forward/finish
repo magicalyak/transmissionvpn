@@ -1,0 +1,34 @@
+#!/command/with-contenv bash
+# shellcheck shell=bash
+# Cleanup script for PIA port forwarding service
+
+log() {
+  echo "[PIA-PF] $(date '+%Y-%m-%d %H:%M:%S') FINISH: $1"
+}
+
+log "PIA port forwarding service stopping"
+
+# Kill the keepalive background process
+if [ -f /tmp/pia_keepalive_pid ]; then
+  KEEPALIVE_PID=$(cat /tmp/pia_keepalive_pid)
+  if kill -0 "$KEEPALIVE_PID" 2>/dev/null; then
+    kill "$KEEPALIVE_PID" 2>/dev/null || true
+    log "Stopped keepalive process (PID $KEEPALIVE_PID)"
+  fi
+  rm -f /tmp/pia_keepalive_pid
+fi
+
+# Remove iptables rules for the forwarded port
+if [ -f /tmp/pia_forwarded_port ]; then
+  PF_PORT=$(cat /tmp/pia_forwarded_port)
+  VPN_INTERFACE=$(cat /tmp/vpn_interface_name 2>/dev/null || echo "tun0")
+  if command -v iptables &> /dev/null && [ -n "$PF_PORT" ]; then
+    iptables -D INPUT -i "$VPN_INTERFACE" -p tcp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
+    iptables -D INPUT -i "$VPN_INTERFACE" -p udp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
+    log "Removed INPUT rules for port $PF_PORT"
+  fi
+fi
+
+# Clean up temporary files
+rm -f /tmp/pia_forwarded_port /tmp/pia_token
+log "PIA port forwarding cleanup complete"

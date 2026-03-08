@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.0-r9] - 2026-03-08
+
+### Added
+- **PIA Port Forward Finish Script**: Proper cleanup when the port forwarding service stops, including killing the keepalive process and removing firewall rules.
+- **PIA Port Forwarding Documentation**: Added port forwarding section to VPN_PROVIDERS.md, added PIA port forwarding example to EXAMPLES.md.
+
+### Fixed
+- **Documentation**: Replaced deprecated `VPN_PROVIDER` variable with correct `VPN_CLIENT` and `VPN_CONFIG` in all examples and templates.
+
 ## [v4.1.0-r8] - 2026-03-08
 
 ### Fixed
