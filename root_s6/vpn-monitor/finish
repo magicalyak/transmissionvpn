@@ -15,10 +15,50 @@ if pgrep transmission-daemon >/dev/null 2>&1; then
     pkill -KILL transmission-daemon 2>/dev/null || true
 fi
 
-# Enforce final kill switch to prevent any leaks
+# Enforce final kill switch to prevent any leaks, but allow VPN server
+# traffic so OpenVPN can reconnect if the monitor restarts
 log "Applying final kill switch before shutdown"
 iptables -F OUTPUT
 iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Allow VPN server traffic for reconnection
+if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
+    local_ovpn_config="${VPN_CONFIG:-/config/openvpn/*.ovpn}"
+    local_ovpn_config=$(ls $local_ovpn_config 2>/dev/null | head -1)
+    if [ -f "$local_ovpn_config" ]; then
+        vpn_server=$(grep '^remote ' "$local_ovpn_config" | head -1 | awk '{print $2}')
+        vpn_port=$(grep '^remote ' "$local_ovpn_config" | head -1 | awk '{print $3}')
+        vpn_proto=$(grep '^proto ' "$local_ovpn_config" | head -1 | awk '{print $2}' | sed 's/[0-9]//g')
+        [ -z "$vpn_proto" ] && vpn_proto="udp"
+        if [ -n "$vpn_server" ] && [ -n "$vpn_port" ]; then
+            resolved_ip=$(getent hosts "$vpn_server" 2>/dev/null | awk '{print $1}' | head -1)
+            [ -z "$resolved_ip" ] && resolved_ip="$vpn_server"
+            log "Allowing VPN server traffic to $resolved_ip:$vpn_port/$vpn_proto"
+            iptables -A OUTPUT -o eth0 -d "$resolved_ip" -p "$vpn_proto" --dport "$vpn_port" -j ACCEPT
+        fi
+    fi
+elif [ "${VPN_CLIENT,,}" = "wireguard" ]; then
+    wg_config="${WG_CONFIG:-/config/wireguard/wg0.conf}"
+    if [ -f "$wg_config" ]; then
+        wg_endpoint=$(grep '^Endpoint' "$wg_config" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+        wg_server=$(echo "$wg_endpoint" | cut -d: -f1)
+        wg_port=$(echo "$wg_endpoint" | cut -d: -f2)
+        if [ -n "$wg_server" ] && [ -n "$wg_port" ]; then
+            resolved_ip=$(getent hosts "$wg_server" 2>/dev/null | awk '{print $1}' | head -1)
+            [ -z "$resolved_ip" ] && resolved_ip="$wg_server"
+            log "Allowing WireGuard server traffic to $resolved_ip:$wg_port/udp"
+            iptables -A OUTPUT -o eth0 -d "$resolved_ip" -p udp --dport "$wg_port" -j ACCEPT
+        fi
+    fi
+fi
+
+# Allow VPN interface if it exists
+VPN_IF=$(cat /tmp/vpn_interface_name 2>/dev/null)
+if [ -n "$VPN_IF" ] && ip link show "$VPN_IF" >/dev/null 2>&1; then
+    iptables -A OUTPUT -o "$VPN_IF" -j ACCEPT
+fi
+
 iptables -A OUTPUT -j DROP
 
 # Clean up status files

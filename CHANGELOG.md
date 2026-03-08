@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.0-r6] - 2026-03-08
+
+### Fixed
+- **VPN Monitor Finish Script Kill Switch**: The s6 finish script applied a blanket DROP-all kill switch when the monitor service restarted, which blocked OpenVPN from maintaining its connection. The finish script now preserves VPN server and tun interface exceptions, matching the main kill switch behavior.
+
 ## [v4.1.0-r5] - 2026-03-08
 
 ### Fixed
