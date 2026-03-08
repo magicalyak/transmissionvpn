@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PIA Token URL Encoding**: Tokens containing `+` characters were corrupted in URL query parameters. Switched to `--data-urlencode` for all PIA API calls.
 - **PIA Gateway Certificate**: Simplified gateway API calls to use `-k` (skip verify) since the gateway is on the trusted VPN interface, fixing `--connect-to` cert verification failures.
 - **Transmission RPC Auth for Port Config**: Session ID retrieval and port configuration now include RPC authentication credentials, fixing 400/401 errors when `TRANSMISSION_RPC_AUTHENTICATION_REQUIRED` is enabled.
+- **PIA Forwarded Port Firewall**: Automatically add INPUT iptables rules for the PIA forwarded port on the VPN interface so inbound peer connections can reach Transmission.
 
 ## [v4.1.0-r7] - 2026-03-08
 

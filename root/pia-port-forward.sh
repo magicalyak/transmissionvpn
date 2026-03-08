@@ -159,6 +159,13 @@ log "Port expires at: $PF_EXPIRES"
 echo "$PF_PORT" > /tmp/pia_forwarded_port
 log "Saved forwarded port to /tmp/pia_forwarded_port"
 
+# Allow inbound traffic on the forwarded port through the VPN interface
+if command -v iptables &> /dev/null; then
+  iptables -I INPUT -i "$VPN_INTERFACE" -p tcp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
+  iptables -I INPUT -i "$VPN_INTERFACE" -p udp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
+  log "Added INPUT rules for port $PF_PORT on $VPN_INTERFACE"
+fi
+
 # Step 3: Configure Transmission to use this port
 configure_transmission_port() {
   local port=$1
