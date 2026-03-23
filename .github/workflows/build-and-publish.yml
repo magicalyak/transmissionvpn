@@ -614,7 +614,7 @@ jobs:
 
       - name: Draft release notes
         id: draft_release
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter.yml
           publish: true
