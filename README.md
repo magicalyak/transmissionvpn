@@ -146,6 +146,8 @@ services:
 
 The container automatically configures iptables rules for your custom ports. No manual firewall configuration needed!
 
+> **Privoxy is disabled by default.** The example `docker-compose.yml` publishes port `8118`, but nothing listens on it unless you also set `ENABLE_PRIVOXY=yes` in your `.env`. Both the env flag **and** the port mapping are required. Once enabled, point your HTTP client at `http://<docker-host>:8118` and traffic will egress through the VPN tunnel. To disable, set `ENABLE_PRIVOXY=no` (or omit it) — you can leave the port mapping in compose; nothing will bind to it.
+
 ## 🔧 Setup Instructions
 
 ### 1. Create Directory Structure
