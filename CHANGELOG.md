@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.1-r3] - 2026-05-02
+
+### Fixed
+- **WireGuard DNS resolution**: `wg-quick` shells out to `resolvconf` when processing the `DNS = ...` line in WireGuard configs. Without `openresolv` installed that step failed, leaving the tunnel partially up and the killswitch blocking everything else, presenting as ping/DNS dead. Added `openresolv` to the Alpine package list so `wg-quick` can update `/etc/resolv.conf` properly.
+
+### Documentation
+- **Privoxy enable requirement**: Clarified in the README that the example `docker-compose.yml` publishes port `8118` but `ENABLE_PRIVOXY=yes` is also required to actually start the service.
+
 ## [v4.1.0-r9] - 2026-03-08
 
 ### Added
