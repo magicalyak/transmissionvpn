@@ -123,6 +123,7 @@ RUN apk update && \
     curl \
     iproute2 \
     wireguard-tools \
+    openresolv \
     privoxy \
     unzip \
     python3 \
