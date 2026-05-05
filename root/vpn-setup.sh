@@ -385,6 +385,26 @@ start_wireguard() {
   fi
 }
 
+# Reset and flush iptables BEFORE bringing the VPN tunnel up.
+# Two reasons:
+#  1. On in-place restart, leftover strict-DROP policies from a previous run
+#     would block the wg-quick / OpenVPN initial handshake. Reset to ACCEPT
+#     first so the tunnel can come up.
+#  2. wg-quick / OpenVPN configs commonly include PostUp / up hooks that
+#     install iptables rules (typical with provider-supplied configs).
+#     Flushing AFTER `wg-quick up` would wipe those rules, so flush BEFORE.
+# Strict-DROP killswitch policies are re-applied below once the tunnel is up
+# and our explicit ACCEPT rules are in place.
+iptables -P INPUT  ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -F INPUT
+iptables -F FORWARD
+iptables -F OUTPUT
+iptables -t nat -F
+iptables -t mangle -F
+echo "[INFO] Reset policies to ACCEPT and flushed iptables before tunnel start."
+
 # Select VPN client
 if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
   start_openvpn
@@ -461,19 +481,29 @@ else
     echo "[INFO] Detected eth0 IP: $ETH0_IP"
 fi
 
-# Flush existing rules (important for restarts or rule changes)
-iptables -F INPUT
-iptables -F FORWARD
-iptables -F OUTPUT
-iptables -t nat -F
-iptables -t mangle -F
-echo "[INFO] Flushed existing iptables rules."
-
 # Set default policies
+# NB: iptables is no longer flushed here. The flush happens before the
+# tunnel is brought up so PostUp hooks survive (see earlier in this script).
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT DROP # Changed to DROP by default for stronger killswitch
 echo "[INFO] Set default iptables policies (INPUT/FORWARD/OUTPUT DROP)."
+
+# IPv6 killswitch. Without this, IPv6 traffic egresses on eth0 outside the
+# tunnel if the host pushes an IPv6 default route, which is a real leak in
+# any IPv6-capable environment. Soft-fail with || true on hosts where the
+# kernel ip6tables module is absent (e.g. CONFIG_IP6_NF_IPTABLES=n).
+ip6tables -P INPUT DROP   2>/dev/null || true
+ip6tables -P FORWARD DROP 2>/dev/null || true
+ip6tables -P OUTPUT DROP  2>/dev/null || true
+ip6tables -F INPUT        2>/dev/null || true
+ip6tables -F FORWARD      2>/dev/null || true
+ip6tables -F OUTPUT       2>/dev/null || true
+ip6tables -A INPUT  -i lo -j ACCEPT 2>/dev/null || true
+ip6tables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+ip6tables -A INPUT  -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+ip6tables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+echo "[INFO] IPv6 killswitch applied (drop all except loopback + established)."
 
 # Allow loopback traffic
 iptables -A INPUT -i lo -j ACCEPT
