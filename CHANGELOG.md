@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.1-r5] - 2026-05-22
+
+### Changed
+- **Base image bumped to `lscr.io/linuxserver/transmission:4.1.1-r1-ls344`** (was `ls338`). Picks up six upstream linuxserver releases worth of package updates and security patches. No functional changes in this repo.
+
 ## [v4.1.1-r4] - 2026-05-03
 
 ### Fixed
