@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.2-r0] - 2026-06-10
+
+### Changed
+- **Base image bumped to `lscr.io/linuxserver/transmission:4.1.2-r0-ls348`** (was `4.1.1-r1-ls344`). Moves Transmission from 4.1.1 to the 4.1.2 bugfix release (20+ fixes) plus four upstream linuxserver baselayer rebuilds worth of package/security updates. No functional changes in this repo.
+
+### Security
+- Inherits upstream Transmission 4.1.2 hardening: rejects bencoded data containing invalid characters, and fixes a 4.1.0 crash triggered when a peer supplies a `reqq` value smaller than 32 in the LTEP handshake (remote DoS from a malicious peer).
+
 ## [v4.1.1-r5] - 2026-05-22
 
 ### Changed
