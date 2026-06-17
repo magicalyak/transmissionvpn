@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.2-r1] - 2026-06-17
+
+### Changed
+- **Base image bumped to `lscr.io/linuxserver/transmission:4.1.2-r0-ls349`** (was `4.1.2-r0-ls348`). One upstream linuxserver baselayer rebuild worth of package/security updates; no Transmission version change (still 4.1.2).
+
+### CI
+- Bumped `aquasecurity/trivy-action` from `0.35.0` to `0.36.0`.
+
 ## [v4.1.2-r0] - 2026-06-10
 
 ### Changed
