@@ -29,7 +29,8 @@ healthcheck:
 environment:
   - VPN_HEALTH_REQUIRED=true        # Default: true
   - VPN_GRACE_PERIOD=300            # Default: 300 seconds (5 minutes)
-  - HEALTH_CHECK_HOST=google.com    # Default: google.com
+  - HEALTH_CHECK_HOST=1.1.1.1       # Default: 1.1.1.1 (Cloudflare; avoid 8.8.8.8 - it rate-limits ICMP)
+  - HEALTH_CHECK_HOST_FALLBACK=9.9.9.9  # Default: 9.9.9.9; only fails if both hosts fail; empty to disable
   - METRICS_ENABLED=true            # Enable detailed metrics
 ```
 

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **VPN health check no longer false-trips the kill switch under ICMP rate-limiting.** The connectivity probe now sends multiple ICMP packets (any reply counts as healthy) instead of a single packet with no retry, so normal ICMP loss to a rate-limiting host is no longer mistaken for a dead tunnel.
+
+### Changed
+- **Default `HEALTH_CHECK_HOST` is now `1.1.1.1`** (Cloudflare) instead of `google.com`. Google anycast IPs aggressively rate-limit/drop ICMP from VPN exit IPs, which was the root cause of the kill switch repeatedly stopping Transmission on healthy tunnels. The env-var override is unchanged.
+- **New `HEALTH_CHECK_HOST_FALLBACK` (default `9.9.9.9`).** Tried only when the primary host fails; a connectivity failure is recorded only when both hosts fail. Set it empty to disable the fallback.
+
 ## [v4.1.2-r1] - 2026-06-17
 
 ### Changed
