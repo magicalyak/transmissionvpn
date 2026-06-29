@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v4.1.2-r2] - 2026-06-29
 
 ### Fixed
 - **VPN health check no longer false-trips the kill switch under ICMP rate-limiting.** The connectivity probe now sends multiple ICMP packets (any reply counts as healthy) instead of a single packet with no retry, so normal ICMP loss to a rate-limiting host is no longer mistaken for a dead tunnel.
