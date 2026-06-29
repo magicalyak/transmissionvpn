@@ -77,7 +77,7 @@ METRICS_INTERVAL=30
 # ---- Health Check Settings ----
 CHECK_DNS_LEAK=true
 CHECK_IP_LEAK=true
-HEALTH_CHECK_HOST=8.8.8.8
+HEALTH_CHECK_HOST=1.1.1.1
 
 # ---- Optional Features ----
 ENABLE_PRIVOXY=true

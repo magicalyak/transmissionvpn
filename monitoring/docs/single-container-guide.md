@@ -17,7 +17,7 @@ METRICS_ENABLED=true
 # Enable health checks
 CHECK_DNS_LEAK=true
 CHECK_IP_LEAK=true
-HEALTH_CHECK_HOST=8.8.8.8
+HEALTH_CHECK_HOST=1.1.1.1
 ```
 
 ### Step 2: Restart Container

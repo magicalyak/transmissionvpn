@@ -3,8 +3,8 @@
 # This prevents trying to ping LAN addresses through the VPN tunnel
 
 if [[ "$HEALTH_CHECK_HOST" =~ ^10\.|^192\.168\.|^172\.(1[6-9]|2[0-9]|3[01])\. ]]; then
-    echo "Overriding LAN address $HEALTH_CHECK_HOST with google.com for VPN testing" >&2
-    export HEALTH_CHECK_HOST="google.com"
+    echo "Overriding LAN address $HEALTH_CHECK_HOST with 1.1.1.1 for VPN testing" >&2
+    export HEALTH_CHECK_HOST="1.1.1.1"
 fi
 
 exec /root/healthcheck.sh "$@" 

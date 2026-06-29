@@ -9,7 +9,15 @@
 set -e
 
 # Configuration
-HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
+# Primary connectivity probe target. Default is Cloudflare (1.1.1.1), which
+# answers ICMP reliably. Avoid Google anycast IPs (e.g. 8.8.8.8) as the primary
+# target: they aggressively rate-limit/drop ICMP from VPN exit IPs, which causes
+# the connectivity check to false-fail and trip the kill switch.
+HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-1.1.1.1}
+# Secondary connectivity probe target. Only counts a connectivity failure when
+# BOTH the primary and fallback fail, so a single host's ICMP filtering can't
+# trip the kill switch. Set to empty to disable the fallback.
+HEALTH_CHECK_HOST_FALLBACK=${HEALTH_CHECK_HOST_FALLBACK-9.9.9.9}
 CHECK_DNS_LEAK=${CHECK_DNS_LEAK:-false}
 CHECK_IP_LEAK=${CHECK_IP_LEAK:-false}
 METRICS_ENABLED=${METRICS_ENABLED:-false}
@@ -160,27 +168,55 @@ check_vpn_interface() {
     fi
 }
 
+# Probe a single host through the VPN interface.
+# Sends multiple ICMP packets so a single dropped/rate-limited reply doesn't
+# register as a failure: ping exits 0 if any one of the packets is answered.
+ping_host_via_vpn() {
+    local vpn_if="$1"
+    local host="$2"
+    # -c 3: send 3 packets, -i 0.5: short interval to keep latency low,
+    # -W 3: wait up to 3s for a reply. Success if >=1 packet is answered.
+    ping -c 3 -i 0.5 -W 3 -I "$vpn_if" "$host" > /dev/null 2>&1
+}
+
 # Function to check VPN connectivity
 check_vpn_connectivity() {
     local vpn_if="$1"
     local start_time=$(date +%s%N)
-    
+
     log "DEBUG" "Testing VPN connectivity to $HEALTH_CHECK_HOST through $vpn_if"
-    
-    # Ping test through VPN interface
-    if ping -c 1 -W 3 -I "$vpn_if" "$HEALTH_CHECK_HOST" > /dev/null 2>&1; then
+
+    # Ping test through VPN interface (multi-packet; any reply = healthy)
+    if ping_host_via_vpn "$vpn_if" "$HEALTH_CHECK_HOST"; then
         local end_time=$(date +%s%N)
         local ping_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
-        
+
         log "INFO" "VPN connectivity test successful (${ping_time}ms)"
         record_metric "vpn_connectivity_status" "1"
         record_metric "vpn_ping_time_ms" "$ping_time"
         return 0
+    fi
+
+    # Primary failed. Try the optional fallback host before declaring a failure,
+    # so a single host's ICMP filtering can't trip the kill switch on its own.
+    if [ -n "$HEALTH_CHECK_HOST_FALLBACK" ]; then
+        log "WARN" "Primary connectivity test to $HEALTH_CHECK_HOST failed, trying fallback $HEALTH_CHECK_HOST_FALLBACK"
+        if ping_host_via_vpn "$vpn_if" "$HEALTH_CHECK_HOST_FALLBACK"; then
+            local end_time=$(date +%s%N)
+            local ping_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
+
+            log "INFO" "VPN connectivity test successful via fallback $HEALTH_CHECK_HOST_FALLBACK (${ping_time}ms)"
+            record_metric "vpn_connectivity_status" "1"
+            record_metric "vpn_ping_time_ms" "$ping_time"
+            return 0
+        fi
+        log "ERROR" "VPN connectivity test failed to both $HEALTH_CHECK_HOST and $HEALTH_CHECK_HOST_FALLBACK"
     else
         log "ERROR" "VPN connectivity test failed to $HEALTH_CHECK_HOST"
-        record_metric "vpn_connectivity_status" "0"
-        return 1
     fi
+
+    record_metric "vpn_connectivity_status" "0"
+    return 1
 }
 
 # Function to check DNS resolution
