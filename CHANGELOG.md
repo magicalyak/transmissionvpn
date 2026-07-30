@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.2-r3] - 2026-07-30
+
+### Fixed
+- **Kill switch could get permanently stuck in its most restrictive state after a container restart within the same pod.** `vpn-setup.sh` added the `LAN_NETWORK` route with `ip route add`, which is not idempotent: on a restart, the pod's network namespace (and therefore the route from the prior run) persists, so the second `ip route add` failed with "File exists". Under `set -e` that aborted the script before the LAN/VPN `ACCEPT` rules and the final `/tmp/vpn_setup_complete` flag were written, leaving `vpn-monitor` waiting forever on "Waiting for initial VPN setup to complete..." and the OUTPUT chain stuck on loopback/DNS-block/established only — blocking all new outbound connections, not just non-VPN ones. Switched to `ip route replace`, which succeeds whether or not the route already exists.
+
 ## [v4.1.2-r2] - 2026-06-29
 
 ### Fixed

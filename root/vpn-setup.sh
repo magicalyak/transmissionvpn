@@ -583,8 +583,14 @@ fi
 # If LAN_NETWORK is set, allow traffic to it without VPN
 if [ -n "$LAN_NETWORK" ]; then
   echo "[INFO] LAN_NETWORK ($LAN_NETWORK) is set. Adding route and iptables exception."
-  # Add route for LAN_NETWORK to go via eth0's gateway
-  ip route add "$LAN_NETWORK" via "$ETH0_GATEWAY" dev eth0
+  # Add route for LAN_NETWORK to go via eth0's gateway.
+  # Use `replace`, not `add`: on a container restart within the same pod
+  # network namespace, this route already exists from the prior run, and
+  # `ip route add` would fail with "File exists". Under `set -e` that
+  # aborts the script before the LAN/VPN ACCEPT rules and the final
+  # /tmp/vpn_setup_complete flag are written, leaving the kill switch stuck
+  # in its most restrictive state and vpn-monitor waiting forever.
+  ip route replace "$LAN_NETWORK" via "$ETH0_GATEWAY" dev eth0
   # Allow output to LAN_NETWORK
   iptables -A OUTPUT -o eth0 -d "$LAN_NETWORK" -j ACCEPT
   # Allow input from LAN_NETWORK (e.g. for NZBGet calling back to a local Sonarr/Radarr)
