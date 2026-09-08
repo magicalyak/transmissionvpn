@@ -13,6 +13,13 @@ log() {
     echo "[KILLSWITCH] $(date '+%Y-%m-%d %H:%M:%S') $*"
 }
 
+# Shared firewall helper for the BitTorrent peer port. Both rebuild paths below
+# flush the INPUT chain, so both have to re-assert the peer port rules; keeping
+# the rule spec and the port discovery in one place stops the three call sites
+# (here, vpn-setup.sh, pia-port-forward.sh) from drifting apart.
+# shellcheck source=root/pia-pf-firewall.sh
+. /usr/local/bin/pia-pf-firewall.sh
+
 get_vpn_interface() {
     if [ -f "$VPN_INTERFACE_FILE" ]; then
         cat "$VPN_INTERFACE_FILE"
@@ -193,19 +200,16 @@ apply_strict_killswitch() {
     fi
 
     # === BitTorrent Port Handling ===
-    # If peer port is configured, ensure it only works through VPN
-    if [ -n "$TRANSMISSION_PEER_PORT" ]; then
-        # Block peer port on eth0 completely
-        iptables -I INPUT 1 -i eth0 -p tcp --dport "$TRANSMISSION_PEER_PORT" -j DROP
-        iptables -I INPUT 1 -i eth0 -p udp --dport "$TRANSMISSION_PEER_PORT" -j DROP
-
-        # Only allow through VPN
-        if [ -n "$vpn_if" ]; then
-            iptables -A INPUT -i "$vpn_if" -p tcp --dport "$TRANSMISSION_PEER_PORT" -j ACCEPT
-            iptables -A INPUT -i "$vpn_if" -p udp --dport "$TRANSMISSION_PEER_PORT" -j ACCEPT
-        fi
-        log "BitTorrent port $TRANSMISSION_PEER_PORT restricted to VPN only"
-    fi
+    # Restore the peer port as part of this rebuild, rather than leaving it to
+    # the PIA keepalive loop up to 15 minutes later.
+    #
+    # This block used to key only off $TRANSMISSION_PEER_PORT, so it missed the
+    # dynamic PIA forwarded port entirely: PIA issues a different port on every
+    # container start and pia-port-forward.sh records it in
+    # /tmp/pia_forwarded_port, which nothing here ever read. The helper prefers
+    # that file and falls back to the env var. Not fatal - this script runs
+    # under `set -e` and having no peer port at all is normal.
+    pf_apply_rules "$vpn_if" || true
 
     # Log the final rules count
     local input_rules=$(iptables -L INPUT -n | wc -l)
@@ -245,6 +249,12 @@ emergency_killswitch() {
     # Allow Transmission UI for management
     iptables -A INPUT -i eth0 -p tcp --dport 9091 -j ACCEPT
     iptables -A OUTPUT -o eth0 -p tcp --sport 9091 -j ACCEPT
+
+    # Re-assert the peer port rules after the flush. This does not widen the
+    # emergency posture: the ACCEPT is bound to the VPN interface, so it matches
+    # nothing while the tunnel is down, and the accompanying eth0 DROP is
+    # strictly more restrictive than the default policy alone.
+    pf_apply_rules "$(get_vpn_interface)" || true
 
     echo "emergency" > "$KILLSWITCH_STATUS"
     log "Emergency kill switch active - only loopback and UI access allowed"
@@ -316,6 +326,9 @@ case "${1:-apply}" in
         iptables -L OUTPUT -n | grep "dpt:53" || echo "  No DNS rules found"
 
         echo "VPN interface: $(get_vpn_interface)"
+
+        echo "Forwarded/peer port rules:"
+        pf_status_rules "$(get_vpn_interface)" || true
         ;;
 
     *)

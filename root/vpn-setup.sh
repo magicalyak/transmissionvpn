@@ -533,11 +533,28 @@ if [ "${METRICS_ENABLED,,}" = "true" ]; then
   echo "[INFO] Added iptables rule to allow metrics server on eth0:${METRICS_PORT:-9099}."
 fi
 
-# Allow BitTorrent peer port if set
-if [ -n "$TRANSMISSION_PEER_PORT" ]; then
-  iptables -A INPUT -i eth0 -p tcp --dport "$TRANSMISSION_PEER_PORT" -j ACCEPT
-  iptables -A INPUT -i eth0 -p udp --dport "$TRANSMISSION_PEER_PORT" -j ACCEPT
-  echo "[INFO] Added iptables rule to allow BitTorrent peer port on eth0:$TRANSMISSION_PEER_PORT (TCP/UDP)."
+# BitTorrent peer port: reachable through the tunnel, never on eth0.
+#
+# This block used to ACCEPT $TRANSMISSION_PEER_PORT on eth0, which contradicted
+# the kill switch's intent that peer traffic only ever crosses the VPN
+# interface: any peer able to route to the container's eth0 address reached the
+# client off-tunnel. The container refuses to start without a VPN client (see
+# the VPN_CLIENT check above), so there was no non-VPN deployment of this image
+# that the eth0 ACCEPT was serving.
+#
+# The rules are asserted through the shared helper, which prefers the live PIA
+# forwarded port recorded in /tmp/pia_forwarded_port and falls back to
+# $TRANSMISSION_PEER_PORT. That fallback matters on an in-place re-run of this
+# script (vpn-monitor's auto-restart invokes it): the flush near the top wipes
+# the PIA rules, and that in-place re-run bypasses s6-rc, so the
+# pia-port-forward oneshot is not re-run to restore them. Without re-asserting
+# here the forwarded port stays firewalled off until the container is recreated
+# - inbound peers dropped while every log line reports success.
+if [ -x /usr/local/bin/pia-pf-firewall.sh ]; then
+  # Never fatal: having no peer port at all is normal (first boot, before PIA
+  # port forwarding has run) and this script runs under `set -e`. The helper
+  # logs its own ERROR if a rule is configured but cannot be installed.
+  /usr/local/bin/pia-pf-firewall.sh apply "$VPN_INTERFACE" || true
 fi
 
 # Policy routing for Transmission UI & Privoxy when accessed from host

@@ -20,6 +20,12 @@ log() {
   echo "[PIA-PF] $(date '+%Y-%m-%d %H:%M:%S') $1"
 }
 
+# Shared firewall helper: pf_apply_rules, pf_get_port, pf_get_vpn_interface.
+# The forwarded port rules are asserted from here, from vpn-setup.sh and from
+# vpn-killswitch.sh, so the rule spec lives in exactly one place.
+# shellcheck source=root/pia-pf-firewall.sh
+. /usr/local/bin/pia-pf-firewall.sh
+
 # Check if port forwarding is enabled
 if [ "${PIA_PORT_FORWARD,,}" != "true" ]; then
   log "PIA port forwarding not enabled (PIA_PORT_FORWARD != true). Exiting."
@@ -159,11 +165,12 @@ log "Port expires at: $PF_EXPIRES"
 echo "$PF_PORT" > /tmp/pia_forwarded_port
 log "Saved forwarded port to /tmp/pia_forwarded_port"
 
-# Allow inbound traffic on the forwarded port through the VPN interface
-if command -v iptables &> /dev/null; then
-  iptables -I INPUT -i "$VPN_INTERFACE" -p tcp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
-  iptables -I INPUT -i "$VPN_INTERFACE" -p udp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
-  log "Added INPUT rules for port $PF_PORT on $VPN_INTERFACE"
+# Allow inbound traffic on the forwarded port through the VPN interface.
+# pf_apply_rules verifies each rule with `iptables -C` after inserting it, so a
+# failed insert is reported as an ERROR instead of being logged as success.
+if ! pf_apply_rules "$VPN_INTERFACE"; then
+  log "ERROR: Forwarded port $PF_PORT is not open on $VPN_INTERFACE."
+  log "ERROR: Inbound peers will be dropped until the keepalive loop re-asserts the rules."
 fi
 
 # Step 3: Configure Transmission to use this port
@@ -248,7 +255,14 @@ bind_port() {
 # Initial bind
 bind_port
 
-# Run keepalive in background
+# Run keepalive in background.
+# Each cycle also re-asserts the firewall rules. Anything that rebuilds the
+# INPUT chain drops them - vpn-setup.sh flushes INPUT and is re-run in place by
+# vpn-monitor's auto-restart, and both kill switch paths rebuild the chain too -
+# and this service is an s6-rc oneshot: it re-runs when the whole s6 stack starts,
+# but not when vpn-monitor re-runs vpn-setup.sh in place, which bypasses s6-rc.
+# Re-asserting here bounds the outage at one keepalive interval rather than
+# leaving it until the container is recreated.
 (
   while true; do
     sleep 900  # 15 minutes
@@ -258,6 +272,11 @@ bind_port
       log "Attempting to renew port forwarding..."
       # Exit this loop - the main script should be restarted
       exit 1
+    fi
+    # No interface argument: the helper re-reads it, since the VPN interface can
+    # change across a VPN restart.
+    if ! pf_apply_rules; then
+      log "ERROR: Forwarded port $PF_PORT is not open; inbound peers are being dropped."
     fi
   done
 ) &
