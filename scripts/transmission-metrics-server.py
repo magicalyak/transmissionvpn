@@ -29,12 +29,24 @@ METRICS_PORT = int(os.getenv('METRICS_PORT', '9099'))
 METRICS_INTERVAL = int(os.getenv('METRICS_INTERVAL', '30'))
 METRICS_ENABLED = os.getenv('METRICS_ENABLED', 'true').lower() == 'true'
 
+PIA_PORT_FORWARD = os.getenv('PIA_PORT_FORWARD', 'false').lower() == 'true'
+# port-test asks Transmission to probe the peer port from outside, so every call
+# hits an external checker. It was previously run on every METRICS_INTERVAL tick
+# (30s by default); poll it on its own, much slower schedule instead. The default
+# matches the PIA keepalive interval, since that is the rate at which the
+# underlying state can actually change.
+PORT_TEST_INTERVAL = int(os.getenv('PORT_TEST_INTERVAL', '900'))
+# Published by pia-pf-firewall.sh. This process runs unprivileged
+# (s6-setuidgid abc) and cannot inspect iptables itself.
+PF_STATE_FILE = os.getenv('PF_STATE_FILE', '/tmp/pia_pf_state')
+
 # Global variables for metrics and health
 transmission_stats = {}
 session_stats = {}
 health_data = {}
 last_update = 0
 start_time = time.time()
+_port_test_cache = {'value': None, 'checked_at': 0}
 
 # Setup logging
 logging.basicConfig(
@@ -262,6 +274,82 @@ def get_vpn_info():
         logger.error(f"Failed to get VPN info: {e}")
         return {'interface': None, 'status': 'unknown', 'connected': False}
 
+def read_pf_state():
+    """Read the forwarded-port firewall state published by pia-pf-firewall.sh.
+
+    Returns a dict with int values, or {} if the file is absent or unreadable
+    (which is the normal case when PIA port forwarding is not enabled).
+    """
+    state = {}
+    try:
+        with open(PF_STATE_FILE, 'r') as fh:
+            for line in fh:
+                key, _, value = line.strip().partition('=')
+                if key and value.lstrip('-').isdigit():
+                    state[key] = int(value)
+    except (IOError, OSError):
+        return {}
+    return state
+
+
+def get_port_test(api):
+    """Run Transmission's port-test, throttled to PORT_TEST_INTERVAL.
+
+    Returns the cached value between runs. None means it has never succeeded.
+    """
+    now = time.time()
+    if (_port_test_cache['value'] is not None
+            and now - _port_test_cache['checked_at'] < PORT_TEST_INTERVAL):
+        return _port_test_cache['value']
+    try:
+        response = api._make_request("port-test")
+        if response and response.get('result') == 'success':
+            _port_test_cache['value'] = response.get('arguments', {}).get('port-is-open', False)
+            _port_test_cache['checked_at'] = now
+    except Exception as exc:
+        logger.debug(f"port-test failed: {exc}")
+    return _port_test_cache['value']
+
+
+def classify_port_state(port_test, vpn_connected, pf_state, pf_enabled):
+    """Classify peer-port reachability into (warnings, notices).
+
+    A closed peer port is genuinely expected on most VPN setups, since most
+    providers do not forward ports at all. That is why a closed port used to be
+    filed as an informational notice whenever the VPN was connected -- and it is
+    precisely what hid the v4.1.2-r4 fault for seven days: the forwarded port was
+    firewalled off by the container's own kill switch, port-test returned false
+    the entire time, and the service still reported healthy.
+
+    So leniency now applies only when port forwarding is not configured. With
+    PIA_PORT_FORWARD=true a closed port is a fault and is reported as one, and
+    the firewall rule state distinguishes "we are dropping it ourselves" from
+    "the binding is gone upstream".
+    """
+    warnings, notices = [], []
+    rules_present = pf_state.get('rules_present') if pf_state else None
+
+    # Local, cheap, and independent of the external reachability probe: if port
+    # forwarding is on and our own INPUT rules are gone, we are the ones
+    # dropping inbound peers.
+    if pf_enabled and rules_present == 0:
+        warnings.append('pf_rules_missing')
+
+    if port_test is False:
+        if not pf_enabled:
+            if vpn_connected:
+                notices.append('port_not_open_vpn_expected')
+            else:
+                warnings.append('port_not_open_no_vpn')
+        elif rules_present != 0:
+            # Our rules are in place, so the fault is upstream of us: an expired
+            # PIA binding, or a server that stopped forwarding.
+            warnings.append('pf_port_bound_but_unreachable')
+        # rules_present == 0 is already covered by pf_rules_missing above.
+
+    return warnings, notices
+
+
 def get_transmission_health():
     """Get comprehensive Transmission health information"""
     try:
@@ -330,10 +418,8 @@ def get_transmission_health():
                 health['pex_enabled'] = session_data.get('pex-enabled', False)
                 health['utp_enabled'] = session_data.get('utp-enabled', False)
                 
-                # Test port
-                port_test_response = api._make_request("port-test")
-                if port_test_response and port_test_response.get('result') == 'success':
-                    health['port_test'] = port_test_response.get('arguments', {}).get('port-is-open', False)
+                # Test port (throttled; see get_port_test)
+                health['port_test'] = get_port_test(api)
         except:
             pass
         
@@ -466,16 +552,26 @@ def update_health_data():
         
         # Informational notices (expected behavior, not problems)
         notices = []
-        port_test_failed = health_data['transmission'].get('port_test') is False
         vpn_connected = health_data['vpn']['connected']
-        
-        # Only treat port issues as warnings if VPN is disconnected
-        # When VPN is connected, closed ports are often expected (no port forwarding support)
-        if port_test_failed:
-            if vpn_connected:
-                notices.append('port_not_open_vpn_expected')
-            else:
-                warnings.append('port_not_open_no_vpn')
+
+        # Forwarded-port firewall state, published by pia-pf-firewall.sh.
+        pf_state = read_pf_state()
+        health_data['port_forwarding'] = {
+            'enabled': PIA_PORT_FORWARD,
+            'port': pf_state.get('port', 0),
+            'rules_present': pf_state.get('rules_present'),
+            'rules_found': pf_state.get('rules_found'),
+            'rules_expected': pf_state.get('rules_expected'),
+            'state_updated': pf_state.get('updated'),
+        }
+        pf_warnings, pf_notices = classify_port_state(
+            port_test=health_data['transmission'].get('port_test'),
+            vpn_connected=vpn_connected,
+            pf_state=pf_state,
+            pf_enabled=PIA_PORT_FORWARD,
+        )
+        warnings.extend(pf_warnings)
+        notices.extend(pf_notices)
         
         # Set status based on issues and warnings
         if issues:
@@ -639,6 +735,40 @@ def generate_prometheus_metrics():
         port_forwarding_available = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
         metrics.append(f"transmissionvpn_port_forwarding_available {port_forwarding_available}")
         
+        # === Forwarded-port firewall state ===
+        # These are the signals that were missing when the forwarded port was
+        # silently firewalled off: port_open alone could not distinguish "the
+        # provider does not forward ports" from "we are dropping it ourselves".
+        pf = health_data.get('port_forwarding', {})
+
+        metrics.append("# HELP transmissionvpn_pf_enabled PIA port forwarding is enabled")
+        metrics.append("# TYPE transmissionvpn_pf_enabled gauge")
+        metrics.append(f"transmissionvpn_pf_enabled {1 if pf.get('enabled') else 0}")
+
+        metrics.append("# HELP transmissionvpn_pf_port Currently forwarded peer port (0 if none)")
+        metrics.append("# TYPE transmissionvpn_pf_port gauge")
+        metrics.append(f"transmissionvpn_pf_port {pf.get('port') or 0}")
+
+        # 1 only when every expected rule is confirmed present in the INPUT
+        # chain. Alert on this: it goes to 0 the moment a firewall rebuild
+        # drops the rules, ~15 minutes before the keepalive restores them.
+        metrics.append("# HELP transmissionvpn_pf_rules_present Forwarded port firewall rules are all present")
+        metrics.append("# TYPE transmissionvpn_pf_rules_present gauge")
+        metrics.append(f"transmissionvpn_pf_rules_present {1 if pf.get('rules_present') == 1 else 0}")
+
+        metrics.append("# HELP transmissionvpn_pf_rules_found Forwarded port firewall rules confirmed present")
+        metrics.append("# TYPE transmissionvpn_pf_rules_found gauge")
+        metrics.append(f"transmissionvpn_pf_rules_found {pf.get('rules_found') or 0}")
+
+        # Age of the published state. Grows without bound if the PIA keepalive
+        # dies, so it catches the failure that would otherwise freeze
+        # pf_rules_present at its last good value.
+        metrics.append("# HELP transmissionvpn_pf_state_age_seconds Age of the published firewall rule state")
+        metrics.append("# TYPE transmissionvpn_pf_state_age_seconds gauge")
+        pf_updated = pf.get('state_updated')
+        pf_age = int(time.time() - pf_updated) if pf_updated else -1
+        metrics.append(f"transmissionvpn_pf_state_age_seconds {pf_age}")
+
         # VPN with port forwarding support indicator
         metrics.append("# HELP transmissionvpn_vpn_supports_port_forwarding VPN provider supports port forwarding")
         metrics.append("# TYPE transmissionvpn_vpn_supports_port_forwarding gauge")

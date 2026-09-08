@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.2-r5] - 2026-09-08
+
+Observability follow-up to r4. r4 made the forwarded port repair itself; this makes the failure visible while it is happening.
+
+### Fixed
+- **A closed peer port no longer reports as healthy when port forwarding is enabled.** `update_health_data()` classified a failed `port-test` as the informational notice `port_not_open_vpn_expected` whenever the VPN was connected, leaving overall status `healthy`. That is sound when the provider does not forward ports — most do not — but it is exactly what hid the r4 fault for seven days: `port-test` returned false the entire time and `transmissionvpn_healthy` stayed `1`. Leniency now applies only when `PIA_PORT_FORWARD` is not set. With it set, a closed port is a warning, and the firewall rule state distinguishes `pf_rules_missing` (the container is dropping inbound peers itself) from `pf_port_bound_but_unreachable` (rules correct, binding gone upstream).
+- **`port-test` no longer runs every 30 seconds.** It asks Transmission to probe the peer port from outside, so every call hit an external checker on each `METRICS_INTERVAL` tick. It now runs on its own schedule via `PORT_TEST_INTERVAL`, defaulting to 900s to match the PIA keepalive — the rate at which the underlying state can actually change. Cached between runs.
+
+### Added
+- **Forwarded-port metrics**: `transmissionvpn_pf_enabled`, `transmissionvpn_pf_port`, `transmissionvpn_pf_rules_present`, `transmissionvpn_pf_rules_found`, and `transmissionvpn_pf_state_age_seconds`. `pf_rules_present` is the one to alert on — it is local, needs no external probe, and drops the moment a firewall rebuild removes the rules, roughly 15 minutes before the keepalive restores them. `pf_state_age_seconds` catches the case where the keepalive has died and the rule state is frozen at its last good value.
+- **`pia-pf-firewall.sh` publishes its observed rule state** to `/tmp/pia_pf_state` on every apply and status check. The metrics server runs unprivileged (`s6-setuidgid abc`) and cannot inspect iptables itself, so the privileged callers publish for it. Written via a temp file and rename so readers never see a half-written file.
+- **`test-pf-metrics.py`**: 15 assertions covering state-file parsing, the classification of the original seven-day fault, preservation of the previous lenient behaviour when port forwarding is off, and `port-test` throttling. It calls the real `classify_port_state()` rather than a copy, so it cannot drift from the shipped logic.
+
+### Changed
+- Peer-port reachability is deliberately **not** wired into the Docker `HEALTHCHECK` exit code. That drives the k3s liveness probe, and restarting draws a fresh PIA forwarded port — a restart cannot fix an unreachable port, so making it fatal would risk a crash-loop on a condition the restart does not address. It is exposed as metrics and health warnings instead.
+
 ## [v4.1.2-r4] - 2026-09-08
 
 ### Fixed
