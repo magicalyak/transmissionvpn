@@ -115,7 +115,7 @@ services:
 | `METRICS_ENABLED` | Enable built-in custom metrics server | `false` | `true` |
 | `METRICS_PORT` | Prometheus metrics port | `9099` | `8080` |
 | `METRICS_INTERVAL` | Metrics update interval (seconds) | `30` | `60` |
-| `TRANSMISSION_PEER_PORT` | BitTorrent peer port | (none) | `51413` |
+| `TRANSMISSION_PEER_PORT` | Firewall hint for the BitTorrent peer port (see note below) | (none) | `51413` |
 | `PRIVOXY_PORT` | Privoxy HTTP proxy port | `8118` | `8119` |
 | `INTERNAL_METRICS_ENABLED` | Enable internal health metrics | `false` | `true` |
 | `CHECK_DNS_LEAK` | Enable DNS leak detection | `false` | `true` |
@@ -137,14 +137,25 @@ services:
 | `9091` | Transmission Web UI | Yes | No |
 | `8118` | Privoxy HTTP proxy | No | Via `PRIVOXY_PORT` |
 | `9099` | Prometheus metrics endpoint | No | Via `METRICS_PORT` |
-| `51413` | BitTorrent peer port | No | Via `TRANSMISSION_PEER_PORT` |
+| `51413` | BitTorrent peer port (VPN interface only) | No | Via `TRANSMISSION_PEER_PORT` |
 
 **Dynamic Port Configuration:**
 - **Metrics Port**: Set `METRICS_PORT=8080` to use port 8080 instead of 9099
-- **BitTorrent Port**: Set `TRANSMISSION_PEER_PORT=6881` to use port 6881 instead of 51413
+- **BitTorrent Port**: Set `TRANSMISSION_PEER_PORT=6881` to firewall port 6881 instead of 51413
 - **Privoxy Port**: Set `PRIVOXY_PORT=8119` to use port 8119 instead of 8118
 
 The container automatically configures iptables rules for your custom ports. No manual firewall configuration needed!
+
+> **`TRANSMISSION_PEER_PORT` is a firewall hint, not a Transmission setting.** It does not change the port
+> Transmission listens on — that is Transmission's own `peer-port` (set via `PEERPORT` or the Web UI). What it
+> does is tell the container which port to open on the VPN interface. The peer port is **accepted on the VPN
+> interface and dropped on `eth0`**, so peer traffic can only ever cross the tunnel. Before `v4.1.2-r4` it was
+> also accepted on `eth0`, which allowed peers to reach the client off-tunnel.
+>
+> With `PIA_PORT_FORWARD=true` you do not need to set this at all, and **should not**: PIA issues a different
+> forwarded port on every container start, so any static value is stale as soon as the container is recreated.
+> The real port is discovered at runtime, written to `/tmp/pia_forwarded_port`, set on Transmission over RPC,
+> and its firewall rules are re-asserted every keepalive cycle (15 minutes) and on every firewall rebuild.
 
 > **Privoxy is disabled by default.** The example `docker-compose.yml` publishes port `8118`, but nothing listens on it unless you also set `ENABLE_PRIVOXY=yes` in your `.env`. Both the env flag **and** the port mapping are required. Once enabled, point your HTTP client at `http://<docker-host>:8118` and traffic will egress through the VPN tunnel. To disable, set `ENABLE_PRIVOXY=no` (or omit it) — you can leave the port mapping in compose; nothing will bind to it.
 
@@ -618,7 +629,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TRANSMISSION_PEER_PORT` | P2P port | (random) |
+| `TRANSMISSION_PEER_PORT` | Firewall hint for the P2P port; does not set Transmission's peer port | (random) |
 | `TRANSMISSION_DOWNLOAD_DIR` | Download directory | `/downloads` |
 | `TRANSMISSION_WATCH_DIR` | Watch directory | `/watch` |
 | `TRANSMISSION_WEB_HOME` | Alternative web UI | (none) |

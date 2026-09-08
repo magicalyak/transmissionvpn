@@ -18,15 +18,16 @@ if [ -f /tmp/pia_keepalive_pid ]; then
   rm -f /tmp/pia_keepalive_pid
 fi
 
-# Remove iptables rules for the forwarded port
-if [ -f /tmp/pia_forwarded_port ]; then
-  PF_PORT=$(cat /tmp/pia_forwarded_port)
-  VPN_INTERFACE=$(cat /tmp/vpn_interface_name 2>/dev/null || echo "tun0")
-  if command -v iptables &> /dev/null && [ -n "$PF_PORT" ]; then
-    iptables -D INPUT -i "$VPN_INTERFACE" -p tcp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
-    iptables -D INPUT -i "$VPN_INTERFACE" -p udp --dport "$PF_PORT" -j ACCEPT 2>/dev/null || true
-    log "Removed INPUT rules for port $PF_PORT"
-  fi
+# Remove iptables rules for the forwarded port.
+# Delegated to the shared helper so the rules removed here always match the
+# rules installed by pia-pf-firewall.sh apply.
+#
+# NOTE: pia-port-forward is registered as an s6-rc *oneshot* (see the Dockerfile),
+# and oneshots use up/down rather than run/finish, so s6 never executes this
+# script. It is kept as the documented teardown for the service and for manual
+# use; do not rely on it running automatically.
+if [ -x /usr/local/bin/pia-pf-firewall.sh ]; then
+  /usr/local/bin/pia-pf-firewall.sh remove || true
 fi
 
 # Clean up temporary files

@@ -175,8 +175,11 @@ COPY --chmod=755 root_s6/pia-port-forward/finish /etc/s6-overlay/s6-rc.d/pia-por
 # Copy enhanced kill switch script
 COPY --chmod=755 root/vpn-killswitch.sh /usr/local/bin/vpn-killswitch.sh
 
-# Copy PIA port forwarding script
+# Copy PIA port forwarding script and its shared firewall helper.
+# The helper is sourced by pia-port-forward.sh and vpn-killswitch.sh and exec'd
+# by vpn-setup.sh, so it must be copied before/alongside all three.
 COPY --chmod=755 root/pia-port-forward.sh /usr/local/bin/pia-port-forward.sh
+COPY --chmod=755 root/pia-pf-firewall.sh /usr/local/bin/pia-pf-firewall.sh
 
 # Set up s6 services
 RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \

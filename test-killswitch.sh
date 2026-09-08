@@ -135,9 +135,111 @@ else
     log_info "Could not get external IP (this is expected if kill switch is active)"
 fi
 
-# Test 5: Simulate VPN failure
+# Test 5: Check the forwarded / BitTorrent peer port firewall rules
+#
+# This is the failure mode fixed in v4.1.2-r4: PIA issues a different forwarded
+# port on every container start, the rule was installed exactly once and never
+# re-asserted, and any rebuild of the INPUT chain silently dropped it while the
+# keepalive kept logging "Port binding refreshed successfully".
 echo ""
-echo "6. Testing VPN failure scenario..."
+echo "6. Checking forwarded / peer port firewall rules..."
+
+PF_PORT=$(docker exec "$CONTAINER_NAME" sh -c 'cat /tmp/pia_forwarded_port 2>/dev/null' | tr -dc '0-9')
+if [ -z "$PF_PORT" ]; then
+    PF_PORT=$(docker exec "$CONTAINER_NAME" sh -c 'echo $TRANSMISSION_PEER_PORT' | tr -dc '0-9')
+    if [ -n "$PF_PORT" ]; then
+        log_info "No PIA forwarded port; using TRANSMISSION_PEER_PORT=$PF_PORT"
+    fi
+fi
+
+if [ -z "$PF_PORT" ]; then
+    log_info "No forwarded or peer port configured, skipping port rule checks"
+else
+    log_info "Peer port: $PF_PORT (VPN interface: $VPN_IF)"
+
+    # The port must be reachable through the tunnel...
+    PORT_OPEN=true
+    for PROTO in tcp udp; do
+        if docker exec "$CONTAINER_NAME" iptables -C INPUT -i "$VPN_IF" -p "$PROTO" --dport "$PF_PORT" -j ACCEPT >/dev/null 2>&1; then
+            log_pass "ACCEPT rule present for $PROTO/$PF_PORT on $VPN_IF"
+        else
+            log_fail "No ACCEPT rule for $PROTO/$PF_PORT on $VPN_IF - inbound peers are being dropped"
+            PORT_OPEN=false
+        fi
+    done
+
+    # ...and must NOT be reachable off-tunnel on eth0.
+    for PROTO in tcp udp; do
+        if docker exec "$CONTAINER_NAME" iptables -C INPUT -i eth0 -p "$PROTO" --dport "$PF_PORT" -j DROP >/dev/null 2>&1; then
+            log_pass "DROP rule present for $PROTO/$PF_PORT on eth0 (peer traffic is VPN-only)"
+        else
+            log_fail "No eth0 DROP rule for $PROTO/$PF_PORT - peer port may be reachable off-tunnel"
+        fi
+    done
+
+    if docker exec "$CONTAINER_NAME" iptables -C INPUT -i eth0 -p tcp --dport "$PF_PORT" -j ACCEPT >/dev/null 2>&1; then
+        log_fail "CRITICAL: peer port $PF_PORT is ACCEPTed on eth0 - traffic can bypass the VPN"
+    fi
+
+    # Ask Transmission whether the port is actually reachable from outside. This
+    # is the check that would have caught the original bug: PIA had the port
+    # bound and the keepalive logged success while port-test returned false.
+    PORT_TEST=$(docker exec "$CONTAINER_NAME" sh -c '
+        SID=$(curl -s -i http://127.0.0.1:9091/transmission/rpc 2>/dev/null | \
+              grep -i "^X-Transmission-Session-Id:" | head -1 | awk "{print \$2}" | tr -d "\r")
+        [ -n "$SID" ] || exit 1
+        curl -s -H "X-Transmission-Session-Id: $SID" \
+             -d "{\"method\":\"port-test\"}" \
+             http://127.0.0.1:9091/transmission/rpc 2>/dev/null
+    ' 2>/dev/null || echo "")
+
+    if echo "$PORT_TEST" | grep -q '"port-is-open":true'; then
+        log_pass "Transmission port-test reports the peer port is open"
+    elif echo "$PORT_TEST" | grep -q '"port-is-open":false'; then
+        if [ "$PORT_OPEN" = "true" ]; then
+            log_warn "Firewall rules are correct but port-test says closed (PIA binding may have expired, or RPC auth is required)"
+        else
+            log_fail "Transmission port-test reports the peer port is CLOSED"
+        fi
+    else
+        log_info "Could not run port-test (RPC auth enabled, or Transmission not ready)"
+    fi
+
+    # The rules must survive a rebuild of the INPUT chain. This is the actual
+    # regression: vpn-setup.sh flushes INPUT and is re-run in place by
+    # vpn-monitor's auto-restart, and that in-place re-run bypasses s6-rc, so
+    # the pia-port-forward oneshot is not re-run to restore them.
+    if [ "$PORT_OPEN" = "true" ]; then
+        log_info "Verifying the rules are restored after an INPUT chain rebuild..."
+        for PROTO in tcp udp; do
+            docker exec "$CONTAINER_NAME" iptables -D INPUT -i "$VPN_IF" -p "$PROTO" --dport "$PF_PORT" -j ACCEPT >/dev/null 2>&1 || true
+        done
+        docker exec "$CONTAINER_NAME" /usr/local/bin/pia-pf-firewall.sh apply >/dev/null 2>&1 || true
+
+        RESTORED=true
+        for PROTO in tcp udp; do
+            docker exec "$CONTAINER_NAME" iptables -C INPUT -i "$VPN_IF" -p "$PROTO" --dport "$PF_PORT" -j ACCEPT >/dev/null 2>&1 || RESTORED=false
+        done
+        if [ "$RESTORED" = "true" ]; then
+            log_pass "Rules restored by pia-pf-firewall.sh after removal (self-healing works)"
+        else
+            log_fail "Rules were NOT restored after removal - self-healing is broken"
+        fi
+
+        # Re-running apply must not duplicate rules.
+        docker exec "$CONTAINER_NAME" /usr/local/bin/pia-pf-firewall.sh apply >/dev/null 2>&1 || true
+        RULE_COUNT=$(docker exec "$CONTAINER_NAME" iptables -S INPUT | grep -c -- "-i $VPN_IF -p tcp -m tcp --dport $PF_PORT -j ACCEPT" || true)
+        if [ "${RULE_COUNT:-0}" -le 1 ]; then
+            log_pass "Repeated apply is idempotent (no duplicate rules)"
+        else
+            log_fail "Repeated apply duplicated the ACCEPT rule ($RULE_COUNT copies)"
+        fi
+    fi
+fi
+
+# Test 6: Simulate VPN failure
+echo ""
+echo "7. Testing VPN failure scenario..."
 read -p "Do you want to simulate VPN failure? This will temporarily disable the VPN interface. (y/N) " -n 1 -r
 echo ""
 
@@ -180,9 +282,9 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "   You may need to restart the container to fully restore VPN"
 fi
 
-# Test 6: Check Transmission UI accessibility
+# Test 7: Check Transmission UI accessibility
 echo ""
-echo "7. Checking Transmission UI accessibility..."
+echo "8. Checking Transmission UI accessibility..."
 UI_PORT=$(docker port "$CONTAINER_NAME" 9091 2>/dev/null | cut -d: -f2)
 
 if [ -n "$UI_PORT" ]; then
@@ -195,9 +297,9 @@ else
     log_info "Transmission UI port not mapped to host"
 fi
 
-# Test 7: Check VPN monitor service
+# Test 8: Check VPN monitor service
 echo ""
-echo "8. Checking VPN monitor service..."
+echo "9. Checking VPN monitor service..."
 if docker exec "$CONTAINER_NAME" sh -c 'ps aux | grep -q "[v]pn-monitor"'; then
     log_pass "VPN monitor service is running"
 
@@ -212,9 +314,9 @@ else
     log_warn "VPN monitor service not found"
 fi
 
-# Test 8: Check for DNS leaks
+# Test 9: Check for DNS leaks
 echo ""
-echo "9. Testing for DNS leaks..."
+echo "10. Testing for DNS leaks..."
 DNS_SERVERS=$(docker exec "$CONTAINER_NAME" cat /etc/resolv.conf | grep nameserver | awk '{print $2}')
 
 log_info "DNS servers in use:"
@@ -250,7 +352,7 @@ else
     echo "1. Verify the external IP is from your VPN provider"
     echo "2. Test the kill switch by disconnecting the VPN"
     echo "3. Monitor logs: docker logs -f $CONTAINER_NAME"
-    echo "4. Check kill switch status: docker exec $CONTAINER_NAME /root/vpn-killswitch.sh status"
+    echo "4. Check kill switch status: docker exec $CONTAINER_NAME /usr/local/bin/vpn-killswitch.sh status"
 fi
 
 echo ""

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.2-r4] - 2026-09-08
+
+### Fixed
+- **PIA forwarded port was silently firewalled off, dropping all inbound BitTorrent peers while every log line reported success.** `pia-port-forward.sh` installed the `INPUT ACCEPT` rules for the forwarded port exactly once, with `2>/dev/null || true`, and then logged `"Added INPUT rules for port N"` unconditionally — a rule that was never installed still logged as added. The rules were never re-asserted afterwards: the keepalive loop re-bound the port at PIA every 900s but never touched iptables, and `pia-port-forward` is an s6-rc *oneshot*: it does re-run when the whole s6 stack starts (a new container), but `attempt_vpn_restart()` re-runs `/etc/cont-init.d/50-vpn-setup` directly, in place, without going through s6-rc — so on the path that actually rebuilds the chain the oneshot is not re-run and nothing restores the rules. Meanwhile `vpn-setup.sh` flushes the `INPUT` chain and is re-run in place by `vpn-monitor`'s `attempt_vpn_restart()` when `AUTO_RESTART_VPN=true`, rebuilding the chain without the forwarded port. Observed on a live deployment: `INPUT` policy `DROP` with 8751 dropped packets and no rule for the forwarded port, while Transmission listened on the port, PIA had it bound, and the keepalive logged `Port binding refreshed successfully` every 15 minutes; `port-test` returned `{"port-is-open":false}` and adding the rule by hand flipped it to `true` immediately.
+- **The kill switch never restored the dynamic forwarded port.** `vpn-killswitch.sh`'s BitTorrent block keyed only off `$TRANSMISSION_PEER_PORT` and never read `/tmp/pia_forwarded_port`, so the port PIA actually issued was invisible to it; `emergency_killswitch()` did not restore it at all. Both rebuild paths now re-assert the rules as part of the rebuild.
+
+### Added
+- **`root/pia-pf-firewall.sh`** (`/usr/local/bin/pia-pf-firewall.sh`), a shared helper that owns port discovery and the rule spec for all four call sites (`pia-port-forward.sh`, `vpn-setup.sh`, both kill switch functions, and the service teardown). It prefers the live port in `/tmp/pia_forwarded_port` and falls back to `$TRANSMISSION_PEER_PORT`, installs rules idempotently with `iptables -C ... || iptables -I ...`, and **verifies each rule with `-C` after inserting it** — success is logged only when iptables confirms the rule is in the chain, otherwise a real `ERROR` is logged. Also usable directly: `pia-pf-firewall.sh [apply|remove|status|port]`.
+- **Self-healing.** The keepalive loop re-asserts the rules every cycle, so a firewall rebuild now recovers within 15 minutes without a container restart. `vpn-setup.sh` and both kill switch paths restore them immediately as part of the rebuild.
+- **`vpn-killswitch.sh status`** now reports whether the forwarded/peer port rules are actually present.
+- **`test-killswitch.sh`** gained a forwarded/peer-port section: rules present on the VPN interface, absent (dropped) on `eth0`, Transmission `port-test` reachability, recovery after the rules are deleted, and idempotency of a repeated apply.
+
+### Changed
+- **The BitTorrent peer port is no longer `ACCEPT`ed on `eth0`.** `vpn-setup.sh` unconditionally added `INPUT -i eth0 ... -j ACCEPT` for `$TRANSMISSION_PEER_PORT`, which contradicted the kill switch's stated intent that peer traffic only cross the VPN interface: any peer able to route to the container's `eth0` address reached the client off-tunnel. The container refuses to start without a VPN client, so no non-VPN deployment of this image depended on it. The port is now `ACCEPT`ed on the VPN interface and explicitly `DROP`ped on `eth0`.
+  - **Behaviour change:** if you set `LAN_NETWORK`, LAN hosts could previously reach the peer port over `eth0` via the blanket LAN `ACCEPT` rule. The new `eth0` DROP is inserted at the head of `INPUT` and takes precedence, so LAN peers can no longer connect to the peer port directly. Peer traffic through the tunnel is unaffected.
+- **`TRANSMISSION_PEER_PORT` is documented as a firewall hint, not a Transmission setting.** It never set Transmission's peer port (that is `PEERPORT`, handled by `init-transmission-config`), and with `PIA_PORT_FORWARD=true` it should not be set at all — PIA issues a different port on every container start, so any static value is stale as soon as the container is recreated.
+
 ## [v4.1.2-r3] - 2026-07-30
 
 ### Fixed
