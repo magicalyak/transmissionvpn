@@ -24,6 +24,12 @@
 
 PF_PORT_FILE="${PF_PORT_FILE:-/tmp/pia_forwarded_port}"
 PF_VPN_INTERFACE_FILE="${PF_VPN_INTERFACE_FILE:-/tmp/vpn_interface_name}"
+# Published rule state, for readers that cannot run iptables themselves. The
+# metrics server runs unprivileged (s6-setuidgid abc) and so cannot verify the
+# chain directly; this file is written by the privileged callers that can.
+PF_STATE_FILE="${PF_STATE_FILE:-/tmp/pia_pf_state}"
+# tcp/udp ACCEPT on the VPN interface + tcp/udp DROP on eth0.
+PF_RULE_COUNT=4
 
 pf_log() {
   echo "[PIA-PF-FW] $(date '+%Y-%m-%d %H:%M:%S') $*"
@@ -85,6 +91,25 @@ pf_get_vpn_interface() {
   echo "$vpn_if"
 }
 
+# Publish the observed rule state so unprivileged readers can alert on it.
+# Written on every apply and every status check, so its `updated` timestamp
+# doubles as a liveness signal: a stale file means the keepalive has stopped.
+pf_write_state() {
+  local port="$1" found="$2" expected="$3"
+  local tmp="${PF_STATE_FILE}.tmp"
+
+  {
+    echo "port=${port:-0}"
+    echo "rules_found=${found}"
+    echo "rules_expected=${expected}"
+    echo "rules_present=$([ "$found" -eq "$expected" ] && echo 1 || echo 0)"
+    echo "updated=$(date +%s)"
+  } > "$tmp" 2>/dev/null || return 0
+  # Rename so readers never observe a half-written file.
+  mv -f "$tmp" "$PF_STATE_FILE" 2>/dev/null || return 0
+  chmod 644 "$PF_STATE_FILE" 2>/dev/null || true
+}
+
 # Insert a rule at the head of INPUT only if an identical rule is not present.
 # -I (not -A) so the eth0 DROP always precedes any broader eth0 ACCEPT added
 # later in the chain, such as the LAN_NETWORK rule.
@@ -99,7 +124,7 @@ pf_ensure_rule() {
 # a rule that was never installed must never be reported as added.
 pf_apply_rules() {
   local vpn_if="${1:-}"
-  local port proto failed=0
+  local port proto failed=0 found=0
 
   if ! command -v iptables >/dev/null 2>&1; then
     pf_log "ERROR: iptables not available, cannot open the forwarded port"
@@ -120,21 +145,27 @@ pf_apply_rules() {
 
   for proto in tcp udp; do
     # Reachable through the tunnel.
-    if ! pf_ensure_rule -i "$vpn_if" -p "$proto" --dport "$port" -j ACCEPT; then
+    if pf_ensure_rule -i "$vpn_if" -p "$proto" --dport "$port" -j ACCEPT; then
+      found=$((found + 1))
+    else
       pf_log "ERROR: Failed to install ACCEPT rule for $proto/$port on $vpn_if"
       failed=1
     fi
     # Never reachable off-tunnel. The kill switch's intent is that peer traffic
     # only ever crosses the VPN interface, so eth0 is dropped explicitly rather
     # than left to the default policy, which a later broad ACCEPT could override.
-    if ! pf_ensure_rule -i eth0 -p "$proto" --dport "$port" -j DROP; then
+    if pf_ensure_rule -i eth0 -p "$proto" --dport "$port" -j DROP; then
+      found=$((found + 1))
+    else
       pf_log "ERROR: Failed to install eth0 DROP rule for $proto/$port"
       failed=1
     fi
   done
 
+  pf_write_state "$port" "$found" "$PF_RULE_COUNT"
+
   if [ "$failed" -ne 0 ]; then
-    pf_log "ERROR: Forwarded port $port is NOT fully open on $vpn_if - inbound peers will be dropped"
+    pf_log "ERROR: Forwarded port $port is NOT fully open on $vpn_if ($found/$PF_RULE_COUNT rules) - inbound peers will be dropped"
     return 1
   fi
 
@@ -163,7 +194,7 @@ pf_remove_rules() {
 # Report whether the rules are actually in the chain, without changing anything.
 pf_status_rules() {
   local vpn_if="${1:-}"
-  local port proto missing=0
+  local port proto missing=0 found=0
 
   command -v iptables >/dev/null 2>&1 || return 1
   if ! port=$(pf_get_port); then
@@ -175,15 +206,21 @@ pf_status_rules() {
   fi
 
   for proto in tcp udp; do
-    if ! iptables -C INPUT -i "$vpn_if" -p "$proto" --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+    if iptables -C INPUT -i "$vpn_if" -p "$proto" --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+      found=$((found + 1))
+    else
       pf_log "MISSING: ACCEPT $proto/$port on $vpn_if"
       missing=1
     fi
-    if ! iptables -C INPUT -i eth0 -p "$proto" --dport "$port" -j DROP >/dev/null 2>&1; then
+    if iptables -C INPUT -i eth0 -p "$proto" --dport "$port" -j DROP >/dev/null 2>&1; then
+      found=$((found + 1))
+    else
       pf_log "MISSING: DROP $proto/$port on eth0"
       missing=1
     fi
   done
+
+  pf_write_state "$port" "$found" "$PF_RULE_COUNT"
 
   if [ "$missing" -ne 0 ]; then
     pf_log "ERROR: Forwarded port $port is not correctly firewalled"

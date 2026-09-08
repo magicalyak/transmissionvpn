@@ -121,6 +121,7 @@ services:
 | `CHECK_DNS_LEAK` | Enable DNS leak detection | `false` | `true` |
 | `CHECK_IP_LEAK` | Enable IP leak detection | `false` | `true` |
 | `PIA_PORT_FORWARD` | Enable PIA port forwarding (requires non-US server) | `false` | `true` |
+| `PORT_TEST_INTERVAL` | Seconds between external peer-port reachability probes | `900` | `300` |
 
 ## 📁 Volumes
 
@@ -156,6 +157,35 @@ The container automatically configures iptables rules for your custom ports. No 
 > forwarded port on every container start, so any static value is stale as soon as the container is recreated.
 > The real port is discovered at runtime, written to `/tmp/pia_forwarded_port`, set on Transmission over RPC,
 > and its firewall rules are re-asserted every keepalive cycle (15 minutes) and on every firewall rebuild.
+
+### Monitoring port forwarding
+
+With `METRICS_ENABLED=true`, the metrics endpoint exposes the forwarded-port state so this failure mode is
+visible rather than silent:
+
+| Metric | Meaning |
+|--------|---------|
+| `transmissionvpn_pf_enabled` | `1` when `PIA_PORT_FORWARD=true` |
+| `transmissionvpn_pf_port` | The currently forwarded peer port (`0` if none) |
+| `transmissionvpn_pf_rules_present` | `1` only when every firewall rule for that port is confirmed in the INPUT chain |
+| `transmissionvpn_pf_rules_found` | How many of the 4 expected rules are present |
+| `transmissionvpn_pf_state_age_seconds` | Age of the published rule state; grows without bound if the keepalive dies |
+| `transmissionvpn_port_open` | Transmission's `port-test` result (external reachability) |
+
+**The one to alert on is `transmissionvpn_pf_rules_present == 0`.** It is local, cheap, and drops the moment a
+firewall rebuild removes the rules — roughly 15 minutes before the keepalive restores them. Pair it with
+`transmissionvpn_pf_state_age_seconds > 1800`, which catches the case where the keepalive has stopped and the
+rule state is frozen at its last good value.
+
+Health status also distinguishes the two causes: `pf_rules_missing` means the container is dropping inbound
+peers itself, while `pf_port_bound_but_unreachable` means the rules are correct and the binding is gone
+upstream. When `PIA_PORT_FORWARD` is not set, a closed peer port remains an informational notice — most VPN
+providers do not forward ports, and that is not a fault.
+
+> **Note on `PORT_TEST_INTERVAL`.** `port-test` asks Transmission to probe the peer port from outside, so each
+> call hits an external checker. It previously ran on every metrics tick (30s by default) and now runs on its
+> own schedule, defaulting to 900s to match the PIA keepalive — the rate at which the underlying state can
+> actually change.
 
 > **Privoxy is disabled by default.** The example `docker-compose.yml` publishes port `8118`, but nothing listens on it unless you also set `ENABLE_PRIVOXY=yes` in your `.env`. Both the env flag **and** the port mapping are required. Once enabled, point your HTTP client at `http://<docker-host>:8118` and traffic will egress through the VPN tunnel. To disable, set `ENABLE_PRIVOXY=no` (or omit it) — you can leave the port mapping in compose; nothing will bind to it.
 
@@ -652,6 +682,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `METRICS_ENABLED` | Built-in custom metrics server | `false` |
 | `METRICS_PORT` | Metrics endpoint port | `9099` |
 | `METRICS_INTERVAL` | Metrics update interval (seconds) | `30` |
+| `PORT_TEST_INTERVAL` | Seconds between peer-port reachability probes | `900` |
 | `INTERNAL_METRICS_ENABLED` | Internal health metrics | `false` |
 | `CHECK_DNS_LEAK` | DNS leak detection | `false` |
 | `CHECK_IP_LEAK` | IP leak detection | `false` |
