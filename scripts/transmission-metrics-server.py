@@ -36,6 +36,13 @@ PIA_PORT_FORWARD = os.getenv('PIA_PORT_FORWARD', 'false').lower() == 'true'
 # matches the PIA keepalive interval, since that is the rate at which the
 # underlying state can actually change.
 PORT_TEST_INTERVAL = int(os.getenv('PORT_TEST_INTERVAL', '900'))
+# A negative result is re-checked much sooner than a positive one. port-test
+# transiently reports closed during startup, before pia-port-forward.sh has set
+# Transmission's peer port, and caching that for the full interval leaves the
+# service reporting degraded for 15 minutes with a perfectly good port. A
+# positive is stable and cheap to hold; a negative is actionable and worth
+# re-verifying quickly.
+PORT_TEST_RETRY_INTERVAL = int(os.getenv('PORT_TEST_RETRY_INTERVAL', '60'))
 # Published by pia-pf-firewall.sh. This process runs unprivileged
 # (s6-setuidgid abc) and cannot inspect iptables itself.
 PF_STATE_FILE = os.getenv('PF_STATE_FILE', '/tmp/pia_pf_state')
@@ -293,14 +300,22 @@ def read_pf_state():
 
 
 def get_port_test(api):
-    """Run Transmission's port-test, throttled to PORT_TEST_INTERVAL.
+    """Run Transmission's port-test, throttled.
+
+    Successes are cached for PORT_TEST_INTERVAL. Failures are re-probed after
+    the shorter PORT_TEST_RETRY_INTERVAL, so a transient "closed" captured
+    during startup clears in about a minute rather than persisting for the full
+    interval and reporting a healthy port as degraded.
 
     Returns the cached value between runs. None means it has never succeeded.
     """
     now = time.time()
-    if (_port_test_cache['value'] is not None
-            and now - _port_test_cache['checked_at'] < PORT_TEST_INTERVAL):
-        return _port_test_cache['value']
+    cached = _port_test_cache['value']
+    # Hold a success for the full interval; re-probe a failure much sooner.
+    ttl = PORT_TEST_INTERVAL if cached else min(PORT_TEST_RETRY_INTERVAL,
+                                                PORT_TEST_INTERVAL)
+    if cached is not None and now - _port_test_cache['checked_at'] < ttl:
+        return cached
     try:
         response = api._make_request("port-test")
         if response and response.get('result') == 'success':

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.2-r6] - 2026-09-08
+
+### Fixed
+- **A healthy forwarded port could report as `degraded` for 15 minutes after startup.** r5 cached the `port-test` result for the full `PORT_TEST_INTERVAL` regardless of outcome. The metrics server probes during startup, before `pia-port-forward.sh` has set Transmission's peer port, so it captured a transient "closed" and held it — producing `transmissionvpn_port_open 0`, `pf_port_bound_but_unreachable`, and `transmissionvpn_healthy 0` on a pod whose port was actually open. Caught on the live cluster immediately after the r5 rollout: the live `port-test` RPC returned `port-is-open: true` while the metric still read `0`. Failures are now re-probed after the new `PORT_TEST_RETRY_INTERVAL` (default 60s, clamped to never exceed `PORT_TEST_INTERVAL`); successes are still held for the full interval. A false `degraded` is far less harmful than the false `healthy` r5 fixed, but left alone it trains operators to ignore the alert, which defeats the purpose.
+
 ## [v4.1.2-r5] - 2026-09-08
 
 Observability follow-up to r4. r4 made the forwarded port repair itself; this makes the failure visible while it is happening.

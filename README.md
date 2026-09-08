@@ -122,6 +122,7 @@ services:
 | `CHECK_IP_LEAK` | Enable IP leak detection | `false` | `true` |
 | `PIA_PORT_FORWARD` | Enable PIA port forwarding (requires non-US server) | `false` | `true` |
 | `PORT_TEST_INTERVAL` | Seconds between external peer-port reachability probes | `900` | `300` |
+| `PORT_TEST_RETRY_INTERVAL` | Seconds before re-probing after a *failed* reachability check | `60` | `30` |
 
 ## 📁 Volumes
 
@@ -186,6 +187,10 @@ providers do not forward ports, and that is not a fault.
 > call hits an external checker. It previously ran on every metrics tick (30s by default) and now runs on its
 > own schedule, defaulting to 900s to match the PIA keepalive — the rate at which the underlying state can
 > actually change.
+>
+> A *failed* probe is re-checked after `PORT_TEST_RETRY_INTERVAL` (60s) rather than being held for the full
+> interval. `port-test` transiently reports closed during startup, before the forwarded port has been set on
+> Transmission, and caching that would report a healthy port as degraded for 15 minutes.
 
 > **Privoxy is disabled by default.** The example `docker-compose.yml` publishes port `8118`, but nothing listens on it unless you also set `ENABLE_PRIVOXY=yes` in your `.env`. Both the env flag **and** the port mapping are required. Once enabled, point your HTTP client at `http://<docker-host>:8118` and traffic will egress through the VPN tunnel. To disable, set `ENABLE_PRIVOXY=no` (or omit it) — you can leave the port mapping in compose; nothing will bind to it.
 
@@ -683,6 +688,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `METRICS_PORT` | Metrics endpoint port | `9099` |
 | `METRICS_INTERVAL` | Metrics update interval (seconds) | `30` |
 | `PORT_TEST_INTERVAL` | Seconds between peer-port reachability probes | `900` |
+| `PORT_TEST_RETRY_INTERVAL` | Seconds before re-probing after a failed check | `60` |
 | `INTERNAL_METRICS_ENABLED` | Internal health metrics | `false` |
 | `CHECK_DNS_LEAK` | DNS leak detection | `false` |
 | `CHECK_IP_LEAK` | IP leak detection | `false` |

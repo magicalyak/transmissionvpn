@@ -119,6 +119,48 @@ def main():
     mod.get_port_test(api)
     check("re-probes once the interval elapses", calls['n'], 2)
 
+    print("\na negative result must not stick for the full interval")
+    # Regression: the metrics server probes during startup, before
+    # pia-port-forward.sh has set Transmission's peer port. Caching that
+    # transient 'closed' for 900s reported a healthy port as degraded for
+    # 15 minutes.
+    mod = load(PIA_PORT_FORWARD='true', PF_STATE_FILE=state_path,
+               PORT_TEST_INTERVAL='900', PORT_TEST_RETRY_INTERVAL='60')
+    calls = {'n': 0, 'open': False}
+
+    class FlakyAPI:
+        def _make_request(self, method):
+            calls['n'] += 1
+            return {'result': 'success',
+                    'arguments': {'port-is-open': calls['open']}}
+
+    api = FlakyAPI()
+    check("first probe reports closed", mod.get_port_test(api), False)
+    check("closed result is cached briefly", mod.get_port_test(api), False)
+    check("no extra probe inside the retry window", calls['n'], 1)
+
+    # The port comes good, and 61s later the cache must notice.
+    calls['open'] = True
+    mod._port_test_cache['checked_at'] = time.time() - 61
+    check("re-probes a failure after the retry interval",
+          mod.get_port_test(api), True)
+
+    # A success must NOT be re-probed on the short retry interval.
+    calls['n'] = 0
+    mod._port_test_cache['checked_at'] = time.time() - 61
+    mod.get_port_test(api)
+    check("a success is held for the full interval", calls['n'], 0)
+
+    print("\nretry interval never exceeds the main interval")
+    mod = load(PIA_PORT_FORWARD='true', PF_STATE_FILE=state_path,
+               PORT_TEST_INTERVAL='30', PORT_TEST_RETRY_INTERVAL='600')
+    calls = {'n': 0, 'open': False}
+    api = FlakyAPI()
+    mod.get_port_test(api)
+    mod._port_test_cache['checked_at'] = time.time() - 31
+    mod.get_port_test(api)
+    check("clamped to PORT_TEST_INTERVAL when smaller", calls['n'], 2)
+
     print(f"\npassed={_passed} failed={_failed}")
     return 1 if _failed else 0
 
