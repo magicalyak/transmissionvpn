@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`vpn-setup.sh` diagnostics never reached `docker logs`.** The script redirected its own output to `/tmp/vpn-setup.log` with `exec &> ...` and only then set up `exec > >(tee -a ...)`. Each `tee` therefore started with the log file already installed as its own stdout, so it wrote the data back into the file rather than to the console, and nothing after line 19 ever reached the container's stdout. Every diagnostic the script prints was invisible from outside the container - including the `set -e` abort message that says *why* setup failed - leaving `/tmp/vpn-setup.log` (truncated on every run) as the only copy. This is why users hitting a failed VPN setup reported that the logs gave them nothing to go on (#33, #36). The file is now truncated up front and the tee attaches to the still-connected console fds.
+
 ## [v4.1.2-r6] - 2026-09-08
 
 ### Fixed
