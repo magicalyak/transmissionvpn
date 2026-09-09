@@ -128,15 +128,18 @@ echo "6. Manual Health Check Execution"
 echo "-------------------------------"
 
 # Test 6: Run health check manually
-echo "Command: docker exec $CONTAINER_NAME /root/healthcheck-smart.sh"
-if docker exec "$CONTAINER_NAME" /root/healthcheck-smart.sh > /dev/null 2>&1; then
-    print_status "PASS" "Smart health check passed"
+echo "Command: docker exec $CONTAINER_NAME /root/healthcheck.sh"
+if docker exec "$CONTAINER_NAME" /root/healthcheck.sh > /dev/null 2>&1; then
+    print_status "PASS" "Health check passed"
 else
     EXIT_CODE=$?
     case $EXIT_CODE in
-        1) print_status "FAIL" "Health check failed - Transmission unhealthy" ;;
-        2) print_status "FAIL" "Health check failed - VPN unhealthy" ;;
-        3) print_status "FAIL" "Health check failed - Both Transmission and VPN unhealthy" ;;
+        1) print_status "FAIL" "Health check failed - Transmission down" ;;
+        2) print_status "FAIL" "Health check failed - VPN interface down" ;;
+        3) print_status "FAIL" "Health check failed - VPN interface missing" ;;
+        4) print_status "FAIL" "Health check failed - VPN connectivity failed" ;;
+        5) print_status "FAIL" "Health check failed - DNS resolution failed" ;;
+        6) print_status "FAIL" "Health check failed - IP leak detected" ;;
         *) print_status "FAIL" "Health check failed - Unknown error (exit code: $EXIT_CODE)" ;;
     esac
 fi
@@ -223,8 +226,6 @@ echo "curl -s http://localhost:9099/metrics | grep transmission_free_space"
 echo "curl -s http://localhost:9099/metrics | grep transmissionvpn_"
 echo ""
 echo "# Manual health checks"
-echo "docker exec $CONTAINER_NAME /root/healthcheck-smart.sh"
-echo "docker exec $CONTAINER_NAME /root/healthcheck-fixed.sh"
 echo "docker exec $CONTAINER_NAME /root/healthcheck.sh"
 echo ""
 echo "# Check logs"
