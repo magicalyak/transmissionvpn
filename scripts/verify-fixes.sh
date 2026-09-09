@@ -125,19 +125,19 @@ echo ""
 echo "4. Healthcheck Script Verification"
 echo "----------------------------------"
 
-# Check if fixed healthcheck exists
-if docker exec "$CONTAINER_NAME" test -f /root/healthcheck-fixed.sh; then
-    print_status "PASS" "Fixed healthcheck script exists"
+# Check if the healthcheck exists
+if docker exec "$CONTAINER_NAME" test -f /root/healthcheck.sh; then
+    print_status "PASS" "Healthcheck script exists"
     
     # Check if it's executable
-    if docker exec "$CONTAINER_NAME" test -x /root/healthcheck-fixed.sh; then
-        print_status "PASS" "Fixed healthcheck script is executable"
+    if docker exec "$CONTAINER_NAME" test -x /root/healthcheck.sh; then
+        print_status "PASS" "Healthcheck script is executable"
         
         # Run the healthcheck
-        if docker exec "$CONTAINER_NAME" /root/healthcheck-fixed.sh > /dev/null 2>&1; then
-            print_status "PASS" "Fixed healthcheck script runs successfully"
+        if docker exec "$CONTAINER_NAME" /root/healthcheck.sh > /dev/null 2>&1; then
+            print_status "PASS" "Healthcheck script runs successfully"
         else
-            print_status "FAIL" "Fixed healthcheck script failed"
+            print_status "FAIL" "Healthcheck script failed"
         fi
     else
         print_status "FAIL" "Fixed healthcheck script is not executable"
@@ -194,7 +194,7 @@ fi
 CRITICAL_CHECKS=$((CRITICAL_CHECKS + 1))
 
 # Healthcheck script
-if docker exec "$CONTAINER_NAME" /root/healthcheck-fixed.sh > /dev/null 2>&1; then
+if docker exec "$CONTAINER_NAME" /root/healthcheck.sh > /dev/null 2>&1; then
     CRITICAL_PASSED=$((CRITICAL_PASSED + 1))
 fi
 CRITICAL_CHECKS=$((CRITICAL_CHECKS + 1))
@@ -206,7 +206,7 @@ if [ $CRITICAL_PASSED -eq $CRITICAL_CHECKS ]; then
     echo ""
     echo "Next steps:"
     echo "- Access Transmission at: http://localhost:9091"
-    echo "- Monitor health: docker exec $CONTAINER_NAME /root/healthcheck-fixed.sh"
+    echo "- Monitor health: docker exec $CONTAINER_NAME /root/healthcheck.sh"
     echo "- Check logs: docker logs $CONTAINER_NAME"
 else
     print_status "FAIL" "Some critical checks failed ($CRITICAL_PASSED/$CRITICAL_CHECKS)"
