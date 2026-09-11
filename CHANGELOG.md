@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`vpn-monitor` no longer waits on VPN setup in silence.** When `vpn-setup.sh` aborts, `/tmp/vpn_setup_complete` is never written and the monitor waits forever — previously repeating `Waiting for initial VPN setup to complete...` every five seconds, indefinitely, with no indication that anything was wrong or where to look. Issues #33 and #36 are both pages of exactly that line, and in both cases the answer was sitting in `/tmp/vpn-setup.log` the whole time. After `VPN_SETUP_WAIT_WARN_SECONDS` (default 150s, just past the two sequential 60s timeouts inside `vpn-setup.sh`) the monitor now warns once, prints the last 25 lines of `/tmp/vpn-setup.log` inline, states that the container is fail-closed, and drops the poll message from every 5s to every 60s so the real error is not buried. The wait itself is unchanged — it still waits rather than exiting, since exiting would only have s6 restart it into the same state.
+
+### Added
+- **`test-vpn-monitor-wait.sh`**: 9 assertions over `wait_for_vpn_setup()` — silence when setup is already complete, no warning for a normal startup, the warning firing exactly once past the threshold, the `vpn-setup.log` contents being surfaced, the backoff from 5s to 60s polling, and the missing-log case. Like `test-vpn-setup-failclosed.sh` it extracts the function from the shipped script rather than copying it, and shadows `sleep`, so it runs instantly and needs no container.
+
 ## [v4.1.2-r7] - 2026-09-11
 
 Triage release. Everything here came out of working the two open issues (#33, #36), both of which had gone months without a reply. Neither reporter could see why their container had failed, and it turned out they were right not to be able to: the script that knows is the one whose output was being thrown away.

@@ -12,6 +12,11 @@ VPN_INITIAL_DELAY=${VPN_INITIAL_DELAY:-15}    # Seconds to wait after VPN setup 
 CHECK_DNS=${CHECK_DNS:-true}                  # Enable DNS resolution testing
 CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}  # Check external IP through VPN
 AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}   # Auto-restart VPN on failure
+# Seconds to wait for initial VPN setup before reporting that something is wrong and
+# showing vpn-setup.sh's own log. vpn-setup.sh has two sequential 60s timeouts of its
+# own (the OpenVPN up script, then the interface getting an IP), so a legitimately slow
+# start can take a little over two minutes; the default sits just past that.
+VPN_SETUP_WAIT_WARN_SECONDS=${VPN_SETUP_WAIT_WARN_SECONDS:-150}
 
 # Auto-restart configuration
 RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-300}  # 5 min between attempts
@@ -21,6 +26,7 @@ NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL:-}      # Optional webhook
 # File paths
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
 VPN_SETUP_COMPLETE="/tmp/vpn_setup_complete"
+VPN_SETUP_LOG="/tmp/vpn-setup.log"
 EXTERNAL_IP_FILE="/tmp/last_external_ip"
 VPN_STATUS_FILE="/tmp/vpn_status"
 
@@ -338,16 +344,55 @@ attempt_vpn_restart() {
     fi
 }
 
-# Wait for initial VPN setup
+# Wait for initial VPN setup.
+#
+# vpn-setup.sh runs as a cont-init script and touches $VPN_SETUP_COMPLETE when it
+# finishes. If it aborts - a VPN_CONFIG the container cannot see, credentials the
+# provider rejects, a tunnel that never gets an IP - that flag is never written and this
+# wait never ends. It used to do that in silence, repeating one line every five seconds
+# with no hint that anything had gone wrong or where to look: issues #33 and #36 are both
+# pages of exactly that. vpn-setup.sh records why it stopped in $VPN_SETUP_LOG, so once
+# the wait has clearly overrun, say so, show that log, and stop flooding this one.
+wait_for_vpn_setup() {
+    local elapsed=0
+    local warned=false
+    local line
+
+    while [ ! -f "$VPN_SETUP_COMPLETE" ]; do
+        if [ "$warned" = false ] && [ "$elapsed" -ge "$VPN_SETUP_WAIT_WARN_SECONDS" ]; then
+            warned=true
+            log "WARNING: VPN setup has not completed after ${elapsed}s - it should have by now."
+            log "If vpn-setup.sh failed, its own output says why. Last lines of $VPN_SETUP_LOG:"
+            if [ -s "$VPN_SETUP_LOG" ]; then
+                tail -n 25 "$VPN_SETUP_LOG" | while IFS= read -r line; do
+                    log "  | $line"
+                done
+            elif [ -f "$VPN_SETUP_LOG" ]; then
+                log "  | ($VPN_SETUP_LOG is empty)"
+            else
+                log "  | ($VPN_SETUP_LOG does not exist - vpn-setup.sh has not started)"
+            fi
+            log "No traffic leaves this container until setup succeeds. Fix the error above"
+            log "and restart the container. Further waiting messages every 60s, not every 5s."
+        fi
+
+        if [ "$warned" = true ]; then
+            log "Still waiting for VPN setup (${elapsed}s elapsed) - see $VPN_SETUP_LOG"
+            sleep 60
+            elapsed=$((elapsed + 60))
+        else
+            log "Waiting for initial VPN setup to complete..."
+            sleep 5
+            elapsed=$((elapsed + 5))
+        fi
+    done
+}
+
 log "Starting VPN monitor service (interval: ${VPN_CHECK_INTERVAL}s, max failures: ${VPN_MAX_FAILURES})"
 if [ "${AUTO_RESTART_VPN,,}" = "true" ]; then
     log "Auto-restart enabled (cooldown: ${RESTART_COOLDOWN_SECONDS}s, max attempts: ${MAX_RESTART_ATTEMPTS})"
 fi
-while [ ! -f "$VPN_SETUP_COMPLETE" ]; do
-    log "Waiting for initial VPN setup to complete..."
-    sleep 5
-done
-
+wait_for_vpn_setup
 log "VPN setup complete, waiting ${VPN_INITIAL_DELAY}s for routes to stabilize..."
 sleep "$VPN_INITIAL_DELAY"
 
