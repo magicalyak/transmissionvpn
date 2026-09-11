@@ -1,4 +1,5 @@
 #!/command/with-contenv bash
+# shellcheck shell=bash
 # Enhanced VPN Kill Switch Script
 # Implements strict iptables rules to prevent any IP leaks
 # Called by vpn-setup.sh and vpn-monitor service

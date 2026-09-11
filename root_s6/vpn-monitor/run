@@ -1,4 +1,5 @@
 #!/command/with-contenv bash
+# shellcheck shell=bash
 # VPN Monitor - Enhanced monitoring service with kill switch enforcement
 # Monitors VPN connection health and stops Transmission if VPN fails
 # Auto-restart with cooldown, max attempts, and webhook notifications
