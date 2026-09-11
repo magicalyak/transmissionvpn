@@ -744,8 +744,17 @@ def generate_prometheus_metrics():
         port_open = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
         metrics.append(f"transmissionvpn_port_open {port_open}")
         
-        # Port forwarding capability (separate from overall health)
-        metrics.append("# HELP transmissionvpn_port_forwarding_available Port forwarding is available")
+        # DEPRECATED. This is transmissionvpn_port_open under a second name: it
+        # is the same port_test result, so it reports external reachability and
+        # not whether port forwarding is available. It is kept, unchanged, only
+        # so that anyone already scraping it does not lose a series without
+        # warning. Redefining it in place was rejected deliberately - the value
+        # would silently change meaning, which reads as a real state transition
+        # and can fire an alert.
+        #
+        # Use transmissionvpn_pf_enabled / _pf_port / _pf_rules_present below,
+        # which say what they mean. Slated for removal in the next major.
+        metrics.append("# HELP transmissionvpn_port_forwarding_available DEPRECATED - duplicate of transmissionvpn_port_open; use transmissionvpn_pf_enabled and transmissionvpn_pf_rules_present")
         metrics.append("# TYPE transmissionvpn_port_forwarding_available gauge")
         port_forwarding_available = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
         metrics.append(f"transmissionvpn_port_forwarding_available {port_forwarding_available}")
@@ -784,8 +793,13 @@ def generate_prometheus_metrics():
         pf_age = int(time.time() - pf_updated) if pf_updated else -1
         metrics.append(f"transmissionvpn_pf_state_age_seconds {pf_age}")
 
-        # VPN with port forwarding support indicator
-        metrics.append("# HELP transmissionvpn_vpn_supports_port_forwarding VPN provider supports port forwarding")
+        # DEPRECATED. Named as if it reported a provider capability, which is
+        # static, but it ANDs the live VPN state with the live port test. It
+        # therefore reads 0 whenever the tunnel is down or the port happens to
+        # be closed, on a provider that does support forwarding. The capability
+        # question is answered by transmissionvpn_pf_enabled. Kept unchanged for
+        # existing scrapers; slated for removal in the next major.
+        metrics.append("# HELP transmissionvpn_vpn_supports_port_forwarding DEPRECATED - reports live VPN and port state, not provider capability; use transmissionvpn_pf_enabled")
         metrics.append("# TYPE transmissionvpn_vpn_supports_port_forwarding gauge")
         vpn_supports_pf = 1 if (health_data.get('vpn', {}).get('connected', False) and health_data.get('transmission', {}).get('port_test', False)) else 0
         metrics.append(f"transmissionvpn_vpn_supports_port_forwarding {vpn_supports_pf}")

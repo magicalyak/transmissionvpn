@@ -173,6 +173,16 @@ visible rather than silent:
 | `transmissionvpn_pf_state_age_seconds` | Age of the published rule state; grows without bound if the keepalive dies |
 | `transmissionvpn_port_open` | Transmission's `port-test` result (external reachability) |
 
+Two older metrics are **deprecated** and will be removed in the next major release. Neither means what its
+name suggests, and both are better answered by the `pf_*` metrics above:
+
+| Deprecated metric | What it actually reports | Use instead |
+|--------|--------|--------|
+| `transmissionvpn_port_forwarding_available` | Identical to `transmissionvpn_port_open` - the `port-test` result | `transmissionvpn_pf_enabled`, `transmissionvpn_pf_rules_present` |
+| `transmissionvpn_vpn_supports_port_forwarding` | Live VPN state AND the port test, so it reads `0` on a capable provider whenever the tunnel is down | `transmissionvpn_pf_enabled` |
+
+They still emit their original values, so nothing scraping them breaks today.
+
 **The one to alert on is `transmissionvpn_pf_rules_present == 0`.** It is local, cheap, and drops the moment a
 firewall rebuild removes the rules — roughly 15 minutes before the keepalive restores them. Pair it with
 `transmissionvpn_pf_state_age_seconds > 1800`, which catches the case where the keepalive has stopped and the
