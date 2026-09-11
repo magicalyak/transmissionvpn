@@ -657,7 +657,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LAN_NETWORK` | Local network CIDR | (none) |
-| `NAME_SERVERS` | DNS servers | (auto) |
+| `NAME_SERVERS` | DNS servers used once the tunnel is up, replacing Docker's resolver | `8.8.8.8,1.1.1.1` |
 | `ADDITIONAL_PORTS` | Extra ports | (none) |
 
 ### Transmission Settings

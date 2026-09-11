@@ -40,6 +40,52 @@ curl -s http://localhost:9091/transmission/web/ | head -5
 
 ## VPN Connection Issues
 
+### ⏳ Stuck on "Waiting for initial VPN setup to complete..."
+
+**Symptoms:**
+
+- `[VPN-MONITOR] Waiting for initial VPN setup to complete...` repeats
+  indefinitely
+- The web UI on 9091 is unreachable
+- The container keeps running rather than exiting
+
+**Cause:**
+
+VPN setup did not finish, so the monitor is still waiting for it. Since
+v4.1.2-r8 the monitor stops repeating itself after about a minute and prints
+the actual error from the setup log, so read the log rather than the waiting
+message:
+
+```bash
+docker logs transmissionvpn 2>&1 | grep -A5 '\[ERROR\]'
+docker exec transmissionvpn cat /tmp/vpn-setup.log
+```
+
+The usual causes are the ones under
+[Container Exits with VPN Connection Error](#-container-exits-with-vpn-connection-error):
+a config file the container cannot see, bad credentials, or missing
+`NET_ADMIN`.
+
+**Why the web UI is also down:** as of v4.1.2-r7 a container whose VPN setup
+aborts fails closed — everything except loopback is dropped, including port
+9091. This is intended. Before r7 a failed setup left the firewall wide open
+with Transmission already listening, which leaked traffic outside the tunnel.
+A dark web UI after an upgrade to r7 or later is almost always a
+pre-existing configuration fault that used to fail silently, not a regression.
+
+**If the config path is the problem,** note that a relative bind mount in
+`docker-compose.yml` resolves against the directory holding the compose file,
+not your shell's working directory. `./config:/config` in
+`~/docker/docker-compose.yml` mounts `~/docker/config`, so a config sitting in
+`~/docker/transmissionvpn/config/openvpn/` is never seen. The container creates
+`/config/openvpn` when it is absent, so a wrong mount shows up as an *empty*
+directory rather than a missing one:
+
+```bash
+# What the container actually sees
+docker exec transmissionvpn ls -la /config/openvpn /config/wireguard
+```
+
 ### 🚫 Container Exits with VPN Connection Error
 
 **Symptoms:**
@@ -555,6 +601,57 @@ dns:
 # Use VPN provider's DNS servers
 # Check your VPN provider documentation for recommended DNS
 ```
+
+### 🔗 `127.0.0.11#53: connection refused`
+
+**Symptoms:**
+
+- `nslookup` inside the container fails with `;; connection timed out` or
+  `connection refused` against `127.0.0.11#53`
+- The address is one you never configured
+- Name resolution works from the host and from other containers
+
+**Cause:**
+
+`127.0.0.11` is Docker's embedded DNS resolver, used whenever a container is on
+a user-defined network. It does not really listen on port 53 — Docker installs
+NAT rules inside the container's own network namespace that redirect
+`127.0.0.11:53` to the ephemeral port the resolver actually listens on.
+
+Before starting the tunnel, `vpn-setup.sh` runs `iptables -t nat -F` to clear
+any leftover state from a previous run and to avoid wiping rules that a
+provider's `PostUp` hook installs. That flush also removes Docker's redirect,
+so `127.0.0.11:53` stops answering.
+
+On a **successful** start this does not matter: once the tunnel is up the
+container rewrites `/etc/resolv.conf` to `NAME_SERVERS` (default
+`8.8.8.8,1.1.1.1`), which is queried through the tunnel, and `127.0.0.11` is
+never consulted again.
+
+Seeing this error therefore means **the tunnel never came up**. The rewrite
+happens only after the tunnel succeeds, so the container is still pointed at a
+resolver that the flush disabled. The DNS error is a symptom; the VPN failure
+is the fault.
+
+**Diagnosis:**
+
+```bash
+# The real error is here. Since v4.1.2-r7 it is in the container log too.
+docker logs transmissionvpn 2>&1 | grep -A5 '\[ERROR\]'
+docker exec transmissionvpn cat /tmp/vpn-setup.log
+```
+
+Fix whatever that reports — a missing or unreadable config, bad credentials, a
+failed handshake — and the DNS error goes with it.
+
+**Note on resolving other containers by name:** because `/etc/resolv.conf` is
+moved off `127.0.0.11`, this container cannot resolve other containers by name
+(`sonarr`, `radarr`) even when everything is working. That is deliberate: using
+Docker's resolver would send every lookup out through the host, outside the
+tunnel, which is a DNS leak. If you need to reach another container, either
+give it a static address and use that, or run it inside this container's
+network namespace with `network_mode: "service:transmissionvpn"`, in which case
+it is reachable on `127.0.0.1` and no DNS is involved.
 
 ### 🌐 Local Network Access Issues
 
