@@ -153,6 +153,35 @@ find_vpn_credentials() {
 }
 
 # Function to start OpenVPN
+# Explain a missing VPN config file.
+#
+# The usual cause is a bind mount that does not point where the operator thinks it does:
+# /config comes from a host directory named by a relative path in docker-compose.yml, and
+# relative volume paths resolve against the compose file's own directory rather than the
+# working directory. On top of that, 01-ensure-vpn-config-dirs.sh creates /config/openvpn
+# and /config/wireguard when they are absent, so a wrong mount shows up as an *empty*
+# directory instead of a missing one, and "it's right there on the host" looks like a
+# container bug. Print what the container can actually see so the mismatch is obvious.
+report_missing_vpn_config() {
+  local dir="$1"
+  echo "[ERROR] Contents of $dir, as this container sees it:"
+  if [ -d "$dir" ]; then
+    # shellcheck disable=SC2012  # a human-readable listing is the point here:
+    # permissions and ownership are part of what makes a wrong mount recognisable.
+    ls -la "$dir" 2>&1 | sed 's/^/[ERROR]   /'
+  else
+    echo "[ERROR]   (no such directory)"
+  fi
+  echo "[ERROR]"
+  echo "[ERROR] If the file exists on the host but is not listed above, then /config is"
+  echo "[ERROR] bound to a different host directory than you expect. Relative volume paths"
+  echo "[ERROR] in docker-compose.yml are resolved against the directory holding the compose"
+  echo "[ERROR] file, not the directory you ran docker compose from. Compare the two with:"
+  echo "[ERROR]"
+  echo "[ERROR]   docker exec <container> ls -la /config/openvpn /config/wireguard"
+  echo '[ERROR]   docker inspect <container> --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}"'
+}
+
 start_openvpn() {
   echo "[INFO] Setting up OpenVPN..."
   OVPN_CONFIG_FILE=""
@@ -161,7 +190,8 @@ start_openvpn() {
       OVPN_CONFIG_FILE="$VPN_CONFIG"
       echo "[INFO] Using OpenVPN config: $OVPN_CONFIG_FILE"
     else
-      echo "[ERROR] Specified VPN_CONFIG=$VPN_CONFIG not found."
+      echo "[ERROR] Specified VPN_CONFIG=$VPN_CONFIG not found inside the container."
+      report_missing_vpn_config "$(dirname "$VPN_CONFIG")"
       exit 1
     fi
   else
@@ -169,6 +199,7 @@ start_openvpn() {
     OVPN_CONFIG_FILE=$(find /config/openvpn -maxdepth 1 -name '*.ovpn' -print -quit)
     if [ -z "$OVPN_CONFIG_FILE" ]; then
       echo "[ERROR] No OpenVPN configuration file specified via VPN_CONFIG and none found in /config/openvpn."
+      report_missing_vpn_config /config/openvpn
       exit 1
     else
       echo "[INFO] Automatically selected OpenVPN config: $OVPN_CONFIG_FILE"
@@ -356,7 +387,8 @@ start_wireguard() {
           WG_CONFIG="$VPN_CONFIG"
           echo "[INFO] Using WireGuard config: $WG_CONFIG"
       else
-          echo "[ERROR] Specified VPN_CONFIG (for WireGuard) = $VPN_CONFIG not found."
+          echo "[ERROR] Specified VPN_CONFIG (for WireGuard) = $VPN_CONFIG not found inside the container."
+          report_missing_vpn_config "$(dirname "$VPN_CONFIG")"
           exit 1
       fi
   else
@@ -364,6 +396,7 @@ start_wireguard() {
       WG_CONF_FOUND=$(find /config/wireguard -maxdepth 1 -name '*.conf' -print -quit)
       if [ -z "$WG_CONF_FOUND" ]; then
           echo "[ERROR] No WireGuard configuration file specified via VPN_CONFIG and none found in /config/wireguard."
+          report_missing_vpn_config /config/wireguard
           exit 1
       else
           WG_CONFIG="$WG_CONF_FOUND"
@@ -391,6 +424,56 @@ start_wireguard() {
     echo "Updated /etc/resolv.conf with NAME_SERVERS."
   fi
 }
+
+# Fail closed if this script aborts.
+#
+# Everything from the flush below until the strict policies are re-applied runs with the
+# firewall wide open, so the tunnel handshake can get out. If the script dies anywhere in
+# that window - a VPN_CONFIG that does not resolve, rejected credentials, a tunnel that
+# never gets an IP - it used to leave the container with empty chains and ACCEPT policies
+# while Transmission was already up and listening: no VPN, and no kill switch either.
+# Observed in the wild in #36, where a bind mount pointed at the wrong host directory.
+#
+# Lock the firewall down instead. Loopback only: nothing reaches the network until setup
+# succeeds. That deliberately takes the web UI down too - a container that failed to build
+# its kill switch should not look reachable and healthy - but `docker logs` and
+# `docker exec` are unaffected, so the error above is still there to read.
+# shellcheck disable=SC2329  # invoked indirectly, via the EXIT trap below.
+fail_closed_on_abort() {
+  local rc=$?
+  [ "$rc" -eq 0 ] && return 0
+
+  echo "[ERROR] vpn-setup.sh aborted (exit $rc) before the kill switch was in place."
+  echo "[ERROR] Locking the firewall down: nothing leaves this container until VPN setup"
+  echo "[ERROR] succeeds. Fix the error reported above and restart the container."
+
+  iptables -P INPUT   DROP 2>/dev/null || true
+  iptables -P OUTPUT  DROP 2>/dev/null || true
+  iptables -P FORWARD DROP 2>/dev/null || true
+  iptables -F INPUT   2>/dev/null || true
+  iptables -F OUTPUT  2>/dev/null || true
+  iptables -F FORWARD 2>/dev/null || true
+  iptables -A INPUT  -i lo -j ACCEPT 2>/dev/null || true
+  iptables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+
+  ip6tables -P INPUT   DROP 2>/dev/null || true
+  ip6tables -P OUTPUT  DROP 2>/dev/null || true
+  ip6tables -P FORWARD DROP 2>/dev/null || true
+  ip6tables -F INPUT   2>/dev/null || true
+  ip6tables -F OUTPUT  2>/dev/null || true
+  ip6tables -F FORWARD 2>/dev/null || true
+  ip6tables -A INPUT  -i lo -j ACCEPT 2>/dev/null || true
+  ip6tables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+
+  # The completion flag is not removed at the top of this script, so an in-place re-run
+  # by vpn-monitor's attempt_vpn_restart() would otherwise leave a stale flag from the
+  # previous successful run claiming that setup finished.
+  rm -f /tmp/vpn_setup_complete
+
+  echo "[ERROR] Firewall locked down (loopback only)."
+  return "$rc"
+}
+trap fail_closed_on_abort EXIT
 
 # Reset and flush iptables BEFORE bringing the VPN tunnel up.
 # Two reasons:
