@@ -434,6 +434,14 @@ start_wireguard() {
 # while Transmission was already up and listening: no VPN, and no kill switch either.
 # Observed in the wild in #36, where a bind mount pointed at the wrong host directory.
 #
+# This trap is the only thing that protects a failed setup, so do not assume s6 will
+# catch it. A non-zero /etc/cont-init.d script only stops the container when
+# S6_BEHAVIOUR_IF_STAGE2_FAILS=2, and that variable is set neither here nor in
+# lscr.io/linuxserver/transmission (verified against the image config for
+# 4.1.2-r0-ls349), so the default applies and the container stays up. That matches
+# what #33 and #36 both showed: setup aborted and the container kept running and
+# logging for minutes.
+#
 # Lock the firewall down instead. Loopback only: nothing reaches the network until setup
 # succeeds. That deliberately takes the web UI down too - a container that failed to build
 # its kill switch should not look reachable and healthy - but `docker logs` and
