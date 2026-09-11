@@ -1,170 +1,112 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# Cut a release tag for transmissionvpn.
+#
+#   scripts/release.sh v4.1.2-r9                 # opens $EDITOR for the message
+#   scripts/release.sh v4.1.2-r9 -F notes.txt    # takes the message from a file
+#
+# This creates the annotated tag and stops. It deliberately does not push.
+# Pushing a v* tag builds and publishes `latest` and `stable`, and Flux image
+# automation rolls the result out to a live cluster, so that step stays a
+# separate, deliberate command that a human types.
+#
+# It also never commits anything. Cut the release commit yourself first; a
+# release script that runs `git add .` is how unrelated work ends up in a
+# release.
+set -euo pipefail
 
-# Configuration - Update these for each release
-VERSION="v4.0.6-r15"  # Update this for next release
-IMAGE_NAME="magicalyak/transmissionvpn"
-BRANCH="main"
+cd "$(dirname "$0")/.."
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-echo -e "${BLUE}🚀 TransmissionVPN Release Script${NC}"
-echo -e "${BLUE}===================================${NC}"
-echo -e "Version: ${GREEN}${VERSION}${NC}"
-echo -e "Image:   ${GREEN}${IMAGE_NAME}${NC}"
-echo ""
+die() { echo -e "${RED}✖ $1${NC}" >&2; exit 1; }
+note() { echo -e "${BLUE}$1${NC}"; }
+ok() { echo -e "${GREEN}✔ $1${NC}"; }
 
-# Check prerequisites
-echo -e "${YELLOW}📋 Checking prerequisites...${NC}"
+usage() {
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${1:-2}"
+}
 
-# Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-    echo -e "${RED}❌ Docker is not running. Please start Docker and try again.${NC}"
-    exit 1
+VERSION=""
+MESSAGE_FILE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -F|--file) MESSAGE_FILE="${2:-}"; shift 2 || die "-F needs a file" ;;
+        -h|--help) usage 0 ;;
+        -*) die "Unknown option: $1" ;;
+        *) [ -z "$VERSION" ] || die "Unexpected argument: $1"; VERSION="$1"; shift ;;
+    esac
+done
+
+[ -n "$VERSION" ] || usage 2
+
+# Must match what .github/workflows/build-and-publish.yml triggers on, and what
+# validate-tagging.yml expects: v4.1.2-r8, or v4.1.14 for a release without a
+# build suffix.
+if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-r[0-9]+)?$'; then
+    die "Version '$VERSION' is not vMAJOR.MINOR.PATCH[-rN], e.g. v4.1.2-r9"
 fi
 
-# Check if we're on the right branch
-current_branch=$(git branch --show-current)
-if [[ "$current_branch" != "$BRANCH" ]]; then
-    echo -e "${RED}❌ Not on $BRANCH branch. Current branch: $current_branch${NC}"
-    echo -e "   Switch to $BRANCH branch: ${YELLOW}git checkout $BRANCH${NC}"
-    exit 1
-fi
+branch=$(git rev-parse --abbrev-ref HEAD)
+[ "$branch" = "main" ] || die "On branch '$branch'. Releases are cut from main."
 
-# Check if tag already exists
-if git tag -l | grep -q "^${VERSION}$"; then
-    echo -e "${RED}❌ Tag ${VERSION} already exists!${NC}"
-    echo -e "   To recreate: ${YELLOW}git tag -d ${VERSION} && git push origin :refs/tags/${VERSION}${NC}"
-    exit 1
-fi
-
-# Check for uncommitted changes
-if [[ -n $(git status --porcelain) ]]; then
-    echo -e "${YELLOW}⚠️  Uncommitted changes detected:${NC}"
+[ -z "$(git status --porcelain)" ] || {
     git status --short
-    echo ""
-    read -p "Continue with uncommitted changes? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${RED}❌ Aborted. Please commit your changes first.${NC}"
-        exit 1
-    fi
+    die "Working tree is not clean. Commit or stash first."
+}
+
+git tag -l | grep -qx "$VERSION" && die "Tag $VERSION already exists locally."
+
+note "Fetching tags from origin..."
+git fetch --quiet --tags origin
+git tag -l | grep -qx "$VERSION" && die "Tag $VERSION already exists on origin."
+
+if ! git diff --quiet HEAD origin/main 2>/dev/null; then
+    die "main differs from origin/main. Push or pull first so the tag points at what CI will build."
 fi
 
-echo -e "${GREEN}✅ Prerequisites check passed${NC}"
-echo ""
+ok "Prerequisites passed"
 
-# Show what will be released
-echo -e "${YELLOW}📦 Release Summary${NC}"
-echo -e "${YELLOW}==================${NC}"
-echo -e "Version:     ${GREEN}${VERSION}${NC}"
-echo -e "Branch:      ${GREEN}${BRANCH}${NC}"
-echo -e "Image:       ${GREEN}${IMAGE_NAME}${NC}"
-echo -e "Platforms:   ${GREEN}linux/amd64, linux/arm64${NC}"
-echo ""
-echo -e "${BLUE}💡 Pre-Release Testing Available:${NC}"
-echo -e "   For testing before release, create a release branch:"
-echo -e "   ${YELLOW}git checkout -b release/${VERSION}${NC}"
-echo -e "   ${YELLOW}git push origin release/${VERSION}${NC}"
-echo -e "   This will trigger RC build on GHCR: ${BLUE}ghcr.io/${IMAGE_NAME}:rc-latest${NC}"
-echo ""
-
-# Create commit if there are changes
-if [[ -n $(git status --porcelain) ]]; then
-    echo -e "${BLUE}📝 Committing changes...${NC}"
-    git add .
-    
-    # Extract version number for commit message
-    VERSION_NUM=${VERSION#v}
-    
-    git commit -m "Release ${VERSION}
-
-- Enhanced Docker Hub tag management
-- Improved GitHub Actions workflow with validation
-- Better error handling and debugging
-- Multi-architecture support for linux/amd64 and linux/arm64
-- Comprehensive monitoring with Prometheus and Grafana
-- Clean release tags only (no development clutter)
-- Release candidate workflow for pre-release testing"
-fi
-
-# Create and push tag
-echo -e "${BLUE}🏷️  Creating tag ${VERSION}...${NC}"
-git tag -a "${VERSION}" -m "Release ${VERSION}
-
-## 🎉 TransmissionVPN ${VERSION}
-
-### 🚀 Features
-- Multi-architecture Docker images (linux/amd64, linux/arm64)
-- Enhanced monitoring with custom Python metrics server
-- Beautiful Grafana dashboards for transmission monitoring
-- Comprehensive health checks and VPN status monitoring
-- Integration with existing Prometheus/Grafana setups
-- Release candidate workflow for pre-release testing
-
-### 🐳 Docker Images
-- **Docker Hub**: magicalyak/transmissionvpn:${VERSION#v}
-- **GitHub Container Registry**: ghcr.io/magicalyak/transmissionvpn:${VERSION#v}
-- **Latest**: magicalyak/transmissionvpn:latest
-- **Stable**: magicalyak/transmissionvpn:stable
-
-### 📊 Monitoring Options
-1. **Built-in Metrics** (⭐ Simple) - Just enable METRICS_ENABLED=true
-2. **Existing Prometheus/Grafana** (⭐⭐ Easy) - Add to current infrastructure  
-3. **Complete InfluxDB2 Stack** (⭐⭐⭐ Advanced) - Full new monitoring stack
-
-### 🧪 Pre-Release Testing
-- Release candidates available on GHCR for testing
-- Create release/* branches to trigger RC builds
-- Test before pushing to production Docker Hub
-
-### 🔧 Key Improvements
-- Clean Docker Hub tags (no more development clutter)
-- Enhanced GitHub Actions with validation and error handling
-- Comprehensive documentation and troubleshooting guides
-- Repository cleanup and consolidation
-
-See CHANGELOG.md for complete details."
-
-echo -e "${GREEN}✅ Git tag created successfully${NC}"
-echo ""
-
-# Show next steps
-echo -e "${BLUE}🚀 Next Steps${NC}"
-echo -e "${BLUE}=============${NC}"
-echo -e "1. Push the Git tag:    ${YELLOW}git push origin ${VERSION}${NC}"
-echo -e "2. GitHub Actions will automatically:"
-echo -e "   - Build multi-arch Docker images"
-echo -e "   - Push to Docker Hub and GHCR"
-echo -e "   - Run security scans"
-echo -e "   - Create GitHub release"
-echo -e "3. Monitor the build:   ${BLUE}https://github.com/magicalyak/transmissionvpn/actions${NC}"
-echo -e "4. Check Docker Hub:    ${BLUE}https://hub.docker.com/r/magicalyak/transmissionvpn/tags${NC}"
-echo ""
-
-# Ask if user wants to push automatically
-read -p "Push Git tag now to trigger automated release? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}📤 Pushing Git tag...${NC}"
-    git push origin "${VERSION}"
-    
-    echo ""
-    echo -e "${GREEN}🎉 Release ${VERSION} triggered successfully!${NC}"
-    echo -e "GitHub Actions: ${BLUE}https://github.com/magicalyak/transmissionvpn/actions${NC}"
-    echo -e "Docker Hub:     ${BLUE}https://hub.docker.com/r/magicalyak/transmissionvpn/tags${NC}"
-    echo ""
-    echo -e "${YELLOW}⏱️  The build will take ~10-15 minutes to complete${NC}"
-    echo -e "${YELLOW}📧 You'll get a GitHub notification when it's done${NC}"
+SUBJECT="Release $VERSION: "
+if [ -n "$MESSAGE_FILE" ]; then
+    [ -f "$MESSAGE_FILE" ] || die "No such file: $MESSAGE_FILE"
+    head -1 "$MESSAGE_FILE" | grep -q "^Release $VERSION: " \
+        || die "First line of $MESSAGE_FILE must start with '$SUBJECT'"
+    git tag -a "$VERSION" -F "$MESSAGE_FILE"
 else
-    echo -e "${YELLOW}ℹ️  Manual push required:${NC}"
-    echo -e "   ${BLUE}git push origin ${VERSION}${NC}"
+    # Seed the editor with the convention every recent release follows: a
+    # subject line naming the version and what changed, then prose.
+    template=$(mktemp)
+    trap 'rm -f "$template"' EXIT
+    cat > "$template" <<EOF
+$SUBJECT
+
+EOF
+    cat >> "$template" <<'EOF'
+# Write the release notes above.
+#
+# Line 1 is the subject: "Release <version>: what changed", lower case after
+# the colon. Leave line 2 blank. Then explain what was wrong and what the
+# change does about it - see: git tag -l --format='%(contents)' v4.1.2-r8
+#
+# Lines starting with # are ignored. An empty message aborts the release.
+EOF
+    "${EDITOR:-vi}" "$template"
+    grep -v '^#' "$template" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$template.clean"
+    [ -s "$template.clean" ] || die "Empty message, aborting."
+    head -1 "$template.clean" | grep -q "^Release $VERSION: ." \
+        || die "First line must be '$SUBJECT<summary>'"
+    git tag -a "$VERSION" -F "$template.clean"
+    rm -f "$template.clean"
 fi
 
-echo ""
-echo -e "${GREEN}✨ Release script completed!${NC}" 
+ok "Created annotated tag $VERSION"
+echo
+git tag -l --format='%(contents)' "$VERSION" | head -20
+echo
+echo -e "${YELLOW}Not pushed.${NC} Pushing this tag publishes latest/stable and rolls it to the cluster."
+echo -e "When you are ready:"
+echo -e "    ${BLUE}git push origin $VERSION${NC}"
+echo
+echo -e "To undo before pushing:"
+echo -e "    ${BLUE}git tag -d $VERSION${NC}"
