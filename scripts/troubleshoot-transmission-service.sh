@@ -112,7 +112,7 @@ CONTAINER_ID=$(sudo docker ps -q --filter "name=transmission" 2>/dev/null)
 if [ -n "$CONTAINER_ID" ]; then
     echo "✅ Transmission container found: $CONTAINER_ID"
     echo "Recent container logs:"
-    sudo docker logs --tail 30 $CONTAINER_ID
+    sudo docker logs --tail 30 "$CONTAINER_ID"
 else
     echo "❌ No running transmission container found"
     echo "Checking stopped containers:"

@@ -31,7 +31,8 @@ log() {
     local level="$1"
     shift
     local message="$*"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     # Output to stderr and log file, but NOT stdout to avoid interfering with function returns
     echo "[$timestamp] [$level] $message" | tee -a "$HEALTH_LOG_FILE" >&2
 }
@@ -40,7 +41,8 @@ log() {
 record_metric() {
     local metric_name="$1"
     local value="$2"
-    local timestamp=$(date +%s)
+    local timestamp
+    timestamp=$(date +%s)
     
     if [ "$METRICS_ENABLED" = "true" ]; then
         echo "transmissionvpn_${metric_name} ${value} ${timestamp}" >> "$METRICS_FILE"
@@ -60,13 +62,15 @@ log "INFO" "Starting enhanced healthcheck..."
 
 # Function to check Transmission status
 check_transmission() {
-    local start_time=$(date +%s%N)
+    local start_time
+    start_time=$(date +%s%N)
     
     log "DEBUG" "Checking Transmission web interface..."
     
     # Check if Transmission web interface is responding
     if curl -sSf http://localhost:9091/transmission/web/ > /dev/null 2>&1; then
-        local end_time=$(date +%s%N)
+        local end_time
+        end_time=$(date +%s%N)
         local response_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
         
         log "INFO" "Transmission web interface is responding (${response_time}ms)"
@@ -75,8 +79,7 @@ check_transmission() {
         
         # Additional check: Get session stats if possible
         if command -v transmission-remote >/dev/null 2>&1; then
-            local session_info
-            if session_info=$(transmission-remote localhost:9091 -si 2>/dev/null); then
+            if transmission-remote localhost:9091 -si >/dev/null 2>&1; then
                 # Extract some basic stats
                 local current_torrents
                 current_torrents=$(transmission-remote localhost:9091 -l 2>/dev/null | wc -l)
@@ -182,13 +185,15 @@ ping_host_via_vpn() {
 # Function to check VPN connectivity
 check_vpn_connectivity() {
     local vpn_if="$1"
-    local start_time=$(date +%s%N)
+    local start_time
+    start_time=$(date +%s%N)
 
     log "DEBUG" "Testing VPN connectivity to $HEALTH_CHECK_HOST through $vpn_if"
 
     # Ping test through VPN interface (multi-packet; any reply = healthy)
     if ping_host_via_vpn "$vpn_if" "$HEALTH_CHECK_HOST"; then
-        local end_time=$(date +%s%N)
+        local end_time
+        end_time=$(date +%s%N)
         local ping_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
 
         log "INFO" "VPN connectivity test successful (${ping_time}ms)"
@@ -202,7 +207,8 @@ check_vpn_connectivity() {
     if [ -n "$HEALTH_CHECK_HOST_FALLBACK" ]; then
         log "WARN" "Primary connectivity test to $HEALTH_CHECK_HOST failed, trying fallback $HEALTH_CHECK_HOST_FALLBACK"
         if ping_host_via_vpn "$vpn_if" "$HEALTH_CHECK_HOST_FALLBACK"; then
-            local end_time=$(date +%s%N)
+            local end_time
+            end_time=$(date +%s%N)
             local ping_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
 
             log "INFO" "VPN connectivity test successful via fallback $HEALTH_CHECK_HOST_FALLBACK (${ping_time}ms)"
@@ -326,8 +332,10 @@ collect_system_metrics() {
         for iface in /sys/class/net/*; do
             iface=$(basename "$iface")
             if [ -f "/sys/class/net/$iface/statistics/rx_bytes" ]; then
-                local rx=$(cat "/sys/class/net/$iface/statistics/rx_bytes")
-                local tx=$(cat "/sys/class/net/$iface/statistics/tx_bytes")
+                local rx
+                rx=$(cat "/sys/class/net/$iface/statistics/rx_bytes")
+                local tx
+                tx=$(cat "/sys/class/net/$iface/statistics/tx_bytes")
                 total_rx=$((total_rx + rx))
                 total_tx=$((total_tx + tx))
             fi

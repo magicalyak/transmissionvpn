@@ -48,7 +48,8 @@ log() {
 }
 
 log_restart() {
-    local message="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+    local message
+    message="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
     echo "$message" >> "$RESTART_LOG" 2>/dev/null || true
     log "$*"
 }
@@ -101,7 +102,8 @@ send_notification() {
         return 0
     fi
 
-    local payload="{\"event\":\"$event\",\"message\":\"$message\",\"timestamp\":\"$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')\",\"container\":\"transmissionvpn\"}"
+    local payload
+    payload="{\"event\":\"$event\",\"message\":\"$message\",\"timestamp\":\"$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')\",\"container\":\"transmissionvpn\"}"
 
     curl -X POST \
          -H "Content-Type: application/json" \
@@ -166,6 +168,8 @@ enforce_killswitch() {
     # Allow VPN server traffic so OpenVPN/WireGuard can reconnect
     if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
         local ovpn_config="${VPN_CONFIG:-/config/openvpn/*.ovpn}"
+        # VPN_CONFIG may be a glob pattern, so the expansion here is deliberate.
+        # shellcheck disable=SC2012,SC2086
         ovpn_config=$(ls $ovpn_config 2>/dev/null | head -1)
         if [ -f "$ovpn_config" ]; then
             local vpn_server vpn_port vpn_proto
@@ -276,6 +280,8 @@ attempt_vpn_restart() {
 
     # Temporarily allow VPN server traffic through killswitch for reconnection
     local ovpn_config="${VPN_CONFIG:-/config/openvpn/*.ovpn}"
+    # VPN_CONFIG may be a glob pattern, so the expansion here is deliberate.
+    # shellcheck disable=SC2012,SC2086
     ovpn_config=$(ls $ovpn_config 2>/dev/null | head -1)
     if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$ovpn_config" ]; then
         local vpn_server vpn_port vpn_proto
@@ -475,7 +481,7 @@ while true; do
         CONSECUTIVE_HEALTHY=0
         log "VPN health check failed ($FAILURE_COUNT/$VPN_MAX_FAILURES)"
 
-        if [ $FAILURE_COUNT -ge $VPN_MAX_FAILURES ]; then
+        if [ "$FAILURE_COUNT" -ge "$VPN_MAX_FAILURES" ]; then
             log "CRITICAL: VPN failed after $VPN_MAX_FAILURES consecutive checks"
 
             # Stop Transmission immediately
