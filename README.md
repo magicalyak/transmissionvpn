@@ -226,7 +226,7 @@ Open <http://localhost:9091> in your browser.
 ./scripts/verify-fixes.sh
 
 # Or manually check
-docker exec transmissionvpn /root/healthcheck-fixed.sh
+docker exec transmissionvpn /root/healthcheck.sh
 ```
 
 ## 📊 Monitoring & Metrics

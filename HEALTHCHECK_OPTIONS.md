@@ -1,209 +1,128 @@
-# TransmissionVPN Healthcheck Options
+# TransmissionVPN Healthcheck
 
-You're absolutely right that VPN status should be included in health checks! We now provide **three different healthcheck approaches** to suit different needs:
+The image ships **one** healthcheck, `/root/healthcheck.sh`, and wires it up itself in the
+Dockerfile:
 
-## 🎯 **Option 1: Smart Healthcheck (Recommended)**
+```dockerfile
+HEALTHCHECK --interval=1m --timeout=10s --start-period=2m --retries=3 \
+  CMD /root/healthcheck.sh
+```
 
-**File**: `root/healthcheck-smart.sh`
+You do **not** need a `healthcheck:` block in your `docker-compose.yml`. If you don't
+define one, you get the above.
 
-**Best for**: Production environments where VPN is critical but you want intelligent handling of temporary VPN issues.
+> **If you are copying an older compose file:** earlier versions of this repo documented
+> `/root/healthcheck-smart.sh` and `/root/healthcheck-fixed.sh`. Those scripts no longer
+> exist in the image. A `healthcheck:` block pointing at either one fails on every run, so
+> the container reports `unhealthy` forever regardless of its actual state. Remove the
+> block, or point it at `/root/healthcheck.sh`.
 
-### Features:
-- ✅ **Monitors both Transmission AND VPN**
-- ✅ **Grace period for VPN reconnection** (default: 5 minutes)
-- ✅ **Configurable VPN requirement** via environment variables
-- ✅ **Detailed logging and metrics**
-- ✅ **Smart failure handling**
+## What it checks
 
-### Configuration:
+In order, stopping at the first failure that determines the exit code:
+
+1. **Transmission** is responding on its RPC port.
+2. **VPN interface** exists and is up (read from `/tmp/vpn_interface_name`).
+3. **VPN connectivity** — ICMP to `HEALTH_CHECK_HOST`, then `HEALTH_CHECK_HOST_FALLBACK`.
+   A failure is recorded only when *both* hosts fail, so one host rate-limiting ICMP
+   cannot mark the container unhealthy on its own.
+4. **DNS resolution** through the tunnel.
+5. **IP leak** and **DNS leak** detection — both opt-in, off by default.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | All checks passed |
+| `1` | Transmission is down |
+| `2` | VPN interface is down |
+| `3` | VPN interface is missing |
+| `4` | VPN connectivity failed (both probe hosts) |
+| `5` | DNS resolution failed |
+| `6` | IP leak detected |
+
+Docker only distinguishes zero from non-zero, so all of these show as `unhealthy`. The
+specific code is useful when running the script by hand.
+
+### Behaviour
+
+- **VPN up + Transmission up** → healthy
+- **VPN down** → unhealthy immediately; there is no grace period
+- **Transmission down** → unhealthy
+
+The `--start-period=2m` in the Dockerfile is what covers startup: failures during the
+first two minutes do not count against the retry budget, which is enough for the tunnel to
+come up. Once past that, a VPN failure marks the container unhealthy on the next check.
+
+## Configuration
+
+All optional, all read from the environment:
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `HEALTH_CHECK_HOST` | `1.1.1.1` | Primary ICMP probe target |
+| `HEALTH_CHECK_HOST_FALLBACK` | `9.9.9.9` | Secondary probe; set empty to disable |
+| `CHECK_IP_LEAK` | `false` | Compare external IP against the tunnel |
+| `CHECK_DNS_LEAK` | `false` | Check resolvers in use |
+| `METRICS_ENABLED` | `false` | Write metrics to `/tmp/metrics.txt` |
+
+Avoid Google anycast addresses (`8.8.8.8`) as `HEALTH_CHECK_HOST`: they aggressively
+rate-limit ICMP from VPN exit IPs, which used to false-fail this check.
+
 ```yaml
-# docker-compose.yml
-healthcheck:
-  test: ["CMD", "/root/healthcheck-smart.sh"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-  start_period: 60s
-
-# Environment variables
 environment:
-  - VPN_HEALTH_REQUIRED=true        # Default: true
-  - VPN_GRACE_PERIOD=300            # Default: 300 seconds (5 minutes)
-  - HEALTH_CHECK_HOST=1.1.1.1       # Default: 1.1.1.1 (Cloudflare; avoid 8.8.8.8 - it rate-limits ICMP)
-  - HEALTH_CHECK_HOST_FALLBACK=9.9.9.9  # Default: 9.9.9.9; only fails if both hosts fail; empty to disable
-  - METRICS_ENABLED=true            # Enable detailed metrics
+  - HEALTH_CHECK_HOST=1.1.1.1
+  - HEALTH_CHECK_HOST_FALLBACK=9.9.9.9
+  - CHECK_IP_LEAK=true
+  - METRICS_ENABLED=true
 ```
 
-### Behavior:
-- **VPN Up + Transmission Up** → ✅ Healthy
-- **VPN Down + Transmission Up** → ⏳ Healthy (within grace period) → ❌ Unhealthy (after grace period)
-- **VPN Up + Transmission Down** → ❌ Unhealthy
-- **VPN Down + Transmission Down** → ❌ Unhealthy
+## Relaxing or replacing it
 
----
+**Transmission-only** — never unhealthy because of the VPN. Useful in development, but note
+that it will report healthy while the tunnel is down:
 
-## 🔧 **Option 2: Transmission-Only Healthcheck**
-
-**File**: `root/healthcheck-fixed.sh`
-
-**Best for**: Development environments or when VPN issues shouldn't affect container orchestration.
-
-### Features:
-- ✅ **Monitors only Transmission**
-- ✅ **VPN status is informational only**
-- ✅ **Simple and reliable**
-- ✅ **Never fails due to VPN issues**
-
-### Configuration:
 ```yaml
-# docker-compose.yml
 healthcheck:
-  test: ["CMD", "/root/healthcheck-fixed.sh"]
+  test: ["CMD-SHELL", "curl -fsS http://localhost:9091/transmission/web/ >/dev/null || exit 1"]
   interval: 30s
   timeout: 10s
   retries: 3
   start_period: 60s
 ```
 
-### Behavior:
-- **Transmission Up** → ✅ Healthy (regardless of VPN status)
-- **Transmission Down** → ❌ Unhealthy
+**Off entirely:**
 
----
-
-## ⚡ **Option 3: Original Healthcheck**
-
-**File**: `root/healthcheck.sh`
-
-**Best for**: Strict environments where any VPN issue should immediately mark container as unhealthy.
-
-### Features:
-- ✅ **Monitors both Transmission AND VPN**
-- ❌ **No grace period** - immediate failure on VPN issues
-- ✅ **Comprehensive checks** (DNS leak, IP leak, etc.)
-
-### Configuration:
-```yaml
-# docker-compose.yml
-healthcheck:
-  test: ["CMD", "/root/healthcheck.sh"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-  start_period: 60s
-```
-
-### Behavior:
-- **VPN Up + Transmission Up** → ✅ Healthy
-- **VPN Down** → ❌ Immediately Unhealthy
-- **Transmission Down** → ❌ Unhealthy
-
----
-
-## 🚀 **Quick Setup Guide**
-
-### For Most Users (Smart Healthcheck):
-```yaml
-version: "3.8"
-services:
-  transmissionvpn:
-    image: magicalyak/transmissionvpn:latest
-    container_name: transmissionvpn
-    # ... other config ...
-    environment:
-      # VPN and Transmission config
-      - VPN_CLIENT=openvpn
-      - VPN_CONFIG=/config/openvpn/provider.ovpn
-      - VPN_USER=your_username
-      - VPN_PASS=your_password
-      
-      # Smart healthcheck config
-      - VPN_HEALTH_REQUIRED=true
-      - VPN_GRACE_PERIOD=300
-      - METRICS_ENABLED=true
-      
-    healthcheck:
-      test: ["CMD", "/root/healthcheck-smart.sh"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-```
-
-### For Development (Transmission-Only):
 ```yaml
 healthcheck:
-  test: ["CMD", "/root/healthcheck-fixed.sh"]
-  interval: 30s
-  timeout: 10s
-  retries: 3
-  start_period: 60s
+  disable: true
 ```
 
-### For Strict Monitoring (Original):
+**Longer startup window** — keep the built-in check but give a slow provider more room:
+
 ```yaml
 healthcheck:
   test: ["CMD", "/root/healthcheck.sh"]
-  interval: 30s
+  interval: 1m
   timeout: 10s
   retries: 3
-  start_period: 60s
+  start_period: 5m
 ```
 
----
-
-## 📊 **Comparison Table**
-
-| Feature | Smart | Transmission-Only | Original |
-|---------|-------|-------------------|----------|
-| **Monitors Transmission** | ✅ | ✅ | ✅ |
-| **Monitors VPN** | ✅ | ℹ️ Info only | ✅ |
-| **VPN Grace Period** | ✅ Configurable | ❌ N/A | ❌ No |
-| **Configurable Behavior** | ✅ Yes | ❌ No | ❌ No |
-| **Detailed Metrics** | ✅ Yes | ✅ Basic | ✅ Yes |
-| **Production Ready** | ✅ Yes | ⚠️ Limited | ⚠️ Strict |
-| **Development Friendly** | ✅ Yes | ✅ Yes | ❌ No |
-
----
-
-## 🔍 **Testing Your Healthcheck**
+## Testing
 
 ```bash
-# Test the smart healthcheck
-docker exec transmissionvpn /root/healthcheck-smart.sh
-echo "Exit code: $?"
+# Run it by hand and see the specific exit code
+docker exec transmissionvpn /root/healthcheck.sh; echo "Exit code: $?"
 
-# Test transmission-only healthcheck
-docker exec transmissionvpn /root/healthcheck-fixed.sh
-echo "Exit code: $?"
+# Why it failed
+docker exec transmissionvpn tail -20 /tmp/healthcheck.log
 
-# Test original healthcheck
-docker exec transmissionvpn /root/healthcheck.sh
-echo "Exit code: $?"
-
-# Check health logs
-docker exec transmissionvpn tail -10 /tmp/healthcheck.log
-
-# Monitor health status
-watch 'docker ps --format "table {{.Names}}\t{{.Status}}"'
+# Current status
+docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 
----
-
-## 🎯 **Recommendation**
-
-**Use the Smart Healthcheck** (`healthcheck-smart.sh`) for most scenarios because:
-
-1. **Includes VPN monitoring** (as you correctly pointed out)
-2. **Handles temporary VPN issues gracefully** with configurable grace periods
-3. **Prevents unnecessary container restarts** during brief VPN reconnections
-4. **Provides detailed logging and metrics** for troubleshooting
-5. **Configurable behavior** to suit different environments
-
-The grace period is especially important because VPN connections can have brief interruptions during:
-- VPN server maintenance
-- Network connectivity issues
-- Container restarts
-- OpenVPN reconnection attempts
-
-With the smart healthcheck, your container won't be marked unhealthy during these brief interruptions, but will fail if the VPN is down for an extended period (configurable via `VPN_GRACE_PERIOD`). 
+If the healthcheck fails at startup and never recovers, the VPN itself is the more likely
+problem — check `docker exec transmissionvpn cat /tmp/vpn-setup.log`, which records why
+`vpn-setup.sh` did or did not finish. That file is truncated on every container start, so
+read it from the run you are actually debugging.

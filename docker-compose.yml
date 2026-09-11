@@ -43,15 +43,9 @@ services:
     # Restart policy
     restart: unless-stopped
     
-    # Smart health check - monitors both Transmission AND VPN with grace period
-    # Use /root/healthcheck-smart.sh (recommended), /root/healthcheck-fixed.sh (Transmission-only), 
-    # or /root/healthcheck.sh (strict VPN monitoring)
-    healthcheck:
-      test: ["CMD", "/root/healthcheck-smart.sh"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    # Health check: the image already defines one (/root/healthcheck.sh, with a 2 minute
+    # start period), so no healthcheck: block is needed here. See HEALTHCHECK_OPTIONS.md
+    # to override it, relax it to Transmission-only, or turn it off.
 
 # Notes on Built-in Custom Metrics:
 # The container now includes a built-in custom metrics server for Prometheus.

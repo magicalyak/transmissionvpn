@@ -15,9 +15,16 @@ date
 mkdir -p /tmp
 chmod 777 /tmp
 
-# Log all output of this script to a file in /tmp for easier debugging via docker exec
-exec &> /tmp/vpn-setup.log
-# Also print to stdout/stderr for s6 logging
+# Log all output of this script to /tmp/vpn-setup.log for debugging via docker exec,
+# and to stdout/stderr so it also lands in `docker logs`.
+#
+# Do NOT point stdout at the file before setting up the tee. `exec &> file` followed by
+# `exec > >(tee -a file)` starts each tee with the file already installed as its own
+# stdout, so tee writes the data back into the file instead of to the console and nothing
+# after this point ever reaches `docker logs`. That made every diagnostic this script
+# prints - including the `set -e` abort path - invisible from outside the container.
+# Truncate the file up front, then tee to the console fds that are still attached.
+: > /tmp/vpn-setup.log
 exec > >(tee -a /tmp/vpn-setup.log) 2> >(tee -a /tmp/vpn-setup.log >&2)
 
 if [ "${DEBUG,,}" = "true" ]; then
