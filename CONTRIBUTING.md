@@ -93,6 +93,12 @@ Thank you for your interest in contributing to TransmissionVPN! This document pr
 - Use meaningful variable names with proper quoting
 - Include error handling and logging
 
+Run `./scripts/shellcheck-all.sh` before opening a pull request. CI runs the
+same script and fails on any finding, so the tree stays clean at ShellCheck's
+default severity. s6 service scripts use the `#!/command/with-contenv bash`
+shebang, which ShellCheck cannot recognise; they carry `# shellcheck shell=bash`
+on line 2 so it can still parse them.
+
 ### Docker
 
 - Multi-stage builds when appropriate

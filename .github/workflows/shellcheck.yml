@@ -1,0 +1,36 @@
+---
+name: ShellCheck
+
+# CONTRIBUTING.md asks contributors to follow ShellCheck's recommendations.
+# This job enforces that. The tree is clean at ShellCheck's default severity,
+# so any finding here is a regression introduced by the change under review.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install ShellCheck
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+
+      - name: Run ShellCheck
+        run: ./scripts/shellcheck-all.sh
