@@ -753,8 +753,10 @@ def generate_prometheus_metrics():
         # and can fire an alert.
         #
         # Use transmissionvpn_pf_enabled / _pf_port / _pf_rules_present below,
-        # which say what they mean. Slated for removal in the next major.
-        metrics.append("# HELP transmissionvpn_port_forwarding_available DEPRECATED - duplicate of transmissionvpn_port_open; use transmissionvpn_pf_enabled and transmissionvpn_pf_rules_present")
+        # which say what they mean. Slated for removal in the first release built on a
+        # new upstream Transmission version (the first tag that is not v4.1.2-rN);
+        # this project has no major version of its own - see VERSIONING.md.
+        metrics.append("# HELP transmissionvpn_port_forwarding_available DEPRECATED - duplicate of transmissionvpn_port_open; use transmissionvpn_pf_enabled and transmissionvpn_pf_rules_present; removed in the first release on a new upstream Transmission version")
         metrics.append("# TYPE transmissionvpn_port_forwarding_available gauge")
         port_forwarding_available = 1 if health_data.get('transmission', {}).get('port_test', False) else 0
         metrics.append(f"transmissionvpn_port_forwarding_available {port_forwarding_available}")
@@ -798,8 +800,9 @@ def generate_prometheus_metrics():
         # therefore reads 0 whenever the tunnel is down or the port happens to
         # be closed, on a provider that does support forwarding. The capability
         # question is answered by transmissionvpn_pf_enabled. Kept unchanged for
-        # existing scrapers; slated for removal in the next major.
-        metrics.append("# HELP transmissionvpn_vpn_supports_port_forwarding DEPRECATED - reports live VPN and port state, not provider capability; use transmissionvpn_pf_enabled")
+        # existing scrapers; slated for removal in the first release built on a new
+        # upstream Transmission version (the first tag that is not v4.1.2-rN).
+        metrics.append("# HELP transmissionvpn_vpn_supports_port_forwarding DEPRECATED - reports live VPN and port state, not provider capability; use transmissionvpn_pf_enabled; removed in the first release on a new upstream Transmission version")
         metrics.append("# TYPE transmissionvpn_vpn_supports_port_forwarding gauge")
         vpn_supports_pf = 1 if (health_data.get('vpn', {}).get('connected', False) and health_data.get('transmission', {}).get('port_test', False)) else 0
         metrics.append(f"transmissionvpn_vpn_supports_port_forwarding {vpn_supports_pf}")
