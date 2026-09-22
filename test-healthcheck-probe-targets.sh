@@ -21,6 +21,22 @@ FAILED=false
 log_pass() { echo -e "${GREEN}✓${NC} $1"; }
 log_fail() { echo -e "${RED}✗${NC} $1"; FAILED=true; }
 
+expect_match() {
+    if echo "$1" | grep -q "$2"; then
+        log_pass "$3"
+    else
+        log_fail "$3 - expected /$2/ in: $1"
+    fi
+}
+
+expect_no_match() {
+    if echo "$1" | grep -q "$2"; then
+        log_fail "$3 - did not expect /$2/ in: $1"
+    else
+        log_pass "$3"
+    fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HEALTHCHECK="$SCRIPT_DIR/root/healthcheck.sh"
 
@@ -84,42 +100,41 @@ echo "1. is_ip_address distinguishes addresses from names..."
 ip_check() {
     bash -c "source '$WORK/is_ip_address.sh'; if is_ip_address '$1'; then echo yes; else echo no; fi"
 }
-[ "$(ip_check 1.1.1.1)" = "yes" ] && log_pass "1.1.1.1 is an address" || log_fail "1.1.1.1 should be an address"
-[ "$(ip_check 9.9.9.9)" = "yes" ] && log_pass "9.9.9.9 is an address" || log_fail "9.9.9.9 should be an address"
-[ "$(ip_check 2606:4700:4700::1111)" = "yes" ] && log_pass "IPv6 literal is an address" || log_fail "IPv6 should be an address"
-[ "$(ip_check one.one.one.one)" = "no" ] && log_pass "one.one.one.one is a name" || log_fail "one.one.one.one should be a name"
-[ "$(ip_check google.com)" = "no" ] && log_pass "google.com is a name" || log_fail "google.com should be a name"
+expect_ip() {
+    if [ "$(ip_check "$1")" = "$2" ]; then
+        log_pass "$3"
+    else
+        log_fail "$3 (got $(ip_check "$1"))"
+    fi
+}
+expect_ip 1.1.1.1 yes "1.1.1.1 is an address"
+expect_ip 9.9.9.9 yes "9.9.9.9 is an address"
+expect_ip 2606:4700:4700::1111 yes "IPv6 literal is an address"
+expect_ip one.one.one.one no "one.one.one.one is a name"
+expect_ip google.com no "google.com is a name"
 echo ""
 
 echo "2. check_dns no longer passes on an address it cannot resolve..."
 out=$(run_case check_dns DNS_CHECK_HOST=1.1.1.1 RESOLVABLE="")
-echo "$out" | grep -q "^RC=0" \
-    && log_pass "Does not fail the container over an unusable setting" \
-    || log_fail "Expected rc 0, got: $out"
-echo "$out" | grep -q "WARN.*cannot test resolution" \
-    && log_pass "Says the check cannot test resolution" \
-    || log_fail "Expected a WARN about an IP target, got: $out"
-echo "$out" | grep -q "is working" \
-    && log_fail "Must not claim DNS is working when nothing was resolved" \
-    || log_pass "Does not claim a success it never tested"
+expect_match "$out" "^RC=0" "Does not fail the container over an unusable setting"
+expect_match "$out" "WARN.*cannot test resolution" "Says the check cannot test resolution"
+expect_no_match "$out" "is working" "Does not claim a success it never tested"
 echo ""
 
 echo "3. check_dns actually resolves a name..."
 out=$(run_case check_dns DNS_CHECK_HOST=one.one.one.one RESOLVABLE="one.one.one.one")
-echo "$out" | grep -q "^RC=0" && log_pass "Succeeds when the name resolves" || log_fail "Expected rc 0, got: $out"
-echo "$out" | grep -q "is working" && log_pass "Reports the working resolution" || log_fail "Expected a success log, got: $out"
+expect_match "$out" "^RC=0" "Succeeds when the name resolves"
+expect_match "$out" "is working" "Reports the working resolution"
 
 out=$(run_case check_dns DNS_CHECK_HOST=one.one.one.one RESOLVABLE="")
-echo "$out" | grep -q "^RC=1" && log_pass "Fails when the name does not resolve" || log_fail "Expected rc 1, got: $out"
-echo "$out" | grep -q "ERROR" && log_pass "Reports the failure" || log_fail "Expected an ERROR log, got: $out"
+expect_match "$out" "^RC=1" "Fails when the name does not resolve"
+expect_match "$out" "ERROR" "Reports the failure"
 echo ""
 
 echo "4. check_dns can be disabled..."
 out=$(run_case check_dns DNS_CHECK_HOST= RESOLVABLE="")
-echo "$out" | grep -q "^RC=0" && log_pass "Empty DNS_CHECK_HOST skips the check" || log_fail "Expected rc 0, got: $out"
-echo "$out" | grep -q "WARN" \
-    && log_fail "Disabling it deliberately should not warn" \
-    || log_pass "No warning when deliberately disabled"
+expect_match "$out" "^RC=0" "Empty DNS_CHECK_HOST skips the check"
+expect_no_match "$out" "WARN" "No warning when deliberately disabled"
 echo ""
 
 echo "5. A private probe target is replaced, loudly..."

@@ -15,9 +15,16 @@ if ! command -v shellcheck >/dev/null 2>&1; then
     exit 127
 fi
 
-# Tracked shell scripts: *.sh plus the extensionless s6 service scripts.
+# Shell scripts: *.sh plus the extensionless s6 service scripts.
+#
+# --others --exclude-standard includes files that are not committed yet, so a
+# newly added script is checked on the run before you commit it rather than
+# first failing in CI. Without it a local run silently skips exactly the file
+# you are working on. In CI the checkout is clean, so this lists the same set
+# as --cached alone.
 list_scripts() {
-    git ls-files -- '*.sh' 'root_s6/*/run' 'root_s6/*/finish' | sort
+    git ls-files --cached --others --exclude-standard \
+        -- '*.sh' 'root_s6/*/run' 'root_s6/*/finish' | sort -u
 }
 
 count=$(list_scripts | wc -l | tr -d ' ')
