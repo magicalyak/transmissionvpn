@@ -612,14 +612,83 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Draft release notes
-        id: draft_release
-        uses: release-drafter/release-drafter@v7
-        with:
-          config-name: release-drafter.yml
-          publish: true
+      # Publish the release for the tag that was actually pushed, with that
+      # tag's annotation as the body.
+      #
+      # release-drafter used to do this and got both halves wrong. Its config
+      # set name-template and tag-template to 'v$NEXT_PATCH_VERSION', so it
+      # ignored the pushed tag and invented a version by incrementing the
+      # previous release's name: pushing v4.1.2-r9 published a release called
+      # v4.1.16 and created that as a second git tag on the same commit. The
+      # body then advertised `magicalyak/transmissionvpn:4.1.16`, which no
+      # build has ever produced - see the tag rules in the `prepare` job, where
+      # every image tag is matched out of v(\d+\.\d+\.\d+-r\d+), so only the
+      # -rN form exists. So every release from v4.1.3 onward - fourteen of
+      # them, up to and including v4.1.16 - shipped a `docker pull` command
+      # that 404s, and the same thing happened across v4.0.11 to v4.0.25
+      # before that. The converse is the other half of the damage: because
+      # the drafter consumed each tag push and published its invention
+      # instead, no -rN tag ever got a release, so not one version that
+      # actually ships was ever published here.
+      #
+      # --verify-tag is the guard against a recurrence: gh refuses to create
+      # the release if the tag does not already exist, so this step can never
+      # invent one.
+      - name: Publish release from the pushed tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
 
-      - name: Display Release URL
-        run: echo "Release URL is ${{ steps.draft_release.outputs.html_url }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to do."
+            exit 0
+          fi
+
+          # The image tag is the git tag without the leading v.
+          image_tag="${TAG#v}"
+
+          title=$(git tag -l --format='%(contents:subject)' "$TAG")
+          body=$(git tag -l --format='%(contents:body)' "$TAG")
+          [ -n "$title" ] || title="$TAG"
+
+          notes=$(mktemp)
+          if [ -n "$body" ]; then
+            printf '%s\n' "$body" > "$notes"
+          else
+            # Reached only when there is no text to use at all. Note that a
+            # lightweight tag does not land here: for one of those, git
+            # resolves %(contents:...) against the commit it points at, so
+            # $body is the commit message body and gets used as the notes.
+            echo "No annotation on $TAG; generating notes from commits." >&2
+            gh api "repos/${REPO}/releases/generate-notes" \
+              -f tag_name="$TAG" --jq .body > "$notes"
+          fi
+
+          # The single quotes below are deliberate: every backtick here is
+          # markdown (a code span or a fence), not a command substitution, and
+          # must reach the release body literally. A heredoc is not an option
+          # inside a YAML block scalar, since its body would have to be
+          # indented and the indentation would show up in the rendered notes.
+          # shellcheck disable=SC2016
+          {
+            echo
+            echo '## Docker images'
+            echo
+            echo '```'
+            echo "docker pull magicalyak/transmissionvpn:${image_tag}"
+            echo "docker pull ghcr.io/magicalyak/transmissionvpn:${image_tag}"
+            echo '```'
+            echo
+            echo 'Also published as `latest` and `stable`, and as the rolling'
+            echo 'major/minor/patch tags. Architectures: `linux/amd64`, `linux/arm64`.'
+          } >> "$notes"
+
+          gh release create "$TAG" \
+            --title "$title" \
+            --notes-file "$notes" \
+            --verify-tag
+
+          echo "Release URL: $(gh release view "$TAG" --json url --jq .url)"
