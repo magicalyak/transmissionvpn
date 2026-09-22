@@ -623,8 +623,13 @@ jobs:
       # body then advertised `magicalyak/transmissionvpn:4.1.16`, which no
       # build has ever produced - see the tag rules in the `prepare` job, where
       # every image tag is matched out of v(\d+\.\d+\.\d+-r\d+), so only the
-      # -rN form exists. Every release from v4.1.10 to v4.1.16 shipped a
-      # `docker pull` command that 404s.
+      # -rN form exists. So every release from v4.1.3 onward - fourteen of
+      # them, up to and including v4.1.16 - shipped a `docker pull` command
+      # that 404s, and the same thing happened across v4.0.11 to v4.0.25
+      # before that. The converse is the other half of the damage: because
+      # the drafter consumed each tag push and published its invention
+      # instead, no -rN tag ever got a release, so not one version that
+      # actually ships was ever published here.
       #
       # --verify-tag is the guard against a recurrence: gh refuses to create
       # the release if the tag does not already exist, so this step can never
@@ -653,7 +658,10 @@ jobs:
           if [ -n "$body" ]; then
             printf '%s\n' "$body" > "$notes"
           else
-            # Lightweight tag, or one cut without an annotation.
+            # Reached only when there is no text to use at all. Note that a
+            # lightweight tag does not land here: for one of those, git
+            # resolves %(contents:...) against the commit it points at, so
+            # $body is the commit message body and gets used as the notes.
             echo "No annotation on $TAG; generating notes from commits." >&2
             gh api "repos/${REPO}/releases/generate-notes" \
               -f tag_name="$TAG" --jq .body > "$notes"
