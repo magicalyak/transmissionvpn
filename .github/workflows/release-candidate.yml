@@ -332,14 +332,15 @@ jobs:
 
       - name: Test RC platform-specific optimizations
         run: |
-          # Test architecture detection
-          docker run --rm --platform ${{ matrix.platform }} \
+          # Test architecture detection (--entrypoint="" for the same reason as above)
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint="" \
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest \
             sh -c 'echo "RC Architecture: $(uname -m)" && echo "RC Platform: $(uname -s)" && (cat /proc/cpuinfo | grep -E "(processor|model name|Hardware|Revision)" | head -5 || echo "CPU info not available")'
 
       - name: Test RC custom metrics server
         run: |
           # Test that our custom metrics server is available in RC
-          docker run --rm --platform ${{ matrix.platform }} \
+          # (--entrypoint="" for the same reason as above)
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint="" \
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest \
             sh -c 'ls -la /usr/local/bin/transmission-metrics-server.py && python3 -c "import requests; print(\"Python requests library available in RC\")"' 
