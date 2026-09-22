@@ -3,9 +3,15 @@
 
 The point of these is the deprecation contract. transmissionvpn_port_forwarding_available
 and transmissionvpn_vpn_supports_port_forwarding were both found to report something
-other than what their names promise. They were deprecated rather than removed or
-redefined, which is only a safe choice if their emitted values stay exactly as they
-were - these tests pin that, so a later cleanup cannot quietly change them.
+other than what their names promise. Rather than redefine them in place - which would
+silently change what a live series means - they were deprecated in v4.1.2-r5, kept
+emitting their original values, and their HELP text promised removal in the first
+release built on a new upstream Transmission version. That release is this one, so
+they are gone.
+
+These tests now pin their absence. Reintroducing either name, under its old meaning or
+a new one, should fail here: the whole argument for deprecating rather than redefining
+was that the name is unsalvageable.
 
 Run: python3 test-metrics-render.py
 """
@@ -82,37 +88,26 @@ def main():
            if not l.startswith('#') and l.strip() and len(l.split(' ')) != 2]
     check("every sample is 'name value'", bad, [])
 
-    print("\nDeprecated metrics still emit their original values")
-    check("port_forwarding_available tracks port_test when open",
-          series(text, 'transmissionvpn_port_forwarding_available'), '1')
-    check("it is still identical to port_open",
-          series(text, 'transmissionvpn_port_forwarding_available'),
-          series(text, 'transmissionvpn_port_open'))
-    check("vpn_supports_port_forwarding is 1 with VPN up and port open",
-          series(text, 'transmissionvpn_vpn_supports_port_forwarding'), '1')
+    print("\nThe deprecated metrics are gone")
+    for name in ('transmissionvpn_port_forwarding_available',
+                 'transmissionvpn_vpn_supports_port_forwarding'):
+        check(f"{name} emits no sample", series(text, name), None)
+        check(f"{name} declares no HELP", helptext(text, name), None)
+        check(f"{name} appears nowhere in the exposition", name in text, False)
+
+    print("\nRemoval did not disturb the metrics that replaced them")
+    check("port_open still tracks port_test when open",
+          series(text, 'transmissionvpn_port_open'), '1')
 
     closed = render(mod, port_test=False, vpn_connected=True)
     closed = closed if isinstance(closed, str) else "\n".join(closed)
-    check("port_forwarding_available follows port_test to 0",
-          series(closed, 'transmissionvpn_port_forwarding_available'), '0')
-    check("it remains identical to port_open",
-          series(closed, 'transmissionvpn_port_forwarding_available'),
-          series(closed, 'transmissionvpn_port_open'))
+    check("port_open follows port_test to 0",
+          series(closed, 'transmissionvpn_port_open'), '0')
 
     down = render(mod, port_test=True, vpn_connected=False)
     down = down if isinstance(down, str) else "\n".join(down)
-    check("vpn_supports_port_forwarding drops to 0 when the tunnel is down",
-          series(down, 'transmissionvpn_vpn_supports_port_forwarding'), '0')
-    check("even though pf_enabled still reports the real capability",
+    check("pf_enabled still reports the real capability with the tunnel down",
           series(down, 'transmissionvpn_pf_enabled'), '1')
-
-    print("\nThe deprecation is discoverable from the endpoint itself")
-    for name in ('transmissionvpn_port_forwarding_available',
-                 'transmissionvpn_vpn_supports_port_forwarding'):
-        check(f"{name} HELP says DEPRECATED",
-              (helptext(text, name) or '').startswith('DEPRECATED'), True)
-        check(f"{name} HELP names a replacement",
-              'transmissionvpn_pf_enabled' in (helptext(text, name) or ''), True)
 
     print("\nThe replacements say what they mean")
     check("pf_enabled reflects configuration", series(text, 'transmissionvpn_pf_enabled'), '1')

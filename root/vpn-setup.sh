@@ -438,7 +438,7 @@ start_wireguard() {
 # catch it. A non-zero /etc/cont-init.d script only stops the container when
 # S6_BEHAVIOUR_IF_STAGE2_FAILS=2, and that variable is set neither here nor in
 # lscr.io/linuxserver/transmission (verified against the image config for
-# 4.1.2-r0-ls349), so the default applies and the container stays up. That matches
+# 4.1.3-r0-ls362), so the default applies and the container stays up. That matches
 # what #33 and #36 both showed: setup aborted and the container kept running and
 # logging for minutes.
 #
