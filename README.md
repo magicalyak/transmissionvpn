@@ -656,10 +656,11 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `VPN_CHECK_INTERVAL` | Seconds between VPN health checks | `30` |
 | `VPN_MAX_FAILURES` | Max failures before stopping Transmission | `3` |
 | `VPN_INITIAL_DELAY` | Seconds to wait after VPN setup before monitoring | `15` |
-| `HEALTH_CHECK_HOST` | Primary host pinged through the VPN for connectivity checks. Cloudflare (`1.1.1.1`) answers ICMP reliably; avoid Google anycast IPs like `8.8.8.8`, which rate-limit/drop ICMP from VPN exit IPs and cause false failures | `1.1.1.1` |
+| `HEALTH_CHECK_HOST` | Primary host pinged through the VPN for connectivity checks. Use an **address**, not a name, so the probe tests reachability alone and does not also depend on DNS. Cloudflare (`1.1.1.1`) answers ICMP reliably; avoid Google anycast IPs like `8.8.8.8`, which rate-limit/drop ICMP from VPN exit IPs and cause false failures. A private address cannot be reached through the tunnel, so one is replaced with `1.1.1.1` and a warning | `1.1.1.1` |
 | `HEALTH_CHECK_HOST_FALLBACK` | Secondary host tried only if the primary fails. A connectivity failure is recorded only when both fail. Set empty to disable | `9.9.9.9` |
-| `CHECK_DNS` | Enable DNS resolution testing | `true` |
-| `CHECK_EXTERNAL_IP` | Verify external IP through VPN | `true` |
+| `DNS_CHECK_HOST` | Hostname resolved to verify DNS works. Must be a **name** — `getent` returns a literal address straight back without consulting a resolver, so an address here cannot test anything and is reported as such. Set empty to disable the DNS check | `one.one.one.one` |
+| `CHECK_DNS_LEAK` | Compare the resolver in use against the expected VPN DNS | `false` |
+| `CHECK_IP_LEAK` | Verify the external IP is the VPN's rather than the host's | `false` |
 | `AUTO_RESTART_VPN` | Auto-restart VPN on failure | `false` |
 
 ### Network Configuration

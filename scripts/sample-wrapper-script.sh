@@ -83,7 +83,8 @@ docker run -d \
     -e TRANSMISSION_RPC_PASSWORD="${TRANSMISSION_RPC_PASSWORD}" \
     -e VPN_HEALTH_REQUIRED="${VPN_HEALTH_REQUIRED:-true}" \
     -e VPN_GRACE_PERIOD="${VPN_GRACE_PERIOD:-300}" \
-    -e HEALTH_CHECK_HOST="${HEALTH_CHECK_HOST:-google.com}" \
+    -e HEALTH_CHECK_HOST="${HEALTH_CHECK_HOST:-1.1.1.1}" \
+    -e DNS_CHECK_HOST="${DNS_CHECK_HOST:-one.one.one.one}" \
     -e TZ="${TZ:-UTC}" \
     -e PUID="${PUID:-1000}" \
     -e PGID="${PGID:-1000}" \

@@ -41,6 +41,7 @@ ARG TRANSMISSION_BLOCKLIST_URL
 ARG TRANSMISSION_WEB_UI
 ARG TRANSMISSION_WEB_UI_AUTO
 ARG HEALTH_CHECK_HOST
+ARG DNS_CHECK_HOST
 ARG LOG_TO_STDOUT
 
 # Add ARG for built-in metrics
@@ -89,7 +90,13 @@ ENV TRANSMISSION_BLOCKLIST_URL=${TRANSMISSION_BLOCKLIST_URL:-}
 # Additional features from haugene compatibility
 ENV TRANSMISSION_WEB_UI=${TRANSMISSION_WEB_UI:-}
 ENV TRANSMISSION_WEB_UI_AUTO=${TRANSMISSION_WEB_UI_AUTO:-}
-ENV HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-google.com}
+# Connectivity probe target. An IP on purpose: the ping is then a pure
+# reachability test through the tunnel and does not also depend on DNS.
+ENV HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-1.1.1.1}
+# DNS probe target, kept separate because it must be a NAME. getent returns
+# success for a literal IP without resolving anything, so pointing the DNS
+# check at HEALTH_CHECK_HOST made it pass unconditionally.
+ENV DNS_CHECK_HOST=${DNS_CHECK_HOST:-one.one.one.one}
 ENV LOG_TO_STDOUT=${LOG_TO_STDOUT:-false}
 
 # Built-in custom metrics server settings
