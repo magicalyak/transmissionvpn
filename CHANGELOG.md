@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r1] - 2026-09-22
+
+First release built on upstream Transmission 4.1.3. The base image moves from `4.1.2-r0-ls349` (2026-06-16) to `4.1.3-r0-ls362` (2026-09-15); upstream left the 4.1.2 line on 2026-06-30, so this closes an 84-day gap.
+
+**Upgrade note.** This is the release the two deprecated metrics were scheduled to disappear in, and they have. If anything you run scrapes `transmissionvpn_port_forwarding_available` or `transmissionvpn_vpn_supports_port_forwarding`, it will stop receiving those series from this version - switch to `transmissionvpn_port_open` and the `transmissionvpn_pf_*` metrics. Nothing in this repository's dashboards or alerts used either name. Deployments tracking this image by tag also need their version pattern moved off `4.1.2-rN`, since `-rN` is a SemVer pre-release and cannot be ranked across the minor bump.
+
+### Changed
+- **Base image bumped to `lscr.io/linuxserver/transmission:4.1.3-r0-ls362`.** Upstream published its last 4.1.2 image on 2026-06-30 and has shipped only 4.1.3 since; this project stayed pinned to a 2026-06-16 base for 98 days. The fail-closed trap in `vpn-setup.sh` depends on `S6_BEHAVIOUR_IF_STAGE2_FAILS` being unset in the base image, which was verified against the old base in #45; that was re-verified against `4.1.3-r0-ls362` by reading the image config from the registry, and it remains unset (the image sets only `S6_CMD_WAIT_FOR_SERVICES_MAXTIME`, `S6_VERBOSITY` and `S6_STAGE2_HOOK`). The comment recording that verification now names the new base.
+
+### Removed
+- **`transmissionvpn_port_forwarding_available` and `transmissionvpn_vpn_supports_port_forwarding`.** Deprecated in v4.1.2-r9 (#44) with HELP text promising removal "in the first release on a new upstream Transmission version" - that release is this one. Neither reported what its name promised: the first duplicated `transmissionvpn_port_open`, and the second ANDed live VPN state with the live port test while reading as a static provider capability. They were deprecated rather than redefined so that the eventual change would be a clean disappearance rather than a live series whose meaning shifted underneath an alert; that is what this is. Use `transmissionvpn_port_open` for reachability and `transmissionvpn_pf_enabled` / `transmissionvpn_pf_rules_present` for forwarding state. `test-metrics-render.py`, which previously pinned their emitted values so a cleanup could not quietly change them, now pins their absence so neither name can be reintroduced.
+
 ## [v4.1.2-r9] - 2026-09-22
 
 Correctness release for the health check, and a round of removing things that looked live and were not. The two headline fixes in this release were silently broken for every user who did not work around them by hand: a default that the r2 notes said had changed but never did, and a DNS check that could not fail.

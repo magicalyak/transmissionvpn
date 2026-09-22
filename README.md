@@ -173,18 +173,18 @@ visible rather than silent:
 | `transmissionvpn_pf_state_age_seconds` | Age of the published rule state; grows without bound if the keepalive dies |
 | `transmissionvpn_port_open` | Transmission's `port-test` result (external reachability) |
 
-Two older metrics are **deprecated** and will be removed in the first release built on a new upstream
-Transmission version - that is, the first tag that is not `v4.1.2-rN`. This project has no major version of
-its own to reach: versions track upstream as `v{TRANSMISSION_VERSION}-r{PATCH}` (see `VERSIONING.md`), so an
-upstream bump is the only real compatibility boundary. Neither metric means what its
-name suggests, and both are better answered by the `pf_*` metrics above:
+Two older metrics were **removed in v4.1.3-r1**, on the schedule their HELP text had announced since
+v4.1.2-r5: the first release built on a new upstream Transmission version. Neither meant what its name
+suggested, and both are answered by the `pf_*` metrics above:
 
-| Deprecated metric | What it actually reports | Use instead |
+| Removed metric | What it actually reported | Use instead |
 |--------|--------|--------|
 | `transmissionvpn_port_forwarding_available` | Identical to `transmissionvpn_port_open` - the `port-test` result | `transmissionvpn_pf_enabled`, `transmissionvpn_pf_rules_present` |
-| `transmissionvpn_vpn_supports_port_forwarding` | Live VPN state AND the port test, so it reads `0` on a capable provider whenever the tunnel is down | `transmissionvpn_pf_enabled` |
+| `transmissionvpn_vpn_supports_port_forwarding` | Live VPN state AND the port test, so it read `0` on a capable provider whenever the tunnel was down | `transmissionvpn_pf_enabled` |
 
-They still emit their original values, so nothing scraping them breaks today.
+If you are scraping either name, switch to the replacement above: the series stop appearing after
+v4.1.3-r1. They were deprecated rather than redefined precisely so that this would be a clean
+disappearance rather than a value that silently changed meaning under a live alert.
 
 **The one to alert on is `transmissionvpn_pf_rules_present == 0`.** It is local, cheap, and drops the moment a
 firewall rebuild removes the rules — roughly 15 minutes before the keepalive restores them. Pair it with
