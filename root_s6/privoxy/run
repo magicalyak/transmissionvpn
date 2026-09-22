@@ -1,5 +1,5 @@
 #!/command/with-contenv bash
-# shellcheck disable=SC1008
+# shellcheck shell=bash
 # s6-rc script for privoxy
 
 # Exit if Privoxy is not enabled

@@ -20,6 +20,7 @@ fi
 ENV_FILE="/opt/containerd/env/transmission.env"
 if [ -f "$ENV_FILE" ]; then
     echo "Loading environment from $ENV_FILE"
+    # shellcheck source=/dev/null
     source "$ENV_FILE"
     log "INFO: Loaded environment variables"
 else
@@ -88,8 +89,9 @@ docker run -d \
     -e PGID="${PGID:-1000}" \
     --restart unless-stopped \
     "$IMAGE_NAME"
+docker_run_status=$?
 
-if [[ $? -eq 0 ]]; then
+if [[ $docker_run_status -eq 0 ]]; then
     log "INFO: Container started successfully"
     log "INFO: Web UI available at: http://$(hostname):${HOST_PORT_WEB}"
     log "INFO: Metrics available at: http://$(hostname):${HOST_PORT_METRICS}/metrics"

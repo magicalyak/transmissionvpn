@@ -98,9 +98,9 @@ echo -e "${BLUE}2. Checking TransmissionVPN Configuration${NC}"
 echo "=========================================="
 
 # Check if metrics are enabled
-METRICS_ENABLED=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_ENABLED 2>/dev/null || echo "not_set")
-METRICS_PORT_ENV=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_PORT 2>/dev/null || echo "not_set")
-METRICS_INTERVAL=$(docker exec $TRANSMISSION_CONTAINER printenv METRICS_INTERVAL 2>/dev/null || echo "not_set")
+METRICS_ENABLED=$(docker exec "$TRANSMISSION_CONTAINER" printenv METRICS_ENABLED 2>/dev/null || echo "not_set")
+METRICS_PORT_ENV=$(docker exec "$TRANSMISSION_CONTAINER" printenv METRICS_PORT 2>/dev/null || echo "not_set")
+METRICS_INTERVAL=$(docker exec "$TRANSMISSION_CONTAINER" printenv METRICS_INTERVAL 2>/dev/null || echo "not_set")
 
 echo "Current TransmissionVPN configuration:"
 echo "  METRICS_ENABLED: $METRICS_ENABLED"

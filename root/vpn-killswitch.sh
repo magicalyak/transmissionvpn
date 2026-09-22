@@ -1,4 +1,5 @@
 #!/command/with-contenv bash
+# shellcheck shell=bash
 # Enhanced VPN Kill Switch Script
 # Implements strict iptables rules to prevent any IP leaks
 # Called by vpn-setup.sh and vpn-monitor service
@@ -133,11 +134,13 @@ apply_strict_killswitch() {
 
     # === POLICY-BASED ROUTING FOR LAN-ACCESSIBLE SERVICES ===
     # Get eth0 gateway and IP for policy routing
-    local eth0_gateway=$(ip route | grep default | grep eth0 | awk '{print $3}')
+    local eth0_gateway
+    eth0_gateway=$(ip route | grep default | grep eth0 | awk '{print $3}')
     if [ -z "$eth0_gateway" ]; then
         eth0_gateway=$(ip route show dev eth0 | awk '/default via/ {print $3}')
     fi
-    local eth0_ip=$(ip -4 addr show dev eth0 | awk '/inet/ {print $2}' | cut -d/ -f1)
+    local eth0_ip
+    eth0_ip=$(ip -4 addr show dev eth0 | awk '/inet/ {print $2}' | cut -d/ -f1)
 
     if [ -n "$eth0_gateway" ]; then
         log "Setting up policy-based routing for LAN services via gateway: $eth0_gateway"
@@ -212,9 +215,12 @@ apply_strict_killswitch() {
     pf_apply_rules "$vpn_if" || true
 
     # Log the final rules count
-    local input_rules=$(iptables -L INPUT -n | wc -l)
-    local output_rules=$(iptables -L OUTPUT -n | wc -l)
-    local forward_rules=$(iptables -L FORWARD -n | wc -l)
+    local input_rules
+    input_rules=$(iptables -L INPUT -n | wc -l)
+    local output_rules
+    output_rules=$(iptables -L OUTPUT -n | wc -l)
+    local forward_rules
+    forward_rules=$(iptables -L FORWARD -n | wc -l)
 
     log "Kill switch applied - Rules: INPUT=$input_rules OUTPUT=$output_rules FORWARD=$forward_rules"
     echo "active" > "$KILLSWITCH_STATUS"
@@ -264,9 +270,12 @@ verify_killswitch() {
     log "Verifying kill switch configuration"
 
     # Check default policies
-    local input_policy=$(iptables -S | grep "^-P INPUT" | awk '{print $3}')
-    local output_policy=$(iptables -S | grep "^-P OUTPUT" | awk '{print $3}')
-    local forward_policy=$(iptables -S | grep "^-P FORWARD" | awk '{print $3}')
+    local input_policy
+    input_policy=$(iptables -S | grep "^-P INPUT" | awk '{print $3}')
+    local output_policy
+    output_policy=$(iptables -S | grep "^-P OUTPUT" | awk '{print $3}')
+    local forward_policy
+    forward_policy=$(iptables -S | grep "^-P FORWARD" | awk '{print $3}')
 
     if [ "$input_policy" != "DROP" ] || [ "$output_policy" != "DROP" ] || [ "$forward_policy" != "DROP" ]; then
         log "WARNING: Default policies not set to DROP!"
@@ -281,7 +290,8 @@ verify_killswitch() {
     fi
 
     # Check VPN interface rules
-    local vpn_if=$(get_vpn_interface)
+    local vpn_if
+    vpn_if=$(get_vpn_interface)
     if [ -n "$vpn_if" ]; then
         if ! iptables -L OUTPUT -n | grep -q "$vpn_if.*ACCEPT"; then
             log "WARNING: VPN interface $vpn_if not properly configured!"

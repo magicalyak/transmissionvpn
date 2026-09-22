@@ -8,7 +8,6 @@ set -e
 CONTAINER_NAME="transmissionvpn"
 GREEN='\033[0;32m'
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
@@ -237,7 +236,7 @@ echo "docker exec $CONTAINER_NAME ip addr show tun0"
 echo "docker exec $CONTAINER_NAME curl -s ifconfig.me"
 echo ""
 echo "# Container health status"
-echo "docker ps --format 'table {{.Names}}\t{{.Status}}'"
+printf '%s\n' "docker ps --format 'table {{.Names}}\t{{.Status}}'"
 echo "docker inspect --format='{{.State.Health.Status}}' $CONTAINER_NAME"
 
 echo ""

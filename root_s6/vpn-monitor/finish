@@ -1,4 +1,5 @@
 #!/command/with-contenv bash
+# shellcheck shell=bash
 # VPN Monitor cleanup script - runs when service stops
 
 log() {
@@ -25,6 +26,8 @@ iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 # Allow VPN server traffic for reconnection
 if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
     local_ovpn_config="${VPN_CONFIG:-/config/openvpn/*.ovpn}"
+    # VPN_CONFIG may be a glob pattern, so the expansion here is deliberate.
+    # shellcheck disable=SC2012,SC2086
     local_ovpn_config=$(ls $local_ovpn_config 2>/dev/null | head -1)
     if [ -f "$local_ovpn_config" ]; then
         vpn_server=$(grep '^remote ' "$local_ovpn_config" | head -1 | awk '{print $2}')

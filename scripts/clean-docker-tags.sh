@@ -18,15 +18,15 @@ get_docker_hub_tags() {
     local all_tags=()
     
     while true; do
-        echo "📄 Fetching page ${page}..."
+        echo "📄 Fetching page ${page}..." >&2
         
         # Get tags from Docker Hub API
         response=$(curl -s "${DOCKER_HUB_API}?page_size=${page_size}&page=${page}")
         
         # Check if we got a valid response
         if ! echo "$response" | jq -e '.results' > /dev/null 2>&1; then
-            echo "❌ Failed to get tags from Docker Hub API"
-            echo "Response: $response"
+            echo "❌ Failed to get tags from Docker Hub API" >&2
+            echo "Response: $response" >&2
             exit 1
         fi
         
@@ -37,7 +37,9 @@ get_docker_hub_tags() {
             break
         fi
         
-        all_tags+=($page_tags)
+        while IFS= read -r tag; do
+            [ -n "$tag" ] && all_tags+=("$tag")
+        done <<< "$page_tags"
         
         # Check if there are more pages
         next=$(echo "$response" | jq -r '.next')
@@ -125,7 +127,10 @@ fi
 
 # Get all tags
 echo "📡 Fetching tags from Docker Hub..."
-all_tags=($(get_docker_hub_tags))
+all_tags=()
+while IFS= read -r tag; do
+    [ -n "$tag" ] && all_tags+=("$tag")
+done < <(get_docker_hub_tags)
 
 echo "📊 Found ${#all_tags[@]} total tags"
 echo

@@ -11,7 +11,6 @@ echo
 # Configuration
 TRANSMISSION_CONTAINER="transmission"
 PROMETHEUS_CONTAINER="prometheus"
-GRAFANA_CONTAINER="grafana"
 
 # Colors for output
 RED='\033[0;31m'
@@ -106,7 +105,7 @@ get_container_ips() {
     print_status "Container IP addresses:"
     
     for container in $TRANSMISSION_CONTAINER $PROMETHEUS_CONTAINER; do
-        IP=$(docker inspect $container --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null || echo "N/A")
+        IP=$(docker inspect "$container" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' 2>/dev/null || echo "N/A")
         print_status "  $container: $IP"
     done
 }
@@ -126,9 +125,9 @@ fix_networking() {
     
     # Connect containers to the network
     for container in $TRANSMISSION_CONTAINER $PROMETHEUS_CONTAINER; do
-        if ! docker inspect $container --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | grep -q "transmissionvpn_default"; then
+        if ! docker inspect "$container" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' | grep -q "transmissionvpn_default"; then
             print_action "Connecting $container to transmissionvpn_default network..."
-            docker network connect transmissionvpn_default $container || print_warning "Failed to connect $container (may already be connected)"
+            docker network connect transmissionvpn_default "$container" || print_warning "Failed to connect $container (may already be connected)"
         else
             print_status "$container already connected to transmissionvpn_default"
         fi

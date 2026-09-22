@@ -1,0 +1,43 @@
+---
+name: ShellCheck
+
+# CONTRIBUTING.md asks contributors to follow ShellCheck's recommendations.
+# This job enforces that. The tree is clean at ShellCheck's default severity,
+# so any finding here is a regression introduced by the change under review.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install ShellCheck
+        # Pinned, and installed unconditionally. The runner image already ships
+        # a ShellCheck (0.9.0 at time of writing) and the checks are not stable
+        # across versions: 0.9.0 reports SC2002, which is off by default from
+        # 0.10 on, and reports an indirectly-invoked function body as SC2317
+        # where later versions use SC2329. Accepting whatever the image happens
+        # to carry makes the gate fail or pass on an image bump rather than on
+        # the change under review.
+        run: |
+          pip install --quiet "shellcheck-py==${SHELLCHECK_VERSION}"
+          shellcheck --version
+        env:
+          SHELLCHECK_VERSION: 0.11.0.1
+
+      - name: Run ShellCheck
+        run: ./scripts/shellcheck-all.sh
