@@ -18,6 +18,11 @@ HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-1.1.1.1}
 # BOTH the primary and fallback fail, so a single host's ICMP filtering can't
 # trip the kill switch. Set to empty to disable the fallback.
 HEALTH_CHECK_HOST_FALLBACK=${HEALTH_CHECK_HOST_FALLBACK-9.9.9.9}
+# DNS probe target. This must be a NAME, not an address: `getent hosts`
+# succeeds for a literal IP whether or not DNS works at all, so reusing
+# HEALTH_CHECK_HOST (an IP by default) made check_dns pass unconditionally.
+# Set to empty to disable the DNS check.
+DNS_CHECK_HOST=${DNS_CHECK_HOST-one.one.one.one}
 CHECK_DNS_LEAK=${CHECK_DNS_LEAK:-false}
 CHECK_IP_LEAK=${CHECK_IP_LEAK:-false}
 METRICS_ENABLED=${METRICS_ENABLED:-false}
@@ -35,6 +40,34 @@ log() {
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     # Output to stderr and log file, but NOT stdout to avoid interfering with function returns
     echo "[$timestamp] [$level] $message" | tee -a "$HEALTH_LOG_FILE" >&2
+}
+
+# True for a bare IPv4/IPv6 literal. Used to tell a probe target that can be
+# pinged from one that can actually exercise DNS.
+is_ip_address() {
+    case "$1" in
+        *:*) return 0 ;;                                  # any IPv6 literal
+        *[!0-9.]*) return 1 ;;                            # contains a non-digit/dot
+        [0-9]*.[0-9]*.[0-9]*.[0-9]*) return 0 ;;          # dotted quad
+        *) return 1 ;;
+    esac
+}
+
+# A private address cannot answer "is the tunnel carrying traffic": it is not
+# routed through the VPN interface, so the probe fails no matter how healthy the
+# tunnel is. Substitute a public target and say so loudly, rather than reporting
+# a connectivity failure that is really a configuration mistake.
+#
+# This behaviour previously lived in root/healthcheck-wrapper.sh, which the
+# Dockerfile never copied into the image, so it had never actually run.
+override_lan_probe_target() {
+    case "$HEALTH_CHECK_HOST" in
+        10.*|192.168.*|127.*|169.254.*|\
+        172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+            log "WARN" "HEALTH_CHECK_HOST ($HEALTH_CHECK_HOST) is a private address and is not routed through the VPN, so it cannot test tunnel connectivity. Using 1.1.1.1 instead; set HEALTH_CHECK_HOST to a public address to silence this."
+            HEALTH_CHECK_HOST="1.1.1.1"
+            ;;
+    esac
 }
 
 # Metrics function
@@ -228,18 +261,32 @@ check_vpn_connectivity() {
 # Function to check DNS resolution
 check_dns() {
     log "DEBUG" "Checking DNS resolution..."
+
+    if [ -z "$DNS_CHECK_HOST" ]; then
+        log "DEBUG" "DNS_CHECK_HOST is empty, skipping the DNS check."
+        return 0
+    fi
+
+    # A literal address proves nothing: getent returns it straight back without
+    # asking a resolver, so the check would pass with DNS completely dead. Say
+    # so rather than reporting a success that was never tested.
+    if is_ip_address "$DNS_CHECK_HOST"; then
+        log "WARN" "DNS_CHECK_HOST ($DNS_CHECK_HOST) is an IP address, so it cannot test resolution. Set it to a hostname, or empty to disable this check."
+        return 0
+    fi
+
     local dns_start_time
     dns_start_time=$(date +%s%N)
-    if getent hosts "$HEALTH_CHECK_HOST" >/dev/null; then
+    if getent hosts "$DNS_CHECK_HOST" >/dev/null; then
         local dns_end_time
         dns_end_time=$(date +%s%N)
         local dns_duration=$(( (dns_end_time - dns_start_time) / 1000000 ))
-        log "INFO" "DNS resolution for $HEALTH_CHECK_HOST is working (${dns_duration}ms)."
+        log "INFO" "DNS resolution for $DNS_CHECK_HOST is working (${dns_duration}ms)."
         record_metric "dns_resolution_status" "1"
         record_metric "dns_resolution_time_ms" "$dns_duration"
         return 0
     else
-        log "ERROR" "DNS resolution failed"
+        log "ERROR" "DNS resolution failed for $DNS_CHECK_HOST"
         record_metric "dns_resolution_status" "0"
         return 1
     fi
@@ -351,6 +398,8 @@ main() {
     
     # Initialize log
     echo "# Healthcheck started at $(date)" >> "$HEALTH_LOG_FILE"
+
+    override_lan_probe_target
     
     # Check Transmission
     if ! check_transmission; then
