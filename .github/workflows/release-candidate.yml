@@ -320,8 +320,13 @@ jobs:
           # Test that the RC image can be pulled and basic commands work
           docker pull --platform ${{ matrix.platform }} ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest
           
-          # Test basic functionality
-          docker run --rm --platform ${{ matrix.platform }} \
+          # Test basic functionality. --entrypoint="" is required: the image's
+          # entrypoint is the s6 init, which runs vpn-setup.sh and then keeps the
+          # supervision tree alive whether or not setup succeeded. Without a VPN
+          # config the setup fails closed and the container stays up by design, so
+          # `docker run --rm` never returns and the job hangs until its timeout.
+          # test-multiarch in build-and-publish.yml overrides it for this reason.
+          docker run --rm --platform ${{ matrix.platform }} --entrypoint="" \
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}:rc-latest \
             sh -c 'echo "Testing RC functionality on ${{ matrix.platform }}" && python3 --version && openvpn --version | head -1 && transmission-daemon --version | head -1 && curl --version | head -1 && echo "All basic tools available in RC"'
 
