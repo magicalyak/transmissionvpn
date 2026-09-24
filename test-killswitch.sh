@@ -352,7 +352,7 @@ else
     echo "1. Verify the external IP is from your VPN provider"
     echo "2. Test the kill switch by disconnecting the VPN"
     echo "3. Monitor logs: docker logs -f $CONTAINER_NAME"
-    echo "4. Check kill switch status: docker exec $CONTAINER_NAME /usr/local/bin/vpn-killswitch.sh status"
+    echo "4. Check the kill switch rules: docker exec $CONTAINER_NAME iptables -S OUTPUT"
 fi
 
 echo ""

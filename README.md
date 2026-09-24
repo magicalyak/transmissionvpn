@@ -501,8 +501,8 @@ The container implements a multi-layer kill switch to prevent IP leaks:
 # Run the automated test script
 ./test-killswitch.sh
 
-# Or manually verify
-docker exec transmissionvpn /usr/local/bin/vpn-killswitch.sh verify
+# Or inspect the rules directly
+docker exec transmissionvpn iptables -S OUTPUT
 ```
 
 ### VPN Monitoring

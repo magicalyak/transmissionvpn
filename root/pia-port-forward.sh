@@ -21,8 +21,8 @@ log() {
 }
 
 # Shared firewall helper: pf_apply_rules, pf_get_port, pf_get_vpn_interface.
-# The forwarded port rules are asserted from here, from vpn-setup.sh and from
-# vpn-killswitch.sh, so the rule spec lives in exactly one place.
+# The forwarded port rules are asserted from here and from vpn-setup.sh, so the
+# rule spec lives in exactly one place.
 # shellcheck source=root/pia-pf-firewall.sh
 . /usr/local/bin/pia-pf-firewall.sh
 
