@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v4.1.3-r3] - 2026-09-24
 
 ### Fixed
 - **The kill switch only let OpenVPN reach the first `remote`.** `vpn-setup.sh`, `vpn-monitor`'s kill switch and restart paths, and its `finish` script all read the first `remote` line and nothing else, so OpenVPN could never fall back to another server. A production deployment with three remotes had a single exception in OUTPUT (`-d 209.200.239.8/32 -p udp --dport 8080`). The parsing now lives in `root/vpn-remotes.sh` (`/usr/local/bin/vpn-remotes.sh` in the image), which allows every remote and every IPv4 address a hostname resolves to. A missing port or protocol comes from the global `port`/`proto` directives, then 1194/udp. `tcp-client`, `udp4` and similar map to `tcp`/`udp`, CRLF configs are handled, and duplicate rules are skipped. A config with no `remote` line still gets the 1194 udp/tcp fallback. The same fix went into nzbgetvpn in magicalyak/nzbgetvpn#34.
