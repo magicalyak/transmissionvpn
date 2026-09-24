@@ -81,7 +81,7 @@ done
 # Scripts that stand in for s6's halt, vpn-setup.sh and pia-port-forward.sh.
 printf '#!/usr/bin/env bash\ntouch "$WORK/halted"\n' > "$WORK/halt"
 printf '#!/usr/bin/env bash\nexit "${SETUP_RC:-0}"\n' > "$WORK/setup"
-printf '#!/usr/bin/env bash\necho run >> "$WORK/pf_runs"\n' > "$WORK/pf.sh"
+printf '#!/usr/bin/env bash\necho run >> "$WORK/pf_runs"\necho pf >> "$WORK/order"\n' > "$WORK/pf.sh"
 chmod +x "$WORK/halt" "$WORK/setup" "$WORK/pf.sh"
 
 # The harness. Environment knobs:
@@ -366,6 +366,46 @@ out=$(run_case '
     stop_transmission')
 expect_no_match "$(cat "$WORK/s6" 2>/dev/null)" "s6-svc" "No s6-svc call against a service directory that does not exist"
 expect_match "$(cat "$WORK/s6" 2>/dev/null)" "pkill -TERM -x transmission-da" "Falls back to killing the daemon"
+echo ""
+
+echo "11. Transmission is started again as soon as a VPN restart is verified..."
+# It used to wait for the next health check, and only fired when FAILURE_COUNT > 0,
+# which a successful restart had just reset to 0: Transmission stayed stopped until
+# the liveness probe restarted the whole container.
+reset_work
+rm -rf "$WORK/svc" "$WORK/order" "$WORK/daemon_down"
+mkdir -p "$WORK/svc/svc-transmission/supervise"
+echo 0 > "$WORK/restart_count"
+out=$(PIA_PORT_FORWARD=true UP_IFS=tun0 IP_IFS=tun0 ANSWERING="1.1.1.1" run_case '
+    TRANSMISSION_SERVICE_DIRS="$WORK/svc/svc-transmission"
+    VPN_STATUS_FILE="$WORK/vpn_status"
+    s6-svc() { echo "s6-svc $*" >> "$WORK/order"; case " $* " in *" -d "*) touch "$WORK/daemon_down";; *" -u "*) rm -f "$WORK/daemon_down";; esac; }
+    pgrep() { procps_name_ok "$@" || return 1; [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
+    stop_transmission
+    attempt_vpn_restart; wait
+    [ -f "$WORK/daemon_down" ] && echo STILL_DOWN || echo BACK_UP')
+expect_match "$out" "BACK_UP" "Transmission is running again when attempt_vpn_restart returns"
+expect_match "$(tr '\n' ' ' < "$WORK/order" 2>/dev/null)" "s6-svc -u .* pf" "Started before port forwarding, which waits for its RPC"
+
+reset_work
+rm -rf "$WORK/order" "$WORK/daemon_down"
+echo 0 > "$WORK/restart_count"
+out=$(UP_IFS=tun0 IP_IFS=tun0 ANSWERING="" run_case '
+    TRANSMISSION_SERVICE_DIRS="$WORK/svc/svc-transmission"
+    VPN_STATUS_FILE="$WORK/vpn_status"
+    s6-svc() { echo "s6-svc $*" >> "$WORK/order"; case " $* " in *" -d "*) touch "$WORK/daemon_down";; *" -u "*) rm -f "$WORK/daemon_down";; esac; }
+    pgrep() { procps_name_ok "$@" || return 1; [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
+    stop_transmission
+    attempt_vpn_restart || true
+    [ -f "$WORK/daemon_down" ] && echo STILL_DOWN || echo BACK_UP')
+expect_match "$out" "STILL_DOWN" "A restart into a dead tunnel leaves Transmission stopped"
+
+if grep -q 'if \[ \$FAILURE_COUNT -gt 0 \]; then' "$MONITOR" && \
+   ! awk '/if \[ \$FAILURE_COUNT -gt 0 \]; then/ { inside = 1; next } inside && /^        fi$/ { exit } inside' "$MONITOR" | grep -q restart_transmission; then
+    log_pass "The healthy branch no longer ties restart_transmission to FAILURE_COUNT"
+else
+    log_fail "restart_transmission is still only called when FAILURE_COUNT > 0"
+fi
 echo ""
 
 echo "================================================"

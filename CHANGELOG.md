@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r5] - 2026-09-24
+
+### Fixed
+- **Transmission stayed stopped after a successful VPN restart.** The monitor only started it again from the healthy branch of its loop, and only when `FAILURE_COUNT` was above zero, but a successful restart had just reset that count to zero. Until v4.1.3-r4 this never showed, because Transmission was never actually stopped. On r4 it stayed down until the Kubernetes liveness probe restarted the container: in a production test the tunnel was back at 15:20:22 and the container was killed at 15:21:21. `attempt_vpn_restart` now starts Transmission as soon as it has verified traffic through the tunnel, before re-running port forwarding (which waits for Transmission's RPC), and the healthy branch starts it whenever it is still stopped. This supersedes the r4 upgrade note: a VPN restart no longer runs into the liveness probe with default probe settings.
+
+### Added
+- **`test-vpn-monitor-recovery.sh`**: a verified restart brings Transmission back before port forwarding, a restart into a dead tunnel leaves it stopped, and the healthy branch no longer ties the restart to `FAILURE_COUNT`. The previous monitor fails all four checks.
+
 ## [v4.1.3-r4] - 2026-09-24
 
 **Upgrade note.** `vpn-monitor` now really stops Transmission when the tunnel fails. It never did before (see below), so on Kubernetes a liveness probe on the web UI will now fail during a VPN outage and restart the container, typically about 90 seconds after the stop. That is a recovery path too, but loosen the probe if you would rather give the in-place restarts time to work.
