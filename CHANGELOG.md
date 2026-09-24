@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The kill switch only let OpenVPN reach the first `remote`.** `vpn-setup.sh`, `vpn-monitor`'s kill switch and restart paths, and its `finish` script all read the first `remote` line and nothing else, so OpenVPN could never fall back to another server. A production deployment with three remotes had a single exception in OUTPUT (`-d 209.200.239.8/32 -p udp --dport 8080`). The parsing now lives in `root/vpn-remotes.sh` (`/usr/local/bin/vpn-remotes.sh` in the image), which allows every remote and every IPv4 address a hostname resolves to. A missing port or protocol comes from the global `port`/`proto` directives, then 1194/udp. `tcp-client`, `udp4` and similar map to `tcp`/`udp`, CRLF configs are handled, and duplicate rules are skipped. A config with no `remote` line still gets the 1194 udp/tcp fallback. The same fix went into nzbgetvpn in magicalyak/nzbgetvpn#34.
+- **PIA port forwarding took its hostname from the first remote**, even when OpenVPN had connected to a fallback. The up script now records `$trusted_ip`, and `pia-port-forward.sh` maps that address back to the remote it came from, falling back to the last `link remote` in `/tmp/openvpn.log`.
+- **`pia-port-forward.sh` added its 19999 OUTPUT rule again on every run.** It re-runs after each VPN restart, and production had three copies of the rule. It now checks for the rule with `iptables -C` before inserting it.
+
+### Added
+- **`test-vpn-remotes.sh`**: 20 assertions covering three IP remotes, global `proto tcp-client` and `port 443` with a duplicate remote and CRLF line endings, a hostname with several A records next to an unresolvable one, a config with no remotes, insert mode, detection of the connected remote, and the shipped `vpn-setup.sh` and `pia-port-forward.sh` blocks. It needs bash 4: `docker run --rm -v "$PWD":/src -w /src bash:5 bash test-vpn-remotes.sh`.
+
 ## [v4.1.3-r2] - 2026-09-24
 
 Makes a dead tunnel visible and makes the container recover from one on its own. On 2026-09-22 the PIA tunnel in a production deployment stopped passing traffic at 21:16 and stayed dead for 38 hours. The cause was upstream (retired PIA remotes and a `compress` mismatch in the deployment's config, fixed there), but two defects in this image kept it silent: the metrics said the VPN was connected the whole time, and `vpn-monitor` gave up after three restarts and then waited for a human while the web UI kept the liveness probe green.

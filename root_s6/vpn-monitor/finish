@@ -30,16 +30,11 @@ if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
     # shellcheck disable=SC2012,SC2086
     local_ovpn_config=$(ls $local_ovpn_config 2>/dev/null | head -1)
     if [ -f "$local_ovpn_config" ]; then
-        vpn_server=$(grep '^remote ' "$local_ovpn_config" | head -1 | awk '{print $2}')
-        vpn_port=$(grep '^remote ' "$local_ovpn_config" | head -1 | awk '{print $3}')
-        vpn_proto=$(grep '^proto ' "$local_ovpn_config" | head -1 | awk '{print $2}' | sed 's/[0-9]//g')
-        [ -z "$vpn_proto" ] && vpn_proto="udp"
-        if [ -n "$vpn_server" ] && [ -n "$vpn_port" ]; then
-            resolved_ip=$(getent hosts "$vpn_server" 2>/dev/null | awk '{print $1}' | head -1)
-            [ -z "$resolved_ip" ] && resolved_ip="$vpn_server"
-            log "Allowing VPN server traffic to $resolved_ip:$vpn_port/$vpn_proto"
-            iptables -A OUTPUT -o eth0 -d "$resolved_ip" -p "$vpn_proto" --dport "$vpn_port" -j ACCEPT
-        fi
+        # Every remote, not just the first, so OpenVPN can fall back.
+        remote_log() { log "$*"; }
+        # shellcheck source=root/vpn-remotes.sh
+        . "${VPN_REMOTES_LIB:-/usr/local/bin/vpn-remotes.sh}"
+        vpn_allow_remotes "$local_ovpn_config" append
     fi
 elif [ "${VPN_CLIENT,,}" = "wireguard" ]; then
     wg_config="${WG_CONFIG:-/config/wireguard/wg0.conf}"
