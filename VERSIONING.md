@@ -33,6 +33,7 @@ upstream version. If it is not bumped, Flux keeps the cluster on the last `4.1.3
 because from its point of view there is no newer tag.
 
 ## Version History
+- `v4.1.3-r6` - Remove the unused `vpn-killswitch.sh`, run the unit tests in CI, and document IP remotes
 - `v4.1.3-r5` - Start Transmission again as soon as a VPN restart is verified, instead of leaving it for the liveness probe
 - `v4.1.3-r4` - Keep the firewall on DROP while the tunnel comes up, start Transmission only after the kill switch is built, make `vpn-monitor` really stop Transmission, and allow established traffic on eth0 only as replies
 - `v4.1.3-r3` - Allow every OpenVPN `remote` through the kill switch, not only the first
