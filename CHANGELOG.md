@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- **`vpn-killswitch.sh`** (`/usr/local/bin/vpn-killswitch.sh` in the image). Nothing called it: the kill switch is built by `vpn-setup.sh` and re-asserted by `vpn-monitor`, and the script was never updated for r3 to r5: it allowed the single server passed on its command line, accepted `ESTABLISHED` traffic on any interface, and opened DNS on eth0 with `temp-vpn-dns` rules. Running it by hand could only have loosened the firewall. To inspect the rules, use `iptables -S OUTPUT`. The same cleanup went into nzbgetvpn in magicalyak/nzbgetvpn#33.
+
 ## [v4.1.3-r5] - 2026-09-24
 
 ### Fixed
