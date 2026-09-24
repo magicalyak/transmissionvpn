@@ -67,6 +67,9 @@ TRANSMISSION_WAS_RUNNING=false
 # /var/run/s6/services/transmission, does not exist, so s6-svc failed silently and
 # Transmission was never stopped.
 TRANSMISSION_SERVICE_DIRS=${TRANSMISSION_SERVICE_DIRS:-"/run/service/svc-transmission /var/run/s6/services/transmission"}
+# pgrep and pkill match the kernel's process name, which is cut to 15 characters,
+# so "transmission-daemon" never matched anything and stop_transmission never ran.
+TRANSMISSION_PROC="transmission-da"
 LAST_VPN_CHECK=$(date +%s)
 CONSECUTIVE_HEALTHY=0
 HEALTHY_CHECKS_TO_RESET=5  # Reset restart counter after this many consecutive healthy checks
@@ -378,7 +381,7 @@ transmission_service_dir() {
 
 stop_transmission() {
     local svc_dir
-    if pgrep transmission-daemon >/dev/null 2>&1; then
+    if pgrep -x "$TRANSMISSION_PROC" >/dev/null 2>&1; then
         TRANSMISSION_WAS_RUNNING=true
         log "CRITICAL: Stopping Transmission to prevent IP leaks"
 
@@ -388,12 +391,12 @@ stop_transmission() {
             s6-svc -wD -T 15000 -d "$svc_dir" 2>/dev/null || log "WARNING: s6-svc -d $svc_dir did not confirm the stop"
         fi
         # Whatever happened above, make sure the daemon is really gone.
-        if pgrep transmission-daemon >/dev/null 2>&1; then
-            pkill -TERM transmission-daemon 2>/dev/null || true
+        if pgrep -x "$TRANSMISSION_PROC" >/dev/null 2>&1; then
+            pkill -TERM -x "$TRANSMISSION_PROC" 2>/dev/null || true
             sleep 2
-            pkill -KILL transmission-daemon 2>/dev/null || true
+            pkill -KILL -x "$TRANSMISSION_PROC" 2>/dev/null || true
         fi
-        if pgrep transmission-daemon >/dev/null 2>&1; then
+        if pgrep -x "$TRANSMISSION_PROC" >/dev/null 2>&1; then
             log "ERROR: transmission-daemon is still running after stop"
         fi
 

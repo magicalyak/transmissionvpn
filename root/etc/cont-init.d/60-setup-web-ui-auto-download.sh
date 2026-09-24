@@ -121,6 +121,12 @@ clone_ui() {
 if [[ -d "$UI_PATH" && -f "$UI_PATH/index.html" ]]; then
     echo "[INFO] Web UI '$UI_NAME' already exists at $UI_PATH"
     echo "[INFO] Skipping download. Delete the directory to force re-download."
+elif [[ ! -f /tmp/vpn_setup_complete ]]; then
+    # This runs after vpn-setup (cont-init 50) so the download goes through the
+    # tunnel. Without a tunnel the kill switch blocks it anyway; say so instead of
+    # waiting on curl's retries.
+    echo "[WARN] VPN setup did not complete; not downloading web UI '$UI_NAME'. The default UI will be used."
+    exit 0
 else
     echo "[INFO] Downloading web UI '$UI_NAME' to $UI_PATH"
     

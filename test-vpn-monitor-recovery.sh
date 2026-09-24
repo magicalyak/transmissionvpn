@@ -140,11 +140,24 @@ kill() {
     echo "$*" >> "$WORK/killed"
 }
 pgrep() { [ -n "$PGREP_OUT" ] && echo "$PGREP_OUT"; return 0; }
+# Like procps: without -f, the pattern is matched against the kernel process name,
+# which is cut to 15 characters, so only "transmission-da" can match the daemon.
+procps_name_ok() {
+    local arg pat="" full=false
+    for arg in "$@"; do
+        case "$arg" in -f) full=true ;; -*) ;; *) pat="$arg" ;; esac
+    done
+    $full && return 0
+    [ "${#pat}" -le 15 ] && [[ "transmission-da" =~ $pat ]]
+}
 sleep() { :; }
 pkill() { :; }
 iptables() { :; }
 curl() { :; }
 EOF
+
+# The process name the monitor looks for, taken from the shipped script.
+grep '^TRANSMISSION_PROC=' "$MONITOR" >> "$WORK/harness.sh"
 
 run_case() {
     # run_case <shell snippet> - runs it with the harness, probe lib and extracted functions
@@ -331,8 +344,8 @@ out=$(run_case '
     TRANSMISSION_SERVICE_DIRS="$WORK/svc/svc-transmission $WORK/svc/legacy"
     VPN_STATUS_FILE="$WORK/vpn_status"
     s6-svc() { echo "s6-svc $*" >> "$WORK/s6"; case " $* " in *" -d "*) touch "$WORK/daemon_down";; *" -u "*) rm -f "$WORK/daemon_down";; esac; }
-    pgrep() { [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
-    pkill() { echo "pkill $*" >> "$WORK/s6"; }
+    pgrep() { procps_name_ok "$@" || return 1; [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
+    pkill() { procps_name_ok "$@" && echo "pkill $*" >> "$WORK/s6"; }
     stop_transmission
     [ -f "$WORK/daemon_down" ] && echo STOPPED
     restart_transmission
@@ -348,11 +361,11 @@ out=$(run_case '
     TRANSMISSION_SERVICE_DIRS="$WORK/svc/none"
     VPN_STATUS_FILE="$WORK/vpn_status"
     s6-svc() { echo "s6-svc $*" >> "$WORK/s6"; }
-    pgrep() { [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
-    pkill() { echo "pkill $*" >> "$WORK/s6"; touch "$WORK/daemon_down"; }
+    pgrep() { procps_name_ok "$@" || return 1; [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
+    pkill() { procps_name_ok "$@" || return 1; echo "pkill $*" >> "$WORK/s6"; touch "$WORK/daemon_down"; }
     stop_transmission')
 expect_no_match "$(cat "$WORK/s6" 2>/dev/null)" "s6-svc" "No s6-svc call against a service directory that does not exist"
-expect_match "$(cat "$WORK/s6" 2>/dev/null)" "pkill -TERM transmission-daemon" "Falls back to killing the daemon"
+expect_match "$(cat "$WORK/s6" 2>/dev/null)" "pkill -TERM -x transmission-da" "Falls back to killing the daemon"
 echo ""
 
 echo "================================================"
