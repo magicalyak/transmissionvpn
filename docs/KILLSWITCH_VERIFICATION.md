@@ -11,9 +11,10 @@ The kill switch in transmissionvpn works through iptables firewall rules that:
 3. **Specific exceptions** - Only allows:
    - Loopback traffic (localhost)
    - Transmission UI access on port 9091 via eth0
-   - Initial VPN server connection
+   - The VPN servers named in the config (every `remote` or `Endpoint`)
    - LAN network access (if configured)
-   - Established/related connections
+   - Established/related connections through the tunnel, and on eth0 only replies to inbound
+     connections (web UI, metrics, Privoxy)
 
 ## Verification Methods
 
@@ -232,6 +233,10 @@ environment:
 ```bash
 docker exec transmission iptables -L OUTPUT -n | grep "$VPN_SERVER"
 ```
+
+If the config uses hostname remotes, switch to IP addresses. Once the kill switch is up, DNS on eth0 is
+blocked, so OpenVPN cannot resolve a hostname while it reconnects, and the firewall only allows the
+addresses the name had when the tunnel was set up. Only a full restart by `vpn-monitor` resolves it again.
 
 ## Security Recommendations
 

@@ -24,7 +24,18 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 4. **Push Changes**: `git push origin main && git push origin v{VERSION}`
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
+### When the upstream version changes
+The first release on a new linuxserver.io transmission version (for example the first `4.1.4-rN` after
+`4.1.3-rN`) needs the Flux `ImagePolicy` in the rocky repo bumped in the same change window:
+`cluster/core/flux-image-automation/transmission-image-policy.yaml`, currently
+`^4\.1\.3-r(?P<r>\d+)$`. The policy ranks tags by the `rN` counter alone, so it has to match exactly one
+upstream version. If it is not bumped, Flux keeps the cluster on the last `4.1.3-rN` and reports nothing,
+because from its point of view there is no newer tag.
+
 ## Version History
+- `v4.1.3-r5` - Start Transmission again as soon as a VPN restart is verified, instead of leaving it for the liveness probe
+- `v4.1.3-r4` - Keep the firewall on DROP while the tunnel comes up, start Transmission only after the kill switch is built, make `vpn-monitor` really stop Transmission, and allow established traffic on eth0 only as replies
+- `v4.1.3-r3` - Allow every OpenVPN `remote` through the kill switch, not only the first
 - `v4.1.3-r2` - Report a tunnel that is up but passes no traffic as disconnected, and exit the container once VPN restarts are exhausted instead of waiting for a human
 - `v4.1.2-r6` - Fix a transient startup `port-test` failure being cached for the full interval, reporting a healthy forwarded port as degraded
 - `v4.1.2-r5` - Surface PIA port-forwarding failures: rule-state metrics, stop reporting a closed forwarded port as healthy, throttle port-test
