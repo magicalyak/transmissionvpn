@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v4.1.3-r4] - 2026-09-24
 
 **Upgrade note.** `vpn-monitor` now really stops Transmission when the tunnel fails. It never did before (see below), so on Kubernetes a liveness probe on the web UI will now fail during a VPN outage and restart the container, typically about 90 seconds after the stop. That is a recovery path too, but loosen the probe if you would rather give the in-place restarts time to work.
 
