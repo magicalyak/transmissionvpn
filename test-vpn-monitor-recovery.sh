@@ -63,7 +63,7 @@ trap 'rm -rf "$WORK"' EXIT
 FUNCS="get_restart_count increment_restart_count reset_restart_count check_cooldown
        log_restart send_notification check_tunnel publish_tunnel_state wait_for_shutdown
        exit_container_for_restart restart_port_forwarding ensure_port_forwarding
-       attempt_vpn_restart"
+       attempt_vpn_restart transmission_service_dir stop_transmission restart_transmission"
 : > "$WORK/functions.sh"
 for fn in $FUNCS; do
     awk -v fn="$fn" '
@@ -317,6 +317,42 @@ if [ ! -f "$WORK/pf_runs" ]; then
 else
     log_fail "Ignored PF_RESTART_COOLDOWN_SECONDS"
 fi
+echo ""
+
+echo "10. stop_transmission actually stops Transmission under s6-overlay v3..."
+# The v2 path /var/run/s6/services/transmission does not exist on v3, so s6-svc used
+# to fail silently and Transmission kept running through every VPN restart.
+expect_match "$(grep '^TRANSMISSION_SERVICE_DIRS=' "$MONITOR")" '"/run/service/svc-transmission ' \
+    "Looks for the s6-overlay v3 service directory first"
+reset_work
+rm -rf "$WORK/svc" "$WORK/s6" "$WORK/daemon_down"
+mkdir -p "$WORK/svc/svc-transmission/supervise"
+out=$(run_case '
+    TRANSMISSION_SERVICE_DIRS="$WORK/svc/svc-transmission $WORK/svc/legacy"
+    VPN_STATUS_FILE="$WORK/vpn_status"
+    s6-svc() { echo "s6-svc $*" >> "$WORK/s6"; case " $* " in *" -d "*) touch "$WORK/daemon_down";; *" -u "*) rm -f "$WORK/daemon_down";; esac; }
+    pgrep() { [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
+    pkill() { echo "pkill $*" >> "$WORK/s6"; }
+    stop_transmission
+    [ -f "$WORK/daemon_down" ] && echo STOPPED
+    restart_transmission
+    [ -f "$WORK/daemon_down" ] || echo STARTED')
+expect_match "$(cat "$WORK/s6" 2>/dev/null)" "s6-svc -wD -T 15000 -d $WORK/svc/svc-transmission" "Takes the v3 service down through s6 and waits"
+expect_match "$out" "STOPPED" "Transmission is stopped"
+expect_no_match "$(cat "$WORK/s6" 2>/dev/null)" "pkill" "No pkill needed when s6 stops it"
+expect_match "$(cat "$WORK/s6" 2>/dev/null)" "s6-svc -u $WORK/svc/svc-transmission" "Brings the same service back up"
+expect_match "$out" "STARTED" "Transmission is started again"
+
+rm -rf "$WORK/svc" "$WORK/s6" "$WORK/daemon_down"
+out=$(run_case '
+    TRANSMISSION_SERVICE_DIRS="$WORK/svc/none"
+    VPN_STATUS_FILE="$WORK/vpn_status"
+    s6-svc() { echo "s6-svc $*" >> "$WORK/s6"; }
+    pgrep() { [ -f "$WORK/daemon_down" ] && return 1; echo 123; }
+    pkill() { echo "pkill $*" >> "$WORK/s6"; touch "$WORK/daemon_down"; }
+    stop_transmission')
+expect_no_match "$(cat "$WORK/s6" 2>/dev/null)" "s6-svc" "No s6-svc call against a service directory that does not exist"
+expect_match "$(cat "$WORK/s6" 2>/dev/null)" "pkill -TERM transmission-daemon" "Falls back to killing the daemon"
 echo ""
 
 echo "================================================"

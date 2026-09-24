@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Upgrade note.** `vpn-monitor` now really stops Transmission when the tunnel fails. It never did before (see below), so on Kubernetes a liveness probe on the web UI will now fail during a VPN outage and restart the container, typically about 90 seconds after the stop. That is a recovery path too, but loosen the probe if you would rather give the in-place restarts time to work.
+
+### Fixed
+- **The firewall was wide open while the tunnel came up.** `vpn-setup.sh` reset every policy to ACCEPT and flushed the chains before starting OpenVPN or WireGuard, and kept it that way until the tunnel had an address, which can take up to two minutes. `vpn-monitor` re-runs it in place on every restart, when the tunnel routes are gone and the default route is eth0, so anything still running (Transmission, Privoxy) could reach the internet off the VPN. Transmission can also be running during setup at boot, since `svc-transmission` does not wait for it. The policies now stay DROP. Only the VPN servers, loopback and replies to inbound web UI and metrics connections are allowed out, and DNS on eth0 is opened only when a server is a hostname and only to the nameservers in `resolv.conf`. These bootstrap rules carry a `vpn-bootstrap` comment and are removed once the kill switch is built. IPv6 is locked down at the same point instead of only after the tunnel is up.
+- **`vpn-monitor` never stopped Transmission.** `stop_transmission` and `restart_transmission` called `s6-svc` on `/var/run/s6/services/transmission`, the s6-overlay v2 path. The image runs s6-overlay 3.2.1.0, where the service is `/run/service/svc-transmission`, so the call failed, the error was discarded and Transmission kept running. They now use the v3 directory, wait for the stop, and fall back to killing the daemon if it is still running.
+- **Established connections could leave through eth0 after the tunnel dropped.** Every kill switch variant accepted OUTPUT `ESTABLISHED,RELATED` on any interface. A peer connection opened through the tunnel stays established in conntrack after the tunnel routes are gone, so its packets followed the default route out of eth0. On eth0, established traffic is now only accepted in the reply direction (`--ctdir REPLY`), which is what the web UI, metrics and Privoxy need.
+- **WireGuard only allowed the first `Endpoint`.** All peer endpoints, and every address a hostname resolves to, are now allowed.
+
+### Added
+- **`test-vpn-setup-bootstrap.sh`**: runs the shipped `vpn-setup.sh` end to end with `iptables`, `ip`, `openvpn`, `wg-quick` and `nslookup` stubbed, and records the firewall at the moment the VPN client starts. 39 assertions over an OpenVPN in-place restart with IP remotes, an OpenVPN hostname remote and a WireGuard hostname endpoint: no policy is ever ACCEPT, only the servers (and DNS to the configured nameserver, when needed) are reachable at launch, and no bootstrap rule or interface-blind ESTABLISHED rule survives. It rewrites `/etc/resolv.conf`, so it only runs as root in a throwaway container: `docker run --rm -v "$PWD":/src -w /src bash:5 bash test-vpn-setup-bootstrap.sh`. The previous `vpn-setup.sh` fails it in every scenario.
+- **`test-vpn-monitor-recovery.sh`** covers `stop_transmission` and `restart_transmission` against the v3 service directory and the fallback when no service directory exists.
+
 ## [v4.1.3-r3] - 2026-09-24
 
 ### Fixed

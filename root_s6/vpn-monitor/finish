@@ -21,7 +21,9 @@ fi
 log "Applying final kill switch before shutdown"
 iptables -F OUTPUT
 iptables -A OUTPUT -o lo -j ACCEPT
-iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# On eth0, established traffic only as replies to inbound connections.
+iptables -A OUTPUT ! -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT
 
 # Allow VPN server traffic for reconnection
 if [ "${VPN_CLIENT,,}" = "openvpn" ]; then

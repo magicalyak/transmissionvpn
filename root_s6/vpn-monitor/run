@@ -63,6 +63,10 @@ LAST_PF_RESTART_FILE="/tmp/last_pf_restart"
 # State tracking
 FAILURE_COUNT=0
 TRANSMISSION_WAS_RUNNING=false
+# s6-overlay v3 supervises Transmission here. The v2 path this used to hard-code,
+# /var/run/s6/services/transmission, does not exist, so s6-svc failed silently and
+# Transmission was never stopped.
+TRANSMISSION_SERVICE_DIRS=${TRANSMISSION_SERVICE_DIRS:-"/run/service/svc-transmission /var/run/s6/services/transmission"}
 LAST_VPN_CHECK=$(date +%s)
 CONSECUTIVE_HEALTHY=0
 HEALTHY_CHECKS_TO_RESET=5  # Reset restart counter after this many consecutive healthy checks
@@ -311,7 +315,11 @@ enforce_killswitch() {
     # Clear existing OUTPUT rules and apply strict kill switch
     iptables -F OUTPUT
     iptables -A OUTPUT -o lo -j ACCEPT
-    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    # On eth0, established traffic only as replies to inbound connections. A peer
+    # connection opened through the tunnel stays ESTABLISHED after the tunnel routes
+    # are gone and would otherwise follow the default route out of eth0.
+    iptables -A OUTPUT ! -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT
 
     # Allow Transmission UI access
     iptables -A OUTPUT -o eth0 -p tcp --sport 9091 -j ACCEPT
@@ -357,19 +365,36 @@ enforce_killswitch() {
     log "Kill switch enforced - all non-VPN traffic blocked (VPN server exempt)"
 }
 
+transmission_service_dir() {
+    local dir
+    for dir in $TRANSMISSION_SERVICE_DIRS; do
+        if [ -d "$dir/supervise" ]; then
+            echo "$dir"
+            return 0
+        fi
+    done
+    return 1
+}
+
 stop_transmission() {
+    local svc_dir
     if pgrep transmission-daemon >/dev/null 2>&1; then
         TRANSMISSION_WAS_RUNNING=true
         log "CRITICAL: Stopping Transmission to prevent IP leaks"
 
-        # Try graceful shutdown first
-        if command -v s6-svc >/dev/null 2>&1; then
-            s6-svc -d /var/run/s6/services/transmission 2>/dev/null || true
-        else
+        # Take the service down through s6 first, so the supervisor does not simply
+        # start it again, and wait up to 15s for it to exit.
+        if command -v s6-svc >/dev/null 2>&1 && svc_dir=$(transmission_service_dir); then
+            s6-svc -wD -T 15000 -d "$svc_dir" 2>/dev/null || log "WARNING: s6-svc -d $svc_dir did not confirm the stop"
+        fi
+        # Whatever happened above, make sure the daemon is really gone.
+        if pgrep transmission-daemon >/dev/null 2>&1; then
             pkill -TERM transmission-daemon 2>/dev/null || true
             sleep 2
-            # Force kill if still running
             pkill -KILL transmission-daemon 2>/dev/null || true
+        fi
+        if pgrep transmission-daemon >/dev/null 2>&1; then
+            log "ERROR: transmission-daemon is still running after stop"
         fi
 
         echo "stopped" > "$VPN_STATUS_FILE"
@@ -377,11 +402,12 @@ stop_transmission() {
 }
 
 restart_transmission() {
+    local svc_dir
     if [ "$TRANSMISSION_WAS_RUNNING" = "true" ]; then
         log "Restarting Transmission after VPN recovery"
 
-        if command -v s6-svc >/dev/null 2>&1; then
-            s6-svc -u /var/run/s6/services/transmission 2>/dev/null || true
+        if command -v s6-svc >/dev/null 2>&1 && svc_dir=$(transmission_service_dir); then
+            s6-svc -u "$svc_dir" 2>/dev/null || log "WARNING: s6-svc -u $svc_dir failed"
         else
             /usr/bin/transmission-daemon --config-dir /config &
         fi
