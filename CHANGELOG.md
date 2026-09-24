@@ -5,10 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v4.1.3-r6] - 2026-09-24
 
 ### Removed
 - **`vpn-killswitch.sh`** (`/usr/local/bin/vpn-killswitch.sh` in the image). Nothing called it: the kill switch is built by `vpn-setup.sh` and re-asserted by `vpn-monitor`, and the script was never updated for r3 to r5: it allowed the single server passed on its command line, accepted `ESTABLISHED` traffic on any interface, and opened DNS on eth0 with `temp-vpn-dns` rules. Running it by hand could only have loosened the firewall. To inspect the rules, use `iptables -S OUTPUT`. The same cleanup went into nzbgetvpn in magicalyak/nzbgetvpn#33.
+
+### Fixed
+- **`test-killswitch.sh` could not tell whether Transmission was stopped.** It checked `pgrep transmission-daemon`, which never matches the 15-character process name, so it always read "stopped" and the VPN failure step passed whatever the monitor did. It now matches `transmission-da`.
+
+### Changed
+- **CI runs the unit tests.** A new Test workflow runs the Python metrics tests and the shell tests (in a `bash:5` container) on PRs and pushes to main, and the image build now waits for it.
+- **Docs.** Use IP addresses for OpenVPN `remote` lines: once the kill switch is up, OpenVPN cannot re-resolve a hostname while it reconnects. The README kill switch section now matches r4 and r5, and VERSIONING.md notes that a new upstream version needs the Flux image policy pattern bumped in the same change.
 
 ## [v4.1.3-r5] - 2026-09-24
 
