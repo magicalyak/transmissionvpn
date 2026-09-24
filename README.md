@@ -159,6 +159,27 @@ The container automatically configures iptables rules for your custom ports. No 
 > The real port is discovered at runtime, written to `/tmp/pia_forwarded_port`, set on Transmission over RPC,
 > and its firewall rules are re-asserted every keepalive cycle (15 minutes) and on every firewall rebuild.
 
+### Monitoring the tunnel
+
+With `METRICS_ENABLED=true`, these report whether the VPN actually carries traffic:
+
+| Metric | Meaning |
+|--------|---------|
+| `transmissionvpn_vpn_connected` | `1` when `vpn-monitor`'s last probe through the tunnel got a reply from `HEALTH_CHECK_HOST` or `HEALTH_CHECK_HOST_FALLBACK`. A missing or stale result reads `0` |
+| `transmissionvpn_vpn_interface_up` | `1` when a tun/wg/tap interface exists and is up. Says nothing about traffic |
+| `transmissionvpn_vpn_tunnel_check_age_seconds` | Age of the last probe (`-1` before the first). Grows without bound if `vpn-monitor` stops checking |
+| `transmissionvpn_vpn_restart_attempts` | Automatic VPN restarts since the tunnel was last stable |
+| `transmissionvpn_healthy` | `1` only with no warnings or issues. A dead tunnel sets it to `0` |
+
+`interface_up == 1` with `vpn_connected == 0` is a tunnel that is up but dead, which is the case the other
+signals missed before `v4.1.3-r2`: `vpn_connected` used to be set as soon as the interface had an address.
+
+With `AUTO_RESTART_VPN=true`, `vpn-monitor` restarts the tunnel after `VPN_MAX_FAILURES` failed checks, up to
+`MAX_RESTART_ATTEMPTS` times with `RESTART_COOLDOWN_SECONDS` between attempts. After that it stops the
+container with exit code 1 (`EXIT_ON_MAX_RESTARTS=true`) so it is restarted with fresh state, rather than
+idling behind a web UI that still answers liveness probes. With the defaults that happens 15 to 20 minutes
+after the tunnel dies. Use a restart policy (`restart: unless-stopped`) outside Kubernetes.
+
 ### Monitoring port forwarding
 
 With `METRICS_ENABLED=true`, the metrics endpoint exposes the forwarded-port state so this failure mode is
@@ -661,12 +682,16 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `VPN_INITIAL_DELAY` | Seconds to wait after VPN setup before monitoring | `15` |
 | `CHECK_DNS` | Read by the `vpn-monitor` service: resolve a name through the tunnel as part of each VPN health check. A failure counts toward `VPN_MAX_FAILURES`. Distinct from `CHECK_DNS_LEAK`, which is a health-check leak test | `true` |
 | `CHECK_EXTERNAL_IP` | Read by the `vpn-monitor` service: fetch the external IP over the VPN interface as part of each VPN health check. A failure counts toward `VPN_MAX_FAILURES`. Distinct from `CHECK_IP_LEAK`, which is a health-check leak test | `true` |
-| `HEALTH_CHECK_HOST` | Primary host pinged through the VPN for connectivity checks. Use an **address**, not a name, so the probe tests reachability alone and does not also depend on DNS. Cloudflare (`1.1.1.1`) answers ICMP reliably; avoid Google anycast IPs like `8.8.8.8`, which rate-limit/drop ICMP from VPN exit IPs and cause false failures. A private address cannot be reached through the tunnel, so one is replaced with `1.1.1.1` and a warning | `1.1.1.1` |
+| `HEALTH_CHECK_HOST` | Primary host pinged through the VPN for connectivity checks, by both the health check and the `vpn-monitor` service. Use an **address**, not a name, so the probe tests reachability alone and does not also depend on DNS. Cloudflare (`1.1.1.1`) answers ICMP reliably; avoid Google anycast IPs like `8.8.8.8`, which rate-limit/drop ICMP from VPN exit IPs and cause false failures. A private address cannot be reached through the tunnel, so one is replaced with `1.1.1.1` and a warning | `1.1.1.1` |
 | `HEALTH_CHECK_HOST_FALLBACK` | Secondary host tried only if the primary fails. A connectivity failure is recorded only when both fail. Set empty to disable | `9.9.9.9` |
 | `DNS_CHECK_HOST` | Hostname resolved to verify DNS works. Must be a **name** — `getent` returns a literal address straight back without consulting a resolver, so an address here cannot test anything and is reported as such. Set empty to disable the DNS check | `one.one.one.one` |
 | `CHECK_DNS_LEAK` | Compare the resolver in use against the expected VPN DNS | `false` |
 | `CHECK_IP_LEAK` | Verify the external IP is the VPN's rather than the host's | `false` |
 | `AUTO_RESTART_VPN` | Auto-restart VPN on failure | `false` |
+| `RESTART_COOLDOWN_SECONDS` | Minimum seconds between automatic VPN restarts | `300` |
+| `MAX_RESTART_ATTEMPTS` | Automatic VPN restarts allowed before giving up. The count resets after 5 consecutive healthy checks | `3` |
+| `EXIT_ON_MAX_RESTARTS` | What giving up means. `true` stops the container with exit code 1 so Docker's restart policy or Kubernetes starts a fresh one. `false` keeps it running with the kill switch engaged until someone intervenes | `true` |
+| `PF_RESTART_COOLDOWN_SECONDS` | With `PIA_PORT_FORWARD=true`, minimum seconds between restarts of PIA port forwarding when its keepalive has stopped | `900` |
 
 ### Network Configuration
 

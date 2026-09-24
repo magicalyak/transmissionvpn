@@ -25,6 +25,7 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 5. **Create GitHub Release**: Use GitHub CLI or web interface
 
 ## Version History
+- `v4.1.3-r2` - Report a tunnel that is up but passes no traffic as disconnected, and exit the container once VPN restarts are exhausted instead of waiting for a human
 - `v4.1.2-r6` - Fix a transient startup `port-test` failure being cached for the full interval, reporting a healthy forwarded port as degraded
 - `v4.1.2-r5` - Surface PIA port-forwarding failures: rule-state metrics, stop reporting a closed forwarded port as healthy, throttle port-test
 - `v4.1.2-r4` - Fix silent PIA port-forwarding failure: verify and continuously re-assert the forwarded port's firewall rules, restore them on every firewall rebuild, and stop accepting the peer port on `eth0`

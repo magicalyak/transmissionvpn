@@ -7,8 +7,9 @@
 # And a private HEALTH_CHECK_HOST cannot be reached through the tunnel at all, so it
 # guaranteed a connectivity failure that was really a misconfiguration.
 #
-# The functions are extracted from the shipped root/healthcheck.sh rather than copied, so
-# this test cannot drift from it. getent and the logger are stubbed, so nothing resolves
+# The functions are extracted from the shipped root/healthcheck.sh and root/vpn-probe.sh
+# (the tunnel probe healthcheck.sh shares with vpn-monitor) rather than copied, so this
+# test cannot drift from them. getent and the logger are stubbed, so nothing resolves
 # and no network is touched.
 
 set -e
@@ -39,6 +40,7 @@ expect_no_match() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HEALTHCHECK="$SCRIPT_DIR/root/healthcheck.sh"
+PROBE_LIB="$SCRIPT_DIR/root/vpn-probe.sh"
 
 echo "================================================"
 echo "   healthcheck probe-target tests"
@@ -53,15 +55,17 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-# Pull the three functions under test out of the shipped script.
+# Pull the three functions under test out of the shipped scripts.
 for fn in is_ip_address override_lan_probe_target check_dns; do
+    src="$HEALTHCHECK"
+    [ "$fn" = override_lan_probe_target ] && src="$PROBE_LIB"
     awk -v fn="$fn" '
         $0 ~ "^"fn"\\(\\) \\{" { inside = 1 }
         inside { print }
         inside && /^\}/ { exit }
-    ' "$HEALTHCHECK" > "$WORK/$fn.sh"
+    ' "$src" > "$WORK/$fn.sh"
     if [ ! -s "$WORK/$fn.sh" ]; then
-        log_fail "Could not extract $fn() from healthcheck.sh"
+        log_fail "Could not extract $fn() from $(basename "$src")"
         exit 1
     fi
 done
@@ -71,6 +75,7 @@ cat > "$WORK/harness.sh" <<'EOF'
 LOG_OUT=""
 log() { LOG_OUT="$LOG_OUT[$1] $2
 "; }
+probe_warn() { log "WARN" "$*"; }
 record_metric() { :; }
 # getent succeeds only for names listed in RESOLVABLE. A literal IP is never
 # listed, so any success for one would have to come from the code under test.

@@ -139,6 +139,65 @@ telnet your-vpn-server.com 51820  # WireGuard
 docker exec transmissionvpn nslookup google.com
 ```
 
+### Container exits with code 1 after the VPN stops passing traffic
+
+This is deliberate. With `AUTO_RESTART_VPN=true`, `vpn-monitor` restarts a failed tunnel up to
+`MAX_RESTART_ATTEMPTS` times. If it is still dead after that, the container stops with exit code 1 so your
+restart policy (or Kubernetes) starts a fresh one, which re-runs VPN setup and PIA port forwarding from
+scratch. The log line just before it stops says so:
+
+```
+[VPN-MONITOR] ERROR: VPN still down after 3 restart attempts. Stopping the container (exit code 1) ...
+```
+
+Before `v4.1.3-r2` the monitor logged "manual intervention required" every ~35 seconds forever instead. The
+web UI kept answering, so nothing outside the container noticed. If the container keeps exiting, the fault
+is in the tunnel itself. Look at `/tmp/openvpn.log` or `/tmp/vpn-setup.log` from the run before the exit,
+and check that the provider's servers in your config still exist and that `compress`/`comp-lzo` match what
+the provider expects. Set `EXIT_ON_MAX_RESTARTS=false` to get the old behaviour back. Without a restart policy,
+Docker leaves the container stopped.
+
+"Dead" means no reply through the tunnel from `HEALTH_CHECK_HOST` or `HEALTH_CHECK_HOST_FALLBACK`,
+three packets each. An interface that is up with an address does not count as working.
+
+**Reproducing a dead tunnel locally.** With a working VPN connection, drop everything leaving through the tunnel:
+
+```bash
+docker exec transmissionvpn iptables -I OUTPUT -o tun0 -j DROP      # wg0 for WireGuard
+# Within one or two checks:
+docker exec transmissionvpn cat /tmp/vpn_tunnel_state                # connected=0
+curl -s localhost:9099/metrics | grep -E '^transmissionvpn_(vpn_connected|vpn_interface_up|healthy) '
+# transmissionvpn_vpn_connected 0, transmissionvpn_vpn_interface_up 1, transmissionvpn_healthy 0
+docker exec transmissionvpn iptables -D OUTPUT -o tun0 -j DROP      # undo
+```
+
+That rule lives in the filter table's OUTPUT chain, which `vpn-monitor` rebuilds when it engages the kill
+switch after `VPN_MAX_FAILURES` failed checks, so it only holds the tunnel dead for about that long. To follow
+it through restarts to the container exit, put the rule in the `raw` table instead, which neither the kill
+switch nor VPN setup flushes:
+
+```bash
+docker exec transmissionvpn iptables -t raw -I OUTPUT -o tun0 -j DROP
+docker exec transmissionvpn iptables -t raw -D OUTPUT -o tun0 -j DROP   # undo
+```
+
+With `AUTO_RESTART_VPN=true` and the defaults, the exit comes 15 to 20 minutes later. Setting
+`VPN_CHECK_INTERVAL=5 VPN_MAX_FAILURES=1 MAX_RESTART_ATTEMPTS=1 RESTART_COOLDOWN_SECONDS=20` gets there in
+about a minute.
+
+Without VPN credentials, a dummy interface does the same job. VPN setup fails closed, but `vpn-monitor` only
+needs the interface and the setup flag:
+
+```bash
+docker run -d --name tvpn-test --cap-add NET_ADMIN -e VPN_CLIENT=openvpn -e METRICS_ENABLED=true \
+  -e AUTO_RESTART_VPN=true -e VPN_CHECK_INTERVAL=5 -e VPN_MAX_FAILURES=1 -e VPN_INITIAL_DELAY=1 \
+  -e MAX_RESTART_ATTEMPTS=1 -e RESTART_COOLDOWN_SECONDS=20 -e CHECK_DNS=false -e CHECK_EXTERNAL_IP=false \
+  magicalyak/transmissionvpn:latest
+docker exec tvpn-test sh -c 'ip link add tun0 type dummy && ip addr add 10.25.18.69/24 dev tun0 &&
+  ip link set tun0 up && echo tun0 > /tmp/vpn_interface_name && touch /tmp/vpn_setup_complete'
+docker wait tvpn-test    # prints 1 after roughly 30 seconds
+```
+
 ### 🔄 VPN Connects but Disconnects Frequently
 
 **Diagnosis:**
