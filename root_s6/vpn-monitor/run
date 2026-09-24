@@ -502,6 +502,10 @@ attempt_vpn_restart() {
         if check_tunnel "$VPN_INTERFACE"; then
             log_restart "VPN restart successful - traffic passes through $VPN_INTERFACE"
             send_notification "vpn_restart_success" "VPN successfully restarted"
+            # The tunnel is verified, so bring Transmission back now rather than on the
+            # next health check: a liveness probe on the web UI would otherwise restart
+            # the container first. Before port forwarding, which waits for its RPC.
+            restart_transmission
             # The old keepalive is bound to the previous session's gateway and signature.
             if [ "${PIA_PORT_FORWARD,,}" = "true" ]; then
                 restart_port_forwarding "VPN was restarted"
@@ -620,8 +624,11 @@ while true; do
         # VPN is healthy
         if [ $FAILURE_COUNT -gt 0 ]; then
             log "VPN connectivity restored after $FAILURE_COUNT failures"
-            restart_transmission
         fi
+        # Not tied to FAILURE_COUNT: a successful restart resets it to 0, and this
+        # used to be the only place Transmission was started again. No-op unless
+        # stop_transmission stopped it.
+        restart_transmission
         FAILURE_COUNT=0
 
         # Track consecutive healthy checks to reset restart counter
