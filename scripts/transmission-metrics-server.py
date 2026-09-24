@@ -46,6 +46,16 @@ PORT_TEST_RETRY_INTERVAL = int(os.getenv('PORT_TEST_RETRY_INTERVAL', '60'))
 # Published by pia-pf-firewall.sh. This process runs unprivileged
 # (s6-setuidgid abc) and cannot inspect iptables itself.
 PF_STATE_FILE = os.getenv('PF_STATE_FILE', '/tmp/pia_pf_state')
+# Published by vpn-monitor after every check: whether traffic actually passed
+# through the tunnel, using the same probe as healthcheck.sh. This process cannot
+# probe the tunnel itself for the same reason it cannot read iptables.
+VPN_STATE_FILE = os.getenv('VPN_STATE_FILE', '/tmp/vpn_tunnel_state')
+VPN_CHECK_INTERVAL = int(os.getenv('VPN_CHECK_INTERVAL', '30'))
+# A result older than this is not trusted. vpn-monitor rewrites the file every
+# VPN_CHECK_INTERVAL plus probe time, so going stale means the monitor itself is
+# stuck or dead - which must not leave the last good answer frozen in place.
+VPN_STATE_MAX_AGE = int(os.getenv('VPN_STATE_MAX_AGE',
+                                  str(max(3 * VPN_CHECK_INTERVAL, 120))))
 
 # Global variables for metrics and health
 transmission_stats = {}
@@ -235,11 +245,13 @@ def get_vpn_info():
                 if if_stats and if_stats.isup:
                     vpn_info['status'] = 'up'
                     
-                    # Get IP address
+                    # Get IP address. An address alone does not make the
+                    # tunnel connected: it kept one through the whole
+                    # 2026-09-22 outage. 'connected' is set from vpn-monitor's
+                    # probe below.
                     for addr in addrs:
                         if addr.family == socket.AF_INET:
                             vpn_info['ip_address'] = addr.address
-                            vpn_info['connected'] = True
                             break
                     
                     # Get interface statistics
@@ -257,6 +269,12 @@ def get_vpn_info():
                         }
                 break
         
+        tunnel_check = read_tunnel_check()
+        vpn_info['tunnel_check'] = tunnel_check
+        vpn_info['connected'] = bool(vpn_info['status'] == 'up'
+                                     and vpn_info['ip_address']
+                                     and tunnel_check['passing'])
+
         # Get DNS servers
         try:
             with open('/etc/resolv.conf', 'r') as f:
@@ -281,15 +299,11 @@ def get_vpn_info():
         logger.error(f"Failed to get VPN info: {e}")
         return {'interface': None, 'status': 'unknown', 'connected': False}
 
-def read_pf_state():
-    """Read the forwarded-port firewall state published by pia-pf-firewall.sh.
-
-    Returns a dict with int values, or {} if the file is absent or unreadable
-    (which is the normal case when PIA port forwarding is not enabled).
-    """
+def _read_int_state(path):
+    """Parse a key=integer state file. {} if absent or unreadable."""
     state = {}
     try:
-        with open(PF_STATE_FILE, 'r') as fh:
+        with open(path, 'r') as fh:
             for line in fh:
                 key, _, value = line.strip().partition('=')
                 if key and value.lstrip('-').isdigit():
@@ -297,6 +311,39 @@ def read_pf_state():
     except (IOError, OSError):
         return {}
     return state
+
+
+def read_pf_state():
+    """Read the forwarded-port firewall state published by pia-pf-firewall.sh.
+
+    Returns a dict with int values, or {} if the file is absent or unreadable
+    (which is the normal case when PIA port forwarding is not enabled).
+    """
+    return _read_int_state(PF_STATE_FILE)
+
+
+def read_tunnel_check(now=None):
+    """Return vpn-monitor's last tunnel probe result.
+
+    'passing' is True only for a fresh result that says traffic got through.
+    A missing file (vpn-monitor has not finished its first check yet) or a
+    stale one (vpn-monitor is stuck or dead) counts as not passing: the tunnel
+    is unverified, and reporting it as connected is how the 2026-09-22 outage
+    stayed invisible for 38 hours.
+    """
+    now = time.time() if now is None else now
+    state = _read_int_state(VPN_STATE_FILE)
+    updated = state.get('updated')
+    age = int(now - updated) if updated else None
+    fresh = age is not None and age <= VPN_STATE_MAX_AGE
+    return {
+        'passing': bool(fresh and state.get('connected') == 1),
+        'age_seconds': age,
+        'stale': not fresh,
+        'consecutive_failures': state.get('failures'),
+        'restart_attempts': state.get('restarts'),
+        'max_restart_attempts': state.get('max_restarts'),
+    }
 
 
 def get_port_test(api):
@@ -356,11 +403,13 @@ def classify_port_state(port_test, vpn_connected, pf_state, pf_enabled):
                 notices.append('port_not_open_vpn_expected')
             else:
                 warnings.append('port_not_open_no_vpn')
-        elif rules_present != 0:
+        elif rules_present != 0 and vpn_connected:
             # Our rules are in place, so the fault is upstream of us: an expired
             # PIA binding, or a server that stopped forwarding.
             warnings.append('pf_port_bound_but_unreachable')
-        # rules_present == 0 is already covered by pf_rules_missing above.
+        # rules_present == 0 is already covered by pf_rules_missing above. With
+        # the tunnel down nothing is reachable, so blaming the PIA binding would
+        # point at the wrong fault; vpn_disconnected already reports the right one.
 
     return warnings, notices
 
@@ -700,7 +749,9 @@ def generate_prometheus_metrics():
         metrics.append(f"transmissionvpn_container_running {container_running}")
         
         # VPN connection status
-        metrics.append("# HELP transmissionvpn_vpn_connected VPN is connected")
+        # Traffic verified through the tunnel by vpn-monitor's probe, not just an
+        # interface holding an address; see transmissionvpn_vpn_interface_up for that.
+        metrics.append("# HELP transmissionvpn_vpn_connected VPN tunnel passes traffic (vpn-monitor probe through the tunnel succeeded recently)")
         metrics.append("# TYPE transmissionvpn_vpn_connected gauge")
         vpn_connected = 1 if health_data.get('vpn', {}).get('connected', False) else 0
         metrics.append(f"transmissionvpn_vpn_connected {vpn_connected}")
@@ -733,10 +784,24 @@ def generate_prometheus_metrics():
         metrics.append(f"transmissionvpn_cpu_usage_percent {cpu_usage}")
         
         # VPN interface status
-        metrics.append("# HELP transmissionvpn_vpn_interface_up VPN interface is up")
+        metrics.append("# HELP transmissionvpn_vpn_interface_up VPN interface exists and is up (does not mean traffic passes)")
         metrics.append("# TYPE transmissionvpn_vpn_interface_up gauge")
         vpn_interface_up = 1 if health_data.get('vpn', {}).get('status') == 'up' else 0
         metrics.append(f"transmissionvpn_vpn_interface_up {vpn_interface_up}")
+
+        # Age of vpn-monitor's last tunnel probe, -1 if there has not been one.
+        # Grows without bound if vpn-monitor stops checking.
+        tunnel_check = health_data.get('vpn', {}).get('tunnel_check', {})
+        metrics.append("# HELP transmissionvpn_vpn_tunnel_check_age_seconds Age of the last tunnel probe by vpn-monitor")
+        metrics.append("# TYPE transmissionvpn_vpn_tunnel_check_age_seconds gauge")
+        check_age = tunnel_check.get('age_seconds')
+        metrics.append(f"transmissionvpn_vpn_tunnel_check_age_seconds {check_age if check_age is not None else -1}")
+
+        # Resets after sustained health; the container exits once it reaches
+        # MAX_RESTART_ATTEMPTS unless EXIT_ON_MAX_RESTARTS=false.
+        metrics.append("# HELP transmissionvpn_vpn_restart_attempts VPN restart attempts since the tunnel was last stable")
+        metrics.append("# TYPE transmissionvpn_vpn_restart_attempts gauge")
+        metrics.append(f"transmissionvpn_vpn_restart_attempts {tunnel_check.get('restart_attempts') or 0}")
         
         # Port test status
         metrics.append("# HELP transmissionvpn_port_open Peer port is open")

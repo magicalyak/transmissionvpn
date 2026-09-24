@@ -112,6 +112,9 @@ ENV CHECK_EXTERNAL_IP=${CHECK_EXTERNAL_IP:-true}
 ENV AUTO_RESTART_VPN=${AUTO_RESTART_VPN:-false}
 ENV RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-300}
 ENV MAX_RESTART_ATTEMPTS=${MAX_RESTART_ATTEMPTS:-3}
+# Stop the container (non-zero exit) once MAX_RESTART_ATTEMPTS is used up, so the
+# orchestrator restarts it with fresh state. false keeps the old wait-for-a-human behaviour.
+ENV EXIT_ON_MAX_RESTARTS=${EXIT_ON_MAX_RESTARTS:-true}
 ENV NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL:-}
 
 # PIA Port Forwarding settings
@@ -159,10 +162,12 @@ COPY --chmod=755 root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-ini
 COPY --chmod=755 root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
 COPY --chmod=755 root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
 COPY --chmod=755 root/etc/cont-init.d/04-setup-web-ui-auto-download.sh /etc/cont-init.d/04-setup-web-ui-auto-download
+COPY --chmod=755 root/etc/cont-init.d/05-reset-vpn-monitor-state.sh /etc/cont-init.d/05-reset-vpn-monitor-state
 COPY --chmod=755 root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 
-# Copy healthcheck script
+# Copy healthcheck script and the tunnel probe it shares with vpn-monitor
 COPY --chmod=755 root/healthcheck.sh /root/healthcheck.sh
+COPY --chmod=755 root/vpn-probe.sh /usr/local/bin/vpn-probe.sh
 
 # Copy Privoxy configuration template and s6 service files
 COPY config/privoxy/config /etc/privoxy/config.template

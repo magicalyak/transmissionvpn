@@ -23,6 +23,24 @@ VPN_SETUP_WAIT_WARN_SECONDS=${VPN_SETUP_WAIT_WARN_SECONDS:-150}
 RESTART_COOLDOWN_SECONDS=${RESTART_COOLDOWN_SECONDS:-300}  # 5 min between attempts
 MAX_RESTART_ATTEMPTS=${MAX_RESTART_ATTEMPTS:-3}             # Give up after this many
 NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL:-}      # Optional webhook
+# What "give up" means. true: stop the whole container with a non-zero exit code once
+# MAX_RESTART_ATTEMPTS is used up, so Docker's restart policy or Kubernetes starts it
+# again with fresh state. false: stay up with the kill switch engaged and wait for a
+# human, which is what every release before v4.1.3-r2 did - and with the web UI still
+# answering, nothing outside the container noticed for 38 hours.
+EXIT_ON_MAX_RESTARTS=${EXIT_ON_MAX_RESTARTS:-true}
+# s6-overlay v3: the container exits with the code in this file once halt runs.
+S6_EXITCODE_FILE=${S6_EXITCODE_FILE:-/run/s6-linux-init-container-results/exitcode}
+S6_HALT=${S6_HALT:-/run/s6/basedir/bin/halt}
+MAX_RESTARTS_EXIT_CODE=1
+
+# PIA port forwarding. The keepalive is a background loop started by pia-port-forward.sh.
+# It exits when a bind fails (which it will once the tunnel has been down for a while),
+# and nothing else ever restarted it, so the monitor watches for that.
+PIA_PORT_FORWARD=${PIA_PORT_FORWARD:-false}
+PF_RESTART_COOLDOWN_SECONDS=${PF_RESTART_COOLDOWN_SECONDS:-900}
+PIA_PF_SCRIPT=${PIA_PF_SCRIPT:-/usr/local/bin/pia-port-forward.sh}
+VPN_SETUP_SCRIPT=${VPN_SETUP_SCRIPT:-/etc/cont-init.d/50-vpn-setup}
 
 # File paths
 VPN_INTERFACE_FILE="/tmp/vpn_interface_name"
@@ -36,6 +54,12 @@ LAST_RESTART_FILE="/tmp/last_vpn_restart"
 RESTART_COUNT_FILE="/tmp/vpn_restart_count"
 RESTART_LOG="/config/vpn-auto-restart.log"
 
+# Result of the last tunnel probe, for the unprivileged metrics server. Same key=integer
+# format as /tmp/pia_pf_state. Reset at container start by 05-reset-vpn-monitor-state.
+VPN_TUNNEL_STATE_FILE=${VPN_TUNNEL_STATE_FILE:-/tmp/vpn_tunnel_state}
+PIA_KEEPALIVE_PID_FILE="/tmp/pia_keepalive_pid"
+LAST_PF_RESTART_FILE="/tmp/last_pf_restart"
+
 # State tracking
 FAILURE_COUNT=0
 TRANSMISSION_WAS_RUNNING=false
@@ -46,6 +70,13 @@ HEALTHY_CHECKS_TO_RESET=5  # Reset restart counter after this many consecutive h
 log() {
     echo "[VPN-MONITOR] $(date '+%Y-%m-%d %H:%M:%S') $*"
 }
+
+# Same tunnel probe as /root/healthcheck.sh: HEALTH_CHECK_HOST, then
+# HEALTH_CHECK_HOST_FALLBACK, three packets each.
+probe_warn() { log "WARNING: $*"; }
+VPN_PROBE_LIB=${VPN_PROBE_LIB:-/usr/local/bin/vpn-probe.sh}
+# shellcheck source=root/vpn-probe.sh
+. "$VPN_PROBE_LIB"
 
 log_restart() {
     local message
@@ -92,6 +123,120 @@ increment_restart_count() {
 reset_restart_count() {
     echo "0" > "$RESTART_COUNT_FILE"
     rm -f "$LAST_RESTART_FILE"
+}
+
+# Does traffic actually pass through the tunnel? An interface that is UP with an address
+# is not enough: during the 2026-09-22 outage tun0 kept 10.25.18.69 for 38 hours while
+# nothing got through it. Sets TUNNEL_FAILURE to a short reason on failure.
+check_tunnel() {
+    local vpn_if="$1"
+    TUNNEL_FAILURE=""
+
+    if ! ip link show "$vpn_if" 2>/dev/null | grep -q "state UP\|state UNKNOWN"; then
+        TUNNEL_FAILURE="interface $vpn_if is not UP"
+        return 1
+    fi
+    if ! ip addr show "$vpn_if" 2>/dev/null | grep -q "inet "; then
+        TUNNEL_FAILURE="interface $vpn_if has no IP address"
+        return 1
+    fi
+    if ! vpn_probe_tunnel "$vpn_if" >/dev/null; then
+        TUNNEL_FAILURE="no reply through $vpn_if from $HEALTH_CHECK_HOST${HEALTH_CHECK_HOST_FALLBACK:+ or $HEALTH_CHECK_HOST_FALLBACK}"
+        return 1
+    fi
+    return 0
+}
+
+# Publish the last probe result. The metrics server runs as an unprivileged user and
+# cannot ping through the tunnel itself, so it reports this file as
+# transmissionvpn_vpn_connected, and treats a stale file as not connected.
+publish_tunnel_state() {
+    local connected="$1"
+    local tmp="${VPN_TUNNEL_STATE_FILE}.tmp"
+    {
+        echo "connected=$connected"
+        echo "updated=$(date +%s)"
+        echo "failures=$FAILURE_COUNT"
+        echo "restarts=$(get_restart_count)"
+        echo "max_restarts=$MAX_RESTART_ATTEMPTS"
+    } > "$tmp" 2>/dev/null && mv -f "$tmp" "$VPN_TUNNEL_STATE_FILE" 2>/dev/null || true
+}
+
+# Block until s6 tears the container down. Split out so tests can replace it.
+wait_for_shutdown() {
+    exec sleep infinity
+}
+
+# Stop the whole container, not just this service. If this script merely exited, s6
+# would restart it into the same counter file and the same dead tunnel; halting lets the
+# orchestrator start a new container, which re-runs VPN setup and PIA port forwarding
+# from scratch (05-reset-vpn-monitor-state clears the counter if the same container is
+# restarted in place).
+exit_container_for_restart() {
+    log_restart "ERROR: VPN still down after $MAX_RESTART_ATTEMPTS restart attempts. Stopping the container (exit code $MAX_RESTARTS_EXIT_CODE) so it is restarted with fresh state. Set EXIT_ON_MAX_RESTARTS=false to keep it running instead."
+    send_notification "vpn_restart_exhausted" "Maximum VPN restart attempts exceeded - stopping container for restart"
+    publish_tunnel_state 0
+
+    if ! { mkdir -p "$(dirname "$S6_EXITCODE_FILE")" && echo "$MAX_RESTARTS_EXIT_CODE" > "$S6_EXITCODE_FILE"; } 2>/dev/null; then
+        log "WARNING: Could not write $S6_EXITCODE_FILE; the container may exit 0"
+    fi
+
+    if [ -x "$S6_HALT" ]; then
+        "$S6_HALT" || log "ERROR: $S6_HALT failed (exit $?)"
+    else
+        log "ERROR: $S6_HALT not found; signalling PID 1 instead"
+        kill -TERM 1 2>/dev/null || log "ERROR: Could not signal PID 1"
+    fi
+    wait_for_shutdown
+}
+
+# Kill any old keepalive and run PIA port forwarding again, in the background so the
+# monitor keeps checking. pia-port-forward.sh fetches a new signature from whichever
+# gateway the tunnel is on now, re-applies the firewall rules, sets Transmission's peer
+# port and starts a fresh keepalive.
+restart_port_forwarding() {
+    local reason="$1"
+    local old_pid
+
+    old_pid=$(cat "$PIA_KEEPALIVE_PID_FILE" 2>/dev/null || true)
+    if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+        kill "$old_pid" 2>/dev/null || true
+    fi
+    rm -f "$PIA_KEEPALIVE_PID_FILE"
+    date +%s > "$LAST_PF_RESTART_FILE"
+
+    log "Restarting PIA port forwarding: $reason"
+    "$PIA_PF_SCRIPT" &
+}
+
+# Called while the tunnel is healthy. Restarts PIA port forwarding if its keepalive
+# has died, unless a run is already in progress or one was started recently.
+ensure_port_forwarding() {
+    [ "${PIA_PORT_FORWARD,,}" = "true" ] || return 0
+
+    local pid
+    pid=$(cat "$PIA_KEEPALIVE_PID_FILE" 2>/dev/null || true)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+
+    # Any other pia-port-forward process is a setup run still in progress: the s6
+    # oneshot at startup (its run script, then the exec'd pia-port-forward.sh), or one
+    # started below. Leave it alone rather than racing it for a second signature.
+    if pgrep -f "pia-port-forward" 2>/dev/null | grep -qvx "${pid:-none}"; then
+        return 0
+    fi
+
+    if [ -f "$LAST_PF_RESTART_FILE" ]; then
+        local last
+        last=$(cat "$LAST_PF_RESTART_FILE" 2>/dev/null || true)
+        case "$last" in ''|*[!0-9]*) last=0 ;; esac
+        if [ $(( $(date +%s) - last )) -lt "$PF_RESTART_COOLDOWN_SECONDS" ]; then
+            return 0
+        fi
+    fi
+
+    restart_port_forwarding "keepalive is not running"
 }
 
 send_notification() {
@@ -266,7 +411,10 @@ attempt_vpn_restart() {
     local restart_count
     restart_count=$(get_restart_count)
     if [ "$restart_count" -ge "$MAX_RESTART_ATTEMPTS" ]; then
-        log_restart "ERROR: Maximum restart attempts ($MAX_RESTART_ATTEMPTS) exceeded - manual intervention required"
+        if [ "${EXIT_ON_MAX_RESTARTS,,}" = "true" ]; then
+            exit_container_for_restart
+        fi
+        log_restart "ERROR: Maximum restart attempts ($MAX_RESTART_ATTEMPTS) exceeded - manual intervention required (EXIT_ON_MAX_RESTARTS=false)"
         send_notification "vpn_restart_exhausted" "Maximum VPN restart attempts exceeded"
         return 1
     fi
@@ -320,7 +468,7 @@ attempt_vpn_restart() {
 
     # Re-run VPN setup script
     local restart_success=false
-    if /etc/cont-init.d/50-vpn-setup 2>/dev/null; then
+    if "$VPN_SETUP_SCRIPT" 2>/dev/null; then
         restart_success=true
     fi
 
@@ -333,15 +481,21 @@ attempt_vpn_restart() {
             VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
         fi
 
-        # Verify VPN interface is UP and has an IP
-        if ip link show "$VPN_INTERFACE" 2>/dev/null | grep -q "state UP\|state UNKNOWN" && \
-           ip addr show "$VPN_INTERFACE" 2>/dev/null | grep -q "inet "; then
-            log_restart "VPN restart successful - interface $VPN_INTERFACE is UP"
+        # Verify traffic passes, not just that the interface came back: a tunnel can
+        # come up with an address and still carry nothing (a compress mismatch did
+        # exactly that on 2026-09-22), and counting that as a success would reset
+        # the failure count and hide the outage.
+        if check_tunnel "$VPN_INTERFACE"; then
+            log_restart "VPN restart successful - traffic passes through $VPN_INTERFACE"
             send_notification "vpn_restart_success" "VPN successfully restarted"
+            # The old keepalive is bound to the previous session's gateway and signature.
+            if [ "${PIA_PORT_FORWARD,,}" = "true" ]; then
+                restart_port_forwarding "VPN was restarted"
+            fi
             return 0
         else
-            log_restart "VPN restart completed but interface verification failed"
-            send_notification "vpn_restart_failed" "VPN restart completed but interface not UP"
+            log_restart "VPN restart completed but the tunnel is not usable: $TUNNEL_FAILURE"
+            send_notification "vpn_restart_failed" "VPN restart completed but tunnel check failed: $TUNNEL_FAILURE"
             return 1
         fi
     else
@@ -413,6 +567,7 @@ while true; do
         VPN_INTERFACE=$(cat "$VPN_INTERFACE_FILE")
     else
         log "ERROR: VPN interface file not found"
+        publish_tunnel_state 0
         stop_transmission
         enforce_killswitch ""
         sleep "$VPN_CHECK_INTERVAL"
@@ -422,24 +577,14 @@ while true; do
     # Comprehensive VPN health checks
     VPN_HEALTHY=true
 
-    # Check 1: Interface exists and is UP
-    if ! ip link show "$VPN_INTERFACE" 2>/dev/null | grep -q "state UP\|state UNKNOWN"; then
-        log "ERROR: VPN interface $VPN_INTERFACE is not UP"
+    # Checks 1-3: interface UP, has an address, and traffic passes through it.
+    # This result alone is what gets published as "connected"; the DNS and
+    # external-IP checks below are about the path beyond the tunnel.
+    TUNNEL_OK=1
+    if ! check_tunnel "$VPN_INTERFACE"; then
+        log "ERROR: VPN tunnel check failed: $TUNNEL_FAILURE"
         VPN_HEALTHY=false
-    fi
-
-    # Check 2: Interface has an IP address
-    if ! ip addr show "$VPN_INTERFACE" 2>/dev/null | grep -q "inet "; then
-        log "ERROR: VPN interface $VPN_INTERFACE has no IP address"
-        VPN_HEALTHY=false
-    fi
-
-    # Check 3: Can ping through VPN interface
-    if [ "$VPN_HEALTHY" = "true" ]; then
-        if ! ping -c 1 -W 5 -I "$VPN_INTERFACE" 1.1.1.1 >/dev/null 2>&1; then
-            log "WARNING: Cannot ping through VPN interface"
-            VPN_HEALTHY=false
-        fi
+        TUNNEL_OK=0
     fi
 
     # Check 4: DNS resolution (optional)
@@ -475,11 +620,16 @@ while true; do
             fi
             CONSECUTIVE_HEALTHY=0
         fi
+        publish_tunnel_state "$TUNNEL_OK"
+
+        ensure_port_forwarding
     else
         # VPN is unhealthy
         FAILURE_COUNT=$((FAILURE_COUNT + 1))
         CONSECUTIVE_HEALTHY=0
         log "VPN health check failed ($FAILURE_COUNT/$VPN_MAX_FAILURES)"
+        # Published before any restart attempt, which can block for minutes.
+        publish_tunnel_state "$TUNNEL_OK"
 
         if [ "$FAILURE_COUNT" -ge "$VPN_MAX_FAILURES" ]; then
             log "CRITICAL: VPN failed after $VPN_MAX_FAILURES consecutive checks"

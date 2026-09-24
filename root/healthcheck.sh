@@ -9,15 +9,8 @@
 set -e
 
 # Configuration
-# Primary connectivity probe target. Default is Cloudflare (1.1.1.1), which
-# answers ICMP reliably. Avoid Google anycast IPs (e.g. 8.8.8.8) as the primary
-# target: they aggressively rate-limit/drop ICMP from VPN exit IPs, which causes
-# the connectivity check to false-fail and trip the kill switch.
-HEALTH_CHECK_HOST=${HEALTH_CHECK_HOST:-1.1.1.1}
-# Secondary connectivity probe target. Only counts a connectivity failure when
-# BOTH the primary and fallback fail, so a single host's ICMP filtering can't
-# trip the kill switch. Set to empty to disable the fallback.
-HEALTH_CHECK_HOST_FALLBACK=${HEALTH_CHECK_HOST_FALLBACK-9.9.9.9}
+# HEALTH_CHECK_HOST and HEALTH_CHECK_HOST_FALLBACK are read by the shared probe in
+# vpn-probe.sh, sourced below after log() is defined.
 # DNS probe target. This must be a NAME, not an address: `getent hosts`
 # succeeds for a literal IP whether or not DNS works at all, so reusing
 # HEALTH_CHECK_HOST (an IP by default) made check_dns pass unconditionally.
@@ -53,22 +46,13 @@ is_ip_address() {
     esac
 }
 
-# A private address cannot answer "is the tunnel carrying traffic": it is not
-# routed through the VPN interface, so the probe fails no matter how healthy the
-# tunnel is. Substitute a public target and say so loudly, rather than reporting
-# a connectivity failure that is really a configuration mistake.
-#
-# This behaviour previously lived in root/healthcheck-wrapper.sh, which the
-# Dockerfile never copied into the image, so it had never actually run.
-override_lan_probe_target() {
-    case "$HEALTH_CHECK_HOST" in
-        10.*|192.168.*|127.*|169.254.*|\
-        172.1[6-9].*|172.2[0-9].*|172.3[01].*)
-            log "WARN" "HEALTH_CHECK_HOST ($HEALTH_CHECK_HOST) is a private address and is not routed through the VPN, so it cannot test tunnel connectivity. Using 1.1.1.1 instead; set HEALTH_CHECK_HOST to a public address to silence this."
-            HEALTH_CHECK_HOST="1.1.1.1"
-            ;;
-    esac
-}
+# Shared tunnel probe: override_lan_probe_target, ping_host_via_vpn and
+# vpn_probe_tunnel. vpn-monitor sources the same file, so the health check and the
+# monitor cannot disagree about whether the tunnel works.
+probe_warn() { log "WARN" "$*"; }
+VPN_PROBE_LIB=${VPN_PROBE_LIB:-/usr/local/bin/vpn-probe.sh}
+# shellcheck source=root/vpn-probe.sh
+. "$VPN_PROBE_LIB"
 
 # Metrics function
 record_metric() {
@@ -204,51 +188,30 @@ check_vpn_interface() {
     fi
 }
 
-# Probe a single host through the VPN interface.
-# Sends multiple ICMP packets so a single dropped/rate-limited reply doesn't
-# register as a failure: ping exits 0 if any one of the packets is answered.
-ping_host_via_vpn() {
-    local vpn_if="$1"
-    local host="$2"
-    # -c 3: send 3 packets, -i 0.5: short interval to keep latency low,
-    # -W 3: wait up to 3s for a reply. Success if >=1 packet is answered.
-    ping -c 3 -i 0.5 -W 3 -I "$vpn_if" "$host" > /dev/null 2>&1
-}
-
 # Function to check VPN connectivity
 check_vpn_connectivity() {
     local vpn_if="$1"
-    local start_time
+    local start_time answered
     start_time=$(date +%s%N)
 
     log "DEBUG" "Testing VPN connectivity to $HEALTH_CHECK_HOST through $vpn_if"
 
-    # Ping test through VPN interface (multi-packet; any reply = healthy)
-    if ping_host_via_vpn "$vpn_if" "$HEALTH_CHECK_HOST"; then
+    # Multi-packet probe to the primary, then the fallback; any reply = healthy.
+    if answered=$(vpn_probe_tunnel "$vpn_if"); then
         local end_time
         end_time=$(date +%s%N)
         local ping_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
 
-        log "INFO" "VPN connectivity test successful (${ping_time}ms)"
+        if [ "$answered" != "$HEALTH_CHECK_HOST" ]; then
+            log "WARN" "Primary connectivity test to $HEALTH_CHECK_HOST failed, fallback $answered answered"
+        fi
+        log "INFO" "VPN connectivity test successful via $answered (${ping_time}ms)"
         record_metric "vpn_connectivity_status" "1"
         record_metric "vpn_ping_time_ms" "$ping_time"
         return 0
     fi
 
-    # Primary failed. Try the optional fallback host before declaring a failure,
-    # so a single host's ICMP filtering can't trip the kill switch on its own.
     if [ -n "$HEALTH_CHECK_HOST_FALLBACK" ]; then
-        log "WARN" "Primary connectivity test to $HEALTH_CHECK_HOST failed, trying fallback $HEALTH_CHECK_HOST_FALLBACK"
-        if ping_host_via_vpn "$vpn_if" "$HEALTH_CHECK_HOST_FALLBACK"; then
-            local end_time
-            end_time=$(date +%s%N)
-            local ping_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
-
-            log "INFO" "VPN connectivity test successful via fallback $HEALTH_CHECK_HOST_FALLBACK (${ping_time}ms)"
-            record_metric "vpn_connectivity_status" "1"
-            record_metric "vpn_ping_time_ms" "$ping_time"
-            return 0
-        fi
         log "ERROR" "VPN connectivity test failed to both $HEALTH_CHECK_HOST and $HEALTH_CHECK_HOST_FALLBACK"
     else
         log "ERROR" "VPN connectivity test failed to $HEALTH_CHECK_HOST"
