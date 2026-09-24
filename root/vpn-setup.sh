@@ -51,6 +51,40 @@ fi
 echo "$DEFAULT_VPN_INTERFACE" > "$VPN_INTERFACE_FILE"
 echo "[INFO] Default VPN interface set to: $(cat $VPN_INTERFACE_FILE)"
 
+# VPN server parsing and kill switch exceptions, shared with vpn-monitor.
+remote_log() { echo "[INFO] $*"; }
+# shellcheck source=root/vpn-remotes.sh
+. "${VPN_REMOTES_LIB:-/usr/local/bin/vpn-remotes.sh}"
+
+# Rules that only exist while the tunnel comes up carry this comment, so they can
+# be removed once the kill switch is built without flushing the chains again.
+BOOTSTRAP_TAG="vpn-bootstrap"
+
+# Let the VPN client resolve its server while nothing else can use DNS: only to
+# the nameservers in the current resolv.conf, and only if a server is a hostname.
+bootstrap_allow_dns() {
+  local ns
+  while read -r ns; do
+    vpn_is_ipv4 "$ns" || continue
+    echo "[INFO] Allowing DNS to $ns on eth0 until the tunnel is up (VPN server is a hostname)."
+    iptables -A OUTPUT -o eth0 -d "$ns" -p udp --dport 53 -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+    iptables -A OUTPUT -o eth0 -d "$ns" -p tcp --dport 53 -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+  done < <(awk '$1 == "nameserver" { print $2 }' /etc/resolv.conf 2>/dev/null)
+}
+
+# Remove every bootstrap rule. Deleting the -S spec with -A turned into -D keeps
+# this exact, whatever the rule matched.
+bootstrap_clear() {
+  local chain rule
+  for chain in INPUT OUTPUT; do
+    while read -r rule; do
+      [ -n "$rule" ] || continue
+      eval "iptables ${rule/-A /-D }" || true
+    done < <(iptables -S "$chain" 2>/dev/null | grep -F -- "--comment $BOOTSTRAP_TAG" || true)
+  done
+  echo "[INFO] Removed tunnel bootstrap rules."
+}
+
 # Function to find OpenVPN credentials
 find_vpn_credentials() {
   # Clear any stale credentials file
@@ -346,6 +380,12 @@ EOF
   echo "[DEBUG] Last 10 lines of modified config:"
   tail -10 "$TEMP_OVPN_CONFIG"
 
+  # The firewall is locked down (see the flush below); open it for the VPN servers only.
+  if vpn_remotes_need_dns "$TEMP_OVPN_CONFIG"; then
+    bootstrap_allow_dns
+  fi
+  vpn_allow_remotes "$TEMP_OVPN_CONFIG" append -m comment --comment "$BOOTSTRAP_TAG"
+
   echo "[INFO] Starting OpenVPN client..."
   rm -f /tmp/openvpn_connected_remote
   # Using exec to replace the shell process with openvpn is not suitable here as we need to run commands after it.
@@ -409,6 +449,11 @@ start_wireguard() {
       fi
   fi
   INTERFACE_NAME=$(cat "$VPN_INTERFACE_FILE")
+  # The firewall is locked down (see the flush below); open it for the peers only.
+  if vpn_wg_endpoints_need_dns "$WG_CONFIG"; then
+    bootstrap_allow_dns
+  fi
+  vpn_allow_wg_endpoints "$WG_CONFIG" append -m comment --comment "$BOOTSTRAP_TAG"
   echo "[INFO] Starting WireGuard for interface $INTERFACE_NAME using $WG_CONFIG..."
   wg-quick up "$WG_CONFIG"
   echo "[INFO] WireGuard started. Interface: $INTERFACE_NAME"
@@ -486,25 +531,43 @@ fail_closed_on_abort() {
 }
 trap fail_closed_on_abort EXIT
 
-# Reset and flush iptables BEFORE bringing the VPN tunnel up.
-# Two reasons:
-#  1. On in-place restart, leftover strict-DROP policies from a previous run
-#     would block the wg-quick / OpenVPN initial handshake. Reset to ACCEPT
-#     first so the tunnel can come up.
-#  2. wg-quick / OpenVPN configs commonly include PostUp / up hooks that
-#     install iptables rules (typical with provider-supplied configs).
-#     Flushing AFTER `wg-quick up` would wipe those rules, so flush BEFORE.
-# Strict-DROP killswitch policies are re-applied below once the tunnel is up
-# and our explicit ACCEPT rules are in place.
-iptables -P INPUT  ACCEPT
-iptables -P OUTPUT ACCEPT
-iptables -P FORWARD ACCEPT
+# Flush iptables BEFORE bringing the VPN tunnel up, and keep it locked down.
+#  - wg-quick / OpenVPN configs commonly include PostUp / up hooks that install
+#    iptables rules (typical with provider-supplied configs). Flushing AFTER the
+#    tunnel is up would wipe those rules, so flush BEFORE.
+#  - The policies stay DROP. This used to reset them to ACCEPT so the handshake
+#    could get out, which opened everything while the tunnel came up: at boot,
+#    where Transmission can already be running, and on every vpn-monitor restart,
+#    where the tunnel routes are gone and the default route is eth0. Now only the
+#    VPN servers are allowed out (added by start_openvpn / start_wireguard), plus
+#    replies to inbound web UI and metrics connections so probes keep passing.
+#    Those rules are tagged and removed once the real kill switch is built below.
+iptables -P INPUT  DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
 iptables -F INPUT
 iptables -F FORWARD
 iptables -F OUTPUT
 iptables -t nat -F
 iptables -t mangle -F
-echo "[INFO] Reset policies to ACCEPT and flushed iptables before tunnel start."
+ip6tables -P INPUT DROP   2>/dev/null || true
+ip6tables -P FORWARD DROP 2>/dev/null || true
+ip6tables -P OUTPUT DROP  2>/dev/null || true
+ip6tables -F INPUT        2>/dev/null || true
+ip6tables -F FORWARD      2>/dev/null || true
+ip6tables -F OUTPUT       2>/dev/null || true
+ip6tables -A INPUT  -i lo -j ACCEPT 2>/dev/null || true
+ip6tables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+iptables -A INPUT  -i lo -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+iptables -A OUTPUT -o lo -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+iptables -A INPUT  -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+iptables -A INPUT  -i eth0 -p tcp --dport 9091 -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+if [ "${METRICS_ENABLED,,}" = "true" ]; then
+  iptables -A INPUT -i eth0 -p tcp --dport "${METRICS_PORT:-9099}" -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+fi
+# Replies to those inbound connections only; nothing the container starts itself.
+iptables -A OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -m comment --comment "$BOOTSTRAP_TAG" -j ACCEPT
+echo "[INFO] Flushed iptables; only the VPN servers are allowed out until the tunnel is up."
 
 # Select VPN client
 if [ "${VPN_CLIENT,,}" = "openvpn" ]; then
@@ -619,7 +682,12 @@ echo "[INFO] Blocked DNS queries on eth0 (killswitch protection)."
 
 # Allow established and related connections (standard rule)
 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+# Established traffic may leave through the tunnel, but on eth0 only as replies to
+# inbound connections (web UI, metrics, Privoxy). A connection opened through the
+# tunnel stays ESTABLISHED after the tunnel's routes are gone, and would otherwise
+# follow the default route out of eth0.
+iptables -A OUTPUT ! -o eth0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -o eth0 -m conntrack --ctstate RELATED,ESTABLISHED --ctdir REPLY -j ACCEPT
 # For FORWARD chain as well, if container were to act as a router for others (not typical for this use case but good practice)
 iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 echo "[INFO] Allowed established/related connections."
@@ -748,22 +816,14 @@ if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$OVPN_CONFIG_FILE" ]; then
   # Every remote, not just the first: a fallback remote without an exception can
   # never connect. Hostnames resolve through the tunnel, which is up by now and
   # already allowed above, so no DNS is opened on eth0.
-  remote_log() { echo "[INFO] $*"; }
-  # shellcheck source=root/vpn-remotes.sh
-  . "${VPN_REMOTES_LIB:-/usr/local/bin/vpn-remotes.sh}"
   vpn_allow_remotes "$OVPN_CONFIG_FILE" append
 elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_CONFIG" ]; then
-  # Extract endpoint from WireGuard config
-  WG_ENDPOINT=$(grep '^Endpoint' "$WG_CONFIG" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
-  if [ -n "$WG_ENDPOINT" ]; then
-    WG_SERVER=$(echo "$WG_ENDPOINT" | cut -d: -f1)
-    WG_PORT=$(echo "$WG_ENDPOINT" | cut -d: -f2)
-    if [ -n "$WG_SERVER" ] && [ -n "$WG_PORT" ]; then
-      echo "[INFO] Adding kill switch exception for WireGuard server $WG_SERVER:$WG_PORT"
-      iptables -A OUTPUT -o eth0 -d "$WG_SERVER" -p udp --dport "$WG_PORT" -j ACCEPT
-    fi
-  fi
+  # Every peer endpoint, the same way.
+  vpn_allow_wg_endpoints "$WG_CONFIG" append
 fi
+
+# The permanent rules are all in place; drop the bootstrap ones.
+bootstrap_clear
 
 # Strict killswitch: Drop ALL traffic not explicitly allowed
 iptables -A OUTPUT -j DROP

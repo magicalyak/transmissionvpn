@@ -231,10 +231,8 @@ else
     # The variables and log() are read by the extracted block.
     # shellcheck disable=SC2034,SC2329
     (
-        unset -f remote_log
         VPN_CLIENT=OpenVPN
         OVPN_CONFIG_FILE="$WORK/three.ovpn"
-        VPN_REMOTES_LIB="$REMOTES_LIB"
         set -e
         # shellcheck disable=SC1091
         . "$WORK/setup-block.sh"

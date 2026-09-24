@@ -80,11 +80,13 @@ vpn_ensure_output_rule() {
 
 # Allow OpenVPN to reach every address of every remote in CONFIG over eth0.
 # MODE is "append" (building a chain) or "insert" (a live chain that already ends
-# in DROP). Without any remote directive, OpenVPN's default port 1194 is allowed
-# on udp and tcp so a config that sets its server some other way still connects.
+# in DROP). Any further arguments are added to each rule, e.g. a comment match.
+# Without any remote directive, OpenVPN's default port 1194 is allowed on udp and
+# tcp so a config that sets its server some other way still connects.
 # Sets VPN_REMOTE_COUNT and VPN_EXCEPTION_COUNT for the caller.
 vpn_allow_remotes() {
     local config="$1" mode="${2:-append}" host port proto ips ip rc
+    shift 2 || shift $#
 
     VPN_REMOTE_COUNT=0
     VPN_EXCEPTION_COUNT=0
@@ -103,7 +105,7 @@ vpn_allow_remotes() {
         fi
         for ip in $ips; do
             rc=0
-            vpn_ensure_output_rule "$mode" -o eth0 -d "$ip" -p "$proto" --dport "$port" -j ACCEPT || rc=$?
+            vpn_ensure_output_rule "$mode" -o eth0 -d "$ip" -p "$proto" --dport "$port" "$@" -j ACCEPT || rc=$?
             case "$rc" in
                 0)
                     remote_log "Kill switch exception for VPN remote $host: $ip:$port ($proto)"
@@ -117,7 +119,7 @@ vpn_allow_remotes() {
     if [ "$VPN_REMOTE_COUNT" -eq 0 ]; then
         remote_log "WARN: No remote directive found in $config. Allowing OpenVPN's default port 1194 (udp and tcp)."
         for proto in udp tcp; do
-            if vpn_ensure_output_rule "$mode" -o eth0 -p "$proto" --dport 1194 -j ACCEPT; then
+            if vpn_ensure_output_rule "$mode" -o eth0 -p "$proto" --dport 1194 "$@" -j ACCEPT; then
                 VPN_EXCEPTION_COUNT=$((VPN_EXCEPTION_COUNT + 1))
             fi
         done
@@ -125,6 +127,64 @@ vpn_allow_remotes() {
     fi
 
     remote_log "Added $VPN_EXCEPTION_COUNT kill switch exception(s) for $VPN_REMOTE_COUNT OpenVPN remote(s)"
+}
+
+# Succeed if any remote in CONFIG is a hostname, i.e. OpenVPN needs DNS to reach it.
+vpn_remotes_need_dns() {
+    local host
+    while read -r host _; do
+        vpn_is_ipv4 "$host" || return 0
+    done < <(vpn_list_remotes "$1")
+    return 1
+}
+
+# Print one "host port" line per WireGuard peer Endpoint in CONFIG. IPv6 endpoints
+# are skipped: IPv6 is dropped outright by the kill switch.
+vpn_list_wg_endpoints() {
+    local config="$1" endpoint
+    [ -r "$config" ] || return 1
+    while read -r endpoint; do
+        case "$endpoint" in
+            \[*) continue ;;
+            *:*) echo "${endpoint%:*} ${endpoint##*:}" ;;
+        esac
+    done < <(tr -d '\r' < "$config" | awk -F= 'tolower($1) ~ /^[[:space:]]*endpoint[[:space:]]*$/ { gsub(/[[:space:]]/, "", $2); print $2 }')
+}
+
+# Succeed if any WireGuard endpoint in CONFIG is a hostname.
+vpn_wg_endpoints_need_dns() {
+    local host
+    while read -r host _; do
+        vpn_is_ipv4 "$host" || return 0
+    done < <(vpn_list_wg_endpoints "$1")
+    return 1
+}
+
+# Allow WireGuard to reach every peer endpoint in CONFIG over eth0 (udp).
+# MODE and any further arguments work as for vpn_allow_remotes.
+vpn_allow_wg_endpoints() {
+    local config="$1" mode="${2:-append}" host port ips ip rc
+    shift 2 || shift $#
+    while read -r host port; do
+        case "$port" in
+            '' | *[!0-9]*)
+                remote_log "WARN: Skipping WireGuard endpoint $host: invalid port '$port'"
+                continue
+                ;;
+        esac
+        if ! ips=$(vpn_resolve_ipv4 "$host"); then
+            remote_log "WARN: Could not resolve WireGuard endpoint $host."
+            continue
+        fi
+        for ip in $ips; do
+            rc=0
+            vpn_ensure_output_rule "$mode" -o eth0 -d "$ip" -p udp --dport "$port" "$@" -j ACCEPT || rc=$?
+            case "$rc" in
+                0) remote_log "Kill switch exception for WireGuard endpoint $host: $ip:$port (udp)" ;;
+                2) remote_log "WARN: Failed to add kill switch exception for $ip:$port (udp)" ;;
+            esac
+        done
+    done < <(vpn_list_wg_endpoints "$config")
 }
 
 # Print the remote OpenVPN is connected to, as written in CONFIG (hostname or IP).

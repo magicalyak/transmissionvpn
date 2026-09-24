@@ -9,11 +9,12 @@ log() {
 log "VPN monitor service stopping"
 
 # Ensure Transmission is stopped if VPN monitor is stopping
-if pgrep transmission-daemon >/dev/null 2>&1; then
+# pgrep matches the 15-character kernel process name: "transmission-daemon" never matches.
+if pgrep -x transmission-da >/dev/null 2>&1; then
     log "Stopping Transmission as VPN monitor is shutting down"
-    pkill -TERM transmission-daemon 2>/dev/null || true
+    pkill -TERM -x transmission-da 2>/dev/null || true
     sleep 2
-    pkill -KILL transmission-daemon 2>/dev/null || true
+    pkill -KILL -x transmission-da 2>/dev/null || true
 fi
 
 # Enforce final kill switch to prevent any leaks, but allow VPN server
@@ -21,7 +22,9 @@ fi
 log "Applying final kill switch before shutdown"
 iptables -F OUTPUT
 iptables -A OUTPUT -o lo -j ACCEPT
-iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+# On eth0, established traffic only as replies to inbound connections.
+iptables -A OUTPUT ! -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT
 
 # Allow VPN server traffic for reconnection
 if [ "${VPN_CLIENT,,}" = "openvpn" ]; then

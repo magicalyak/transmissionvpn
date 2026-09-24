@@ -161,9 +161,10 @@ EXPOSE 9099
 COPY --chmod=755 root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
 COPY --chmod=755 root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
 COPY --chmod=755 root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
-COPY --chmod=755 root/etc/cont-init.d/04-setup-web-ui-auto-download.sh /etc/cont-init.d/04-setup-web-ui-auto-download
 COPY --chmod=755 root/etc/cont-init.d/05-reset-vpn-monitor-state.sh /etc/cont-init.d/05-reset-vpn-monitor-state
 COPY --chmod=755 root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
+# After vpn-setup, so the web UI download goes through the tunnel.
+COPY --chmod=755 root/etc/cont-init.d/60-setup-web-ui-auto-download.sh /etc/cont-init.d/60-setup-web-ui-auto-download
 
 # Copy healthcheck script and the tunnel probe it shares with vpn-monitor
 COPY --chmod=755 root/healthcheck.sh /root/healthcheck.sh
@@ -206,6 +207,16 @@ RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/custom-metrics && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/vpn-monitor && \
     touch /etc/s6-overlay/s6-rc.d/user/contents.d/pia-port-forward && \
+    # s6-overlay starts the user bundle in parallel with the cont-init scripts, so
+    # Transmission, cron and Privoxy used to run on the container's empty, all-ACCEPT
+    # firewall until vpn-setup (cont-init 50) locked it down. Make them wait for
+    # cont-init to finish, i.e. for the tunnel and the kill switch.
+    mkdir -p /etc/s6-overlay/s6-rc.d/init-services/dependencies.d \
+             /etc/s6-overlay/s6-rc.d/svc-transmission/dependencies.d \
+             /etc/s6-overlay/s6-rc.d/privoxy/dependencies.d && \
+    touch /etc/s6-overlay/s6-rc.d/init-services/dependencies.d/legacy-cont-init \
+          /etc/s6-overlay/s6-rc.d/svc-transmission/dependencies.d/legacy-cont-init \
+          /etc/s6-overlay/s6-rc.d/privoxy/dependencies.d/legacy-cont-init && \
     # Set proper ownership for metrics script
     chown -R transmission-user:transmission-user /usr/local/bin/transmission-metrics-server.py
 
