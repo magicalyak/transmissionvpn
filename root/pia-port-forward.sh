@@ -26,6 +26,12 @@ log() {
 # shellcheck source=root/pia-pf-firewall.sh
 . /usr/local/bin/pia-pf-firewall.sh
 
+# Remote parsing: vpn_connected_remote, vpn_list_remotes.
+# shellcheck disable=SC2329 # called from vpn-remotes.sh
+remote_log() { log "$*"; }
+# shellcheck source=root/vpn-remotes.sh
+. "${VPN_REMOTES_LIB:-/usr/local/bin/vpn-remotes.sh}"
+
 # Check if port forwarding is enabled
 if [ "${PIA_PORT_FORWARD,,}" != "true" ]; then
   log "PIA port forwarding not enabled (PIA_PORT_FORWARD != true). Exiting."
@@ -72,22 +78,28 @@ log "Detected PIA gateway: $PF_GATEWAY"
 # Ensure iptables allows traffic to the PIA gateway for port forwarding API (port 19999)
 # This is usually on the VPN interface, but add explicit rule for safety
 if command -v iptables &> /dev/null; then
-  # Allow HTTPS to PIA gateway for port forwarding API
-  iptables -I OUTPUT -d "$PF_GATEWAY" -p tcp --dport 19999 -j ACCEPT 2>/dev/null || true
-  log "Added iptables rule for PIA port forwarding API ($PF_GATEWAY:19999)"
-fi
-
-# Determine PF_HOSTNAME from VPN config or use default
-# PIA NextGen servers use their hostname for certificate verification
-if [ -f "/tmp/config.ovpn" ]; then
-  PF_HOSTNAME=$(grep '^remote ' /tmp/config.ovpn | head -1 | awk '{print $2}')
-fi
-if [ -z "$PF_HOSTNAME" ]; then
-  # Fallback - try to get from VPN_CONFIG
-  if [ -f "$VPN_CONFIG" ]; then
-    PF_HOSTNAME=$(grep '^remote ' "$VPN_CONFIG" | head -1 | awk '{print $2}')
+  # Allow HTTPS to PIA gateway for port forwarding API. This script re-runs after
+  # every VPN restart, so only insert the rule when it is not already there.
+  if iptables -C OUTPUT -d "$PF_GATEWAY" -p tcp --dport 19999 -j ACCEPT 2>/dev/null; then
+    log "iptables rule for PIA port forwarding API ($PF_GATEWAY:19999) already present"
+  elif iptables -I OUTPUT -d "$PF_GATEWAY" -p tcp --dport 19999 -j ACCEPT 2>/dev/null; then
+    log "Added iptables rule for PIA port forwarding API ($PF_GATEWAY:19999)"
+  else
+    log "WARNING: Could not add iptables rule for PIA port forwarding API ($PF_GATEWAY:19999)"
   fi
 fi
+
+# Determine PF_HOSTNAME from the remote OpenVPN actually connected to, which is
+# not the first remote when it fell back to another one. The first remote is
+# only a last resort for when the connected address is unknown.
+# PIA NextGen servers use their hostname for certificate verification
+PF_HOSTNAME=""
+for pf_config in /tmp/config.ovpn "$VPN_CONFIG"; do
+  [ -f "$pf_config" ] || continue
+  PF_HOSTNAME=$(vpn_connected_remote "$pf_config" || true)
+  [ -z "$PF_HOSTNAME" ] && PF_HOSTNAME=$(vpn_list_remotes "$pf_config" | awk 'NR == 1 { print $1 }' || true)
+  [ -n "$PF_HOSTNAME" ] && break
+done
 log "PIA hostname for certificate verification: ${PF_HOSTNAME:-unknown}"
 
 # Step 1: Get PIA authentication token

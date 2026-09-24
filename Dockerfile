@@ -168,6 +168,8 @@ COPY --chmod=755 root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 # Copy healthcheck script and the tunnel probe it shares with vpn-monitor
 COPY --chmod=755 root/healthcheck.sh /root/healthcheck.sh
 COPY --chmod=755 root/vpn-probe.sh /usr/local/bin/vpn-probe.sh
+# OpenVPN remote parsing, sourced by vpn-setup.sh, vpn-monitor and pia-port-forward.sh
+COPY --chmod=755 root/vpn-remotes.sh /usr/local/bin/vpn-remotes.sh
 
 # Copy Privoxy configuration template and s6 service files
 COPY config/privoxy/config /etc/privoxy/config.template

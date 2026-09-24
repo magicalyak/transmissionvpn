@@ -272,6 +272,8 @@ fi
 # Create a flag file to indicate the 'up' script has completed
 # This helps the main vpn-setup.sh script to know when tun0 is likely configured
 echo "OpenVPN UP script completed. Interface: $dev" > /tmp/openvpn_up_complete
+# Record which remote we actually connected to; it is not necessarily the first.
+echo "$trusted_ip $trusted_port" > /tmp/openvpn_connected_remote
 echo "[INFO] OpenVPN UP script for $dev completed (flag file created)." | tee -a /tmp/openvpn.log
 exit 0
 EOF
@@ -291,7 +293,7 @@ else
   echo "No backup /tmp/resolv.conf.backup found to restore." | tee -a /tmp/openvpn.log
 fi
 # Remove the flag file
-rm -f /tmp/openvpn_up_complete
+rm -f /tmp/openvpn_up_complete /tmp/openvpn_connected_remote
 echo "[INFO] OpenVPN DOWN script for $dev completed (flag file removed)." | tee -a /tmp/openvpn.log
 exit 0
 EOF
@@ -345,6 +347,7 @@ EOF
   tail -10 "$TEMP_OVPN_CONFIG"
 
   echo "[INFO] Starting OpenVPN client..."
+  rm -f /tmp/openvpn_connected_remote
   # Using exec to replace the shell process with openvpn is not suitable here as we need to run commands after it.
   # Run OpenVPN in the background. s6 will manage its lifecycle if needed as part of this init script.
   # shellcheck disable=SC2086 # Word splitting is intentional for VPN_OPTIONS
@@ -742,18 +745,13 @@ iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
 
 # KILL SWITCH FIX: Allow OpenVPN/WireGuard traffic to VPN server before applying kill switch
 if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$OVPN_CONFIG_FILE" ]; then
-  VPN_SERVER=$(grep '^remote ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $2}')
-  VPN_PORT=$(grep '^remote ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $3}')
-  VPN_PROTO=$(grep '^proto ' "$OVPN_CONFIG_FILE" | head -1 | awk '{print $2}' | sed 's/[0-9]//g') # Remove trailing numbers from proto (e.g., udp4 -> udp)
-  [ -z "$VPN_PROTO" ] && VPN_PROTO="udp" # Default to UDP if not specified
-
-  if [ -n "$VPN_SERVER" ] && [ -n "$VPN_PORT" ]; then
-    echo "[INFO] Adding kill switch exception for OpenVPN server $VPN_SERVER:$VPN_PORT ($VPN_PROTO)"
-    iptables -A OUTPUT -o eth0 -d "$VPN_SERVER" -p "$VPN_PROTO" --dport "$VPN_PORT" -j ACCEPT
-    # Allow DNS resolution for VPN server hostname (temporary, specific)
-    iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
-    iptables -I OUTPUT 1 -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
-  fi
+  # Every remote, not just the first: a fallback remote without an exception can
+  # never connect. Hostnames resolve through the tunnel, which is up by now and
+  # already allowed above, so no DNS is opened on eth0.
+  remote_log() { echo "[INFO] $*"; }
+  # shellcheck source=root/vpn-remotes.sh
+  . "${VPN_REMOTES_LIB:-/usr/local/bin/vpn-remotes.sh}"
+  vpn_allow_remotes "$OVPN_CONFIG_FILE" append
 elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_CONFIG" ]; then
   # Extract endpoint from WireGuard config
   WG_ENDPOINT=$(grep '^Endpoint' "$WG_CONFIG" | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
@@ -763,17 +761,9 @@ elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_CONFIG" ]; then
     if [ -n "$WG_SERVER" ] && [ -n "$WG_PORT" ]; then
       echo "[INFO] Adding kill switch exception for WireGuard server $WG_SERVER:$WG_PORT"
       iptables -A OUTPUT -o eth0 -d "$WG_SERVER" -p udp --dport "$WG_PORT" -j ACCEPT
-      # Allow DNS resolution for VPN server hostname (temporary, specific)
-      iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
-      iptables -I OUTPUT 1 -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
     fi
   fi
 fi
-
-# Remove temporary DNS rules after VPN connection is established
-iptables -D OUTPUT -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT 2>/dev/null || true
-iptables -D OUTPUT -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT 2>/dev/null || true
-echo "[INFO] Removed temporary DNS rules for VPN server resolution."
 
 # Strict killswitch: Drop ALL traffic not explicitly allowed
 iptables -A OUTPUT -j DROP
