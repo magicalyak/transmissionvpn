@@ -1,0 +1,47 @@
+name: Test
+
+# Unit tests that need no image build and no tunnel. test-killswitch.sh is not
+# run here: it drives a running container with a live VPN.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Metrics tests
+        run: |
+          python3 test-metrics-render.py
+          python3 test-pf-metrics.py
+          python3 test-tunnel-metrics.py
+
+      - name: Shell tests
+        # In a throwaway container because test-vpn-setup-bootstrap.sh rewrites
+        # /etc/resolv.conf and refuses to run anywhere else. bash:5 ships bash
+        # only at /usr/local/bin, and the scripts and the stubs they generate
+        # start with #!/bin/bash.
+        run: |
+          docker run --rm -v "$PWD":/src -w /src bash:5 bash -c '
+            set -e
+            ln -s /usr/local/bin/bash /bin/bash
+            bash test-vpn-remotes.sh
+            bash test-vpn-monitor-recovery.sh
+            bash test-vpn-monitor-wait.sh
+            bash test-vpn-setup-failclosed.sh
+            bash test-healthcheck-probe-targets.sh
+            bash test-vpn-setup-bootstrap.sh
+          '
