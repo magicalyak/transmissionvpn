@@ -469,6 +469,14 @@ environment:
 
 **Tip:** You can also use `auth-user-pass credentials.txt` in your `.ovpn` file.
 
+**Use IP addresses in `remote` lines.** Hostname remotes are only partly supported. The kill switch allows
+the addresses a hostname resolved to when the tunnel was set up, and once it is up, DNS on `eth0` is
+blocked. When OpenVPN reconnects on its own (after a `ping-restart`, for example), the tunnel is down, so
+it cannot resolve the hostname again, and any new address the name now points to is not in the firewall.
+The connection only recovers when `vpn-monitor` restarts the VPN after `VPN_MAX_FAILURES` failed checks,
+since that re-runs the full setup. Many providers offer IP-based config files alongside the hostname ones.
+The same applies to a WireGuard `Endpoint`: a hostname is resolved once, at setup.
+
 ## 🔒 WireGuard Setup
 
 For WireGuard, additional requirements apply:
@@ -492,9 +500,9 @@ environment:
 The container implements a multi-layer kill switch to prevent IP leaks:
 
 * **Strict iptables rules** - Default DROP policies on all chains
-* **DNS leak prevention** - Blocks port 53 on all non-VPN interfaces
-* **Active monitoring** - VPN monitor service checks connectivity every 30 seconds
-* **Automatic protection** - Stops Transmission immediately if VPN fails
+* **DNS leak prevention** - Blocks port 53 on all non-VPN interfaces. The one exception is while the tunnel comes up with a hostname server, when DNS is allowed to the nameservers in `resolv.conf` only
+* **Active monitoring** - VPN monitor service checks traffic through the tunnel every 30 seconds
+* **Automatic protection** - Stops Transmission after `VPN_MAX_FAILURES` failed checks and starts it again as soon as a VPN restart has been verified
 
 ### Testing the Kill Switch
 ```bash

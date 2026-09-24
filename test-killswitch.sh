@@ -246,8 +246,9 @@ echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     log_info "Simulating VPN failure..."
 
-    # Get current state
-    BEFORE_STATUS=$(docker exec "$CONTAINER_NAME" sh -c 'pgrep transmission-daemon >/dev/null && echo "running" || echo "stopped"')
+    # Get current state. pgrep matches the 15-character kernel process name, so
+    # "transmission-daemon" never matches and would always read as stopped.
+    BEFORE_STATUS=$(docker exec "$CONTAINER_NAME" sh -c 'pgrep -x transmission-da >/dev/null && echo "running" || echo "stopped"')
     log_info "Transmission status before: $BEFORE_STATUS"
 
     # Disable VPN interface
@@ -268,7 +269,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     fi
 
     # Check Transmission status
-    AFTER_STATUS=$(docker exec "$CONTAINER_NAME" sh -c 'pgrep transmission-daemon >/dev/null && echo "running" || echo "stopped"')
+    AFTER_STATUS=$(docker exec "$CONTAINER_NAME" sh -c 'pgrep -x transmission-da >/dev/null && echo "running" || echo "stopped"')
 
     if [ "$AFTER_STATUS" = "stopped" ]; then
         log_pass "Transmission stopped when VPN failed"

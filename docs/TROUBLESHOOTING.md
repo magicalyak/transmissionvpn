@@ -1020,8 +1020,8 @@ docker exec transmissionvpn iptables -L -n
 
 ```bash
 # Stop VPN manually and verify no connectivity
-docker exec transmissionvpn systemctl stop openvpn
-docker exec transmissionvpn ping -c 3 8.8.8.8  # Should fail
+docker exec transmissionvpn pkill openvpn
+docker exec transmissionvpn ping -c 3 1.1.1.1  # Should fail
 ```
 
 ## Advanced Debugging
