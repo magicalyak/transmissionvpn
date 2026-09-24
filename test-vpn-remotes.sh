@@ -240,7 +240,7 @@ else
         . "$WORK/setup-block.sh"
     ) > "$WORK/setup.out"
     expect_eq "$(grep -c -- '-o eth0 -d 209.200.239' "$WORK/rules")" "3" "vpn-setup.sh allows all three remotes"
-    expect_eq "$(grep -c 'dport 53' "$WORK/rules")" "2" "and leaves its temporary DNS rules for the removal that follows"
+    expect_eq "$(grep -c 'dport 53' "$WORK/rules")" "0" "and opens no DNS on eth0"
 fi
 
 # ---------------------------------------------------------------------------

@@ -427,7 +427,6 @@ attempt_vpn_restart() {
     ovpn_config=$(ls $ovpn_config 2>/dev/null | head -1)
     if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$ovpn_config" ]; then
         log_restart "Adding temporary firewall exceptions for the OpenVPN remotes in $ovpn_config"
-        iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-restart-dns" -j ACCEPT
         vpn_allow_remotes "$ovpn_config" insert
     elif [ "${VPN_CLIENT,,}" = "wireguard" ]; then
         local wg_config="${WG_CONFIG:-/config/wireguard/wg0.conf}"
@@ -439,7 +438,6 @@ attempt_vpn_restart() {
             if [ -n "$wg_server" ] && [ -n "$wg_port" ]; then
                 log_restart "Adding temporary firewall exception for WireGuard server $wg_server:$wg_port"
                 iptables -I OUTPUT 1 -o eth0 -d "$wg_server" -p udp --dport "$wg_port" -j ACCEPT
-                iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-restart-dns" -j ACCEPT
             fi
         fi
     fi

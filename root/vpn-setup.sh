@@ -746,9 +746,8 @@ iptables -A OUTPUT -o "$VPN_INTERFACE" -j ACCEPT
 # KILL SWITCH FIX: Allow OpenVPN/WireGuard traffic to VPN server before applying kill switch
 if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$OVPN_CONFIG_FILE" ]; then
   # Every remote, not just the first: a fallback remote without an exception can
-  # never connect. The temporary DNS rules are removed again right below.
-  iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
-  iptables -I OUTPUT 1 -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
+  # never connect. Hostnames resolve through the tunnel, which is up by now and
+  # already allowed above, so no DNS is opened on eth0.
   remote_log() { echo "[INFO] $*"; }
   # shellcheck source=root/vpn-remotes.sh
   . "${VPN_REMOTES_LIB:-/usr/local/bin/vpn-remotes.sh}"
@@ -762,17 +761,9 @@ elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_CONFIG" ]; then
     if [ -n "$WG_SERVER" ] && [ -n "$WG_PORT" ]; then
       echo "[INFO] Adding kill switch exception for WireGuard server $WG_SERVER:$WG_PORT"
       iptables -A OUTPUT -o eth0 -d "$WG_SERVER" -p udp --dport "$WG_PORT" -j ACCEPT
-      # Allow DNS resolution for VPN server hostname (temporary, specific)
-      iptables -I OUTPUT 1 -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
-      iptables -I OUTPUT 1 -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT
     fi
   fi
 fi
-
-# Remove temporary DNS rules after VPN connection is established
-iptables -D OUTPUT -p udp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT 2>/dev/null || true
-iptables -D OUTPUT -p tcp --dport 53 -o eth0 -m comment --comment "temp-vpn-dns" -j ACCEPT 2>/dev/null || true
-echo "[INFO] Removed temporary DNS rules for VPN server resolution."
 
 # Strict killswitch: Drop ALL traffic not explicitly allowed
 iptables -A OUTPUT -j DROP
