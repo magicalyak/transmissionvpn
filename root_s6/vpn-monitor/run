@@ -317,6 +317,8 @@ enforce_killswitch() {
 
     # Clear existing OUTPUT rules and apply strict kill switch
     iptables -F OUTPUT
+    # Docker's embedded DNS server forwards from the host, outside the tunnel.
+    iptables -A OUTPUT -o lo -d 127.0.0.11 -j DROP
     iptables -A OUTPUT -o lo -j ACCEPT
     # On eth0, established traffic only as replies to inbound connections. A peer
     # connection opened through the tunnel stays ESTABLISHED after the tunnel routes

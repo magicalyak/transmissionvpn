@@ -673,24 +673,26 @@ dns:
 **Cause:**
 
 `127.0.0.11` is Docker's embedded DNS resolver, used whenever a container is on
-a user-defined network. It does not really listen on port 53 — Docker installs
-NAT rules inside the container's own network namespace that redirect
-`127.0.0.11:53` to the ephemeral port the resolver actually listens on.
+a user-defined network. It does not really listen on port 53. Docker installs
+NAT rules inside the container's own network namespace (`DOCKER_OUTPUT` and
+`DOCKER_POSTROUTING`) that redirect `127.0.0.11:53` to the port the resolver
+actually listens on.
 
-Before starting the tunnel, `vpn-setup.sh` runs `iptables -t nat -F` to clear
-any leftover state from a previous run and to avoid wiping rules that a
-provider's `PostUp` hook installs. That flush also removes Docker's redirect,
-so `127.0.0.11:53` stops answering.
+Before v4.1.3-r7, `vpn-setup.sh` ran `iptables -t nat -F` before starting the
+tunnel, which removed that redirect, and Docker does not put it back. With a
+hostname `remote` or WireGuard `Endpoint`, the VPN server could then not be
+resolved and the tunnel never came up. Since v4.1.3-r7 the nat table is left
+alone, and `127.0.0.11` is used to resolve the VPN servers while the tunnel
+comes up.
 
-On a **successful** start this does not matter: once the tunnel is up the
-container rewrites `/etc/resolv.conf` to `NAME_SERVERS` (default
-`8.8.8.8,1.1.1.1`), which is queried through the tunnel, and `127.0.0.11` is
-never consulted again.
-
-Seeing this error therefore means **the tunnel never came up**. The rewrite
-happens only after the tunnel succeeds, so the container is still pointed at a
-resolver that the flush disabled. The DNS error is a symptom; the VPN failure
-is the fault.
+After that, `127.0.0.11` is blocked on purpose. From Docker 28, the resolver
+forwards queries for the host's nameservers from the host's network namespace,
+outside the container's firewall and the tunnel, so using it would be a DNS
+leak. Once the tunnel is up, `/etc/resolv.conf` is rewritten to `NAME_SERVERS`
+(default `8.8.8.8,1.1.1.1`), the DNS the VPN pushes, or 1.1.1.1 and 8.8.8.8,
+and those are queried through the tunnel. If you still see this error on a
+current image, the tunnel did not come up and `/etc/resolv.conf` was never
+rewritten.
 
 **Diagnosis:**
 
@@ -700,8 +702,8 @@ docker logs transmissionvpn 2>&1 | grep -A5 '\[ERROR\]'
 docker exec transmissionvpn cat /tmp/vpn-setup.log
 ```
 
-Fix whatever that reports — a missing or unreadable config, bad credentials, a
-failed handshake — and the DNS error goes with it.
+Fix whatever that reports, such as a missing or unreadable config, bad
+credentials or a failed handshake, and the DNS error goes with it.
 
 **Note on resolving other containers by name:** because `/etc/resolv.conf` is
 moved off `127.0.0.11`, this container cannot resolve other containers by name

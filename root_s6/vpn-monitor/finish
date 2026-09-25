@@ -21,6 +21,8 @@ fi
 # traffic so OpenVPN can reconnect if the monitor restarts
 log "Applying final kill switch before shutdown"
 iptables -F OUTPUT
+# Docker's embedded DNS server forwards from the host, outside the tunnel.
+iptables -A OUTPUT -o lo -d 127.0.0.11 -j DROP
 iptables -A OUTPUT -o lo -j ACCEPT
 # On eth0, established traffic only as replies to inbound connections.
 iptables -A OUTPUT ! -o eth0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
