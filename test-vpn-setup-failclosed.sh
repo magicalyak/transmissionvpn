@@ -87,6 +87,7 @@ fi
 
 for rule in "iptables -P INPUT DROP" "iptables -P OUTPUT DROP" "iptables -P FORWARD DROP" \
             "iptables -A INPUT -i lo -j ACCEPT" "iptables -A OUTPUT -o lo -j ACCEPT" \
+            "iptables -A OUTPUT -o lo -d 127.0.0.11 -j DROP" \
             "ip6tables -P OUTPUT DROP"; do
     if grep -qxF "$rule" "$FW_LOG"; then
         log_pass "Applied: $rule"

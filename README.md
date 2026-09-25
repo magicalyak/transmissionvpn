@@ -500,7 +500,7 @@ environment:
 The container implements a multi-layer kill switch to prevent IP leaks:
 
 * **Strict iptables rules** - Default DROP policies on all chains
-* **DNS leak prevention** - Blocks port 53 on all non-VPN interfaces. The one exception is while the tunnel comes up with a hostname server, when DNS is allowed to the nameservers in `resolv.conf` only
+* **DNS leak prevention** - Blocks port 53 on all non-VPN interfaces. The one exception is while the tunnel comes up with a hostname server, when DNS is allowed to the nameservers in `resolv.conf` only. On Docker networks that use the embedded DNS server at `127.0.0.11`, it is only used while the tunnel comes up and is blocked afterwards, because Docker 28 and later forward its queries from the host, outside the tunnel
 * **Active monitoring** - VPN monitor service checks traffic through the tunnel every 30 seconds
 * **Automatic protection** - Stops Transmission after `VPN_MAX_FAILURES` failed checks and starts it again as soon as a VPN restart has been verified
 

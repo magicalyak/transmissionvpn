@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r7] - 2026-09-25
+
+### Fixed
+- **Hostname VPN servers could not be resolved on Docker networks.** `vpn-setup.sh` flushed the whole nat and mangle tables before starting the tunnel. On user-defined Docker networks (Compose's default), `/etc/resolv.conf` points at Docker's embedded DNS server, 127.0.0.11, which only works through the `DOCKER_OUTPUT` and `DOCKER_POSTROUTING` nat rules Docker adds inside the container. The flush removed them and Docker does not put them back, so a hostname `remote` or WireGuard `Endpoint` could not be resolved and the tunnel never came up (the "127.0.0.11#53" entry in TROUBLESHOOTING.md). The nat table is no longer touched, and only the mangle rules `vpn-setup.sh` adds itself (tagged `vpn-setup`) are removed on a rerun. Kubernetes was not affected. It only shows when the host's iptables and the image's use the same backend (nf_tables), which is the case on current distributions.
+- **DNS through Docker's embedded server would bypass the kill switch.** Since Docker 28, the embedded server forwards queries for the host's nameservers from the host's network namespace, outside the container's firewall and the tunnel. It is now used only while the tunnel comes up. After that, traffic to 127.0.0.11 is dropped by the kill switch, by `vpn-monitor`'s kill switch and by the fail-closed path. `--dns` servers, which Docker queries from inside the container, are allowed on `eth0` while the tunnel comes up. A WireGuard config without `DNS =` and without `NAME_SERVERS` now falls back to 1.1.1.1 and 8.8.8.8 through the tunnel, as OpenVPN does.
+
+### Changed
+- **Tests.** `test-vpn-setup-bootstrap.sh` models the nat and mangle tables and evaluates the filter table. New cases seed Docker's rules and resolv.conf for 127.0.0.11 (host nameserver and `--dns`), for OpenVPN at boot and on an in-place restart and for WireGuard. They check that Docker's rules survive, the VPN server lookups get through and 127.0.0.11 is closed afterwards. The test can also run in a pod, where BusyBox `cp` cannot overwrite `/etc/resolv.conf`. Same fix as magicalyak/nzbgetvpn v26.2.5.
+
 ## [v4.1.3-r6] - 2026-09-24
 
 ### Removed
