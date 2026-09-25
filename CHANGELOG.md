@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r8] - 2026-09-25
+
+### Removed
+- **`ARG VPN_USER` / `ARG VPN_PASS` in the Dockerfile.** They were copied into `ENV`, so credentials passed at build time would have been stored in the image. Nothing passed them, and the image default was empty. Set them at runtime as before, or use a credentials file. The two variables no longer appear in the image's default environment. Same change as magicalyak/nzbgetvpn v26.2.6.
+
 ## [v4.1.3-r7] - 2026-09-25
 
 ### Fixed
