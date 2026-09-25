@@ -6,9 +6,9 @@ FROM lscr.io/linuxserver/transmission:4.1.3-r0-ls362
 ENV PUID=911
 ENV PGID=911
 
-# Add ARG for VPN credentials
-ARG VPN_USER
-ARG VPN_PASS
+# VPN credentials are runtime settings only (VPN_USER/VPN_PASS or a credentials
+# file). A build argument copied into ENV would be stored in the image for anyone
+# who pulls it.
 
 # Add ARG for VPN configuration variables
 ARG VPN_CLIENT
@@ -48,10 +48,6 @@ ARG LOG_TO_STDOUT
 ARG METRICS_ENABLED
 ARG METRICS_PORT
 ARG METRICS_INTERVAL
-
-# Set ENV from ARG
-ENV VPN_USER=$VPN_USER
-ENV VPN_PASS=$VPN_PASS
 
 # Additional ENV for runtime variables needed by s6 scripts
 ENV VPN_CLIENT=${VPN_CLIENT:-openvpn}
