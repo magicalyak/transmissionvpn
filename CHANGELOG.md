@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r9] - 2026-09-28
+
+### Fixed
+- **A container with RPC authentication on reported itself unhealthy.** With `USER`/`PASS` set, Transmission answers 401 to an anonymous request for the web UI as well as the RPC. The metrics server's web UI check and `healthcheck.sh`'s `curl -f` check sent no credentials, so `web_ui_accessible` was false, `/health` said `unhealthy` and `transmissionvpn_healthy` was 0, while the daemon, the RPC and the tunnel were fine. The Docker `HEALTHCHECK` failed the same way. Both checks now send the RPC credentials. `healthcheck.sh`'s `transmission-remote` calls do too, so its torrent count works with auth on.
+
+### Changed
+- **Credential sources.** The metrics server and `healthcheck.sh` use `TRANSMISSION_RPC_USERNAME`/`TRANSMISSION_RPC_PASSWORD` and fall back to `USER`/`PASS`, the variables the base image uses to turn authentication on. `USER` on its own is never used, since it is often just the shell user. `healthcheck.sh` passes the credentials to curl on stdin and to `transmission-remote` through `TR_AUTH`, so they do not appear in the process list.
+- **Tests.** `test-web-ui-auth.py` and `test-healthcheck-web-auth.sh` cover the credential sources and that both web UI checks authenticate. Both run in CI.
+
 ## [v4.1.3-r8] - 2026-09-25
 
 ### Removed

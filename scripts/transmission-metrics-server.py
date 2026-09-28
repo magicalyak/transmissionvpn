@@ -21,8 +21,19 @@ import threading
 # Configuration from environment variables
 TRANSMISSION_HOST = os.getenv('TRANSMISSION_HOST', '127.0.0.1')
 TRANSMISSION_PORT = os.getenv('TRANSMISSION_PORT', '9091')
-TRANSMISSION_USERNAME = os.getenv('TRANSMISSION_RPC_USERNAME', '')
-TRANSMISSION_PASSWORD = os.getenv('TRANSMISSION_RPC_PASSWORD', '')
+# RPC credentials. USER/PASS are what the base image uses to turn on
+# rpc-authentication-required, so fall back to them. USER alone is not used: it is
+# often just the shell user.
+TRANSMISSION_USERNAME = os.getenv('TRANSMISSION_RPC_USERNAME') or (
+    os.getenv('USER', '') if os.getenv('PASS') else '')
+TRANSMISSION_PASSWORD = os.getenv('TRANSMISSION_RPC_PASSWORD') or os.getenv('PASS', '')
+
+
+def rpc_auth():
+    """(user, password) for Transmission when both are set, otherwise None."""
+    if TRANSMISSION_USERNAME and TRANSMISSION_PASSWORD:
+        return (TRANSMISSION_USERNAME, TRANSMISSION_PASSWORD)
+    return None
 TRANSMISSION_URL = f"http://{TRANSMISSION_HOST}:{TRANSMISSION_PORT}/transmission/rpc"
 
 METRICS_PORT = int(os.getenv('METRICS_PORT', '9099'))
@@ -76,8 +87,7 @@ class TransmissionAPI:
     def __init__(self):
         self.session_id = None
         self.session = requests.Session()
-        if TRANSMISSION_USERNAME and TRANSMISSION_PASSWORD:
-            self.session.auth = (TRANSMISSION_USERNAME, TRANSMISSION_PASSWORD)
+        self.session.auth = rpc_auth()
     
     def _get_session_id(self):
         """Get session ID from Transmission"""
@@ -448,11 +458,13 @@ def get_transmission_health():
         except:
             pass
         
-        # Check web UI accessibility
+        # Check web UI accessibility. With RPC auth on, the web UI answers 401 to an
+        # anonymous request, so this has to send the same credentials as the RPC
+        # check or a healthy daemon is reported as down.
         start_time = time.time()
         try:
-            response = requests.get(f"http://{TRANSMISSION_HOST}:{TRANSMISSION_PORT}/transmission/web/", 
-                                  timeout=5)
+            response = requests.get(f"http://{TRANSMISSION_HOST}:{TRANSMISSION_PORT}/transmission/web/",
+                                  timeout=5, auth=rpc_auth())
             if response.status_code == 200:
                 health['web_ui_accessible'] = True
                 health['response_time_ms'] = int((time.time() - start_time) * 1000)

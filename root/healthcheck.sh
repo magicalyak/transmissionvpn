@@ -77,6 +77,45 @@ fi
 
 log "INFO" "Starting enhanced healthcheck..."
 
+# RPC credentials, if Transmission requires them. USER/PASS are what the base image
+# uses to turn on rpc-authentication-required; TRANSMISSION_RPC_USERNAME/PASSWORD are
+# what the metrics server and PIA port forwarding read. USER alone is not enough:
+# it is often just the shell user.
+rpc_user() { echo "${TRANSMISSION_RPC_USERNAME:-${PASS:+${USER:-}}}"; }
+rpc_pass() { echo "${TRANSMISSION_RPC_PASSWORD:-${PASS:-}}"; }
+
+# GET the web UI, authenticating when credentials are set. With RPC auth on, the web
+# UI answers 401 to an anonymous request, so an unauthenticated check reports a
+# healthy daemon as down. The credentials go to curl on stdin (-K -), not argv, so
+# they do not show up in the process list.
+curl_web_ui() {
+    local user pass
+    user=$(rpc_user)
+    pass=$(rpc_pass)
+    if [[ -n "$user" && -n "$pass" ]]; then
+        local cred="${user}:${pass}"
+        cred=${cred//\\/\\\\}
+        cred=${cred//\"/\\\"}
+        printf 'user = "%s"\n' "$cred" |
+            curl -sSf -K - http://localhost:9091/transmission/web/ > /dev/null 2>&1
+    else
+        curl -sSf http://localhost:9091/transmission/web/ > /dev/null 2>&1
+    fi
+}
+
+# transmission-remote with the same credentials, passed through TR_AUTH (-ne) rather
+# than argv.
+tr_remote() {
+    local user pass
+    user=$(rpc_user)
+    pass=$(rpc_pass)
+    if [[ -n "$user" && -n "$pass" ]]; then
+        TR_AUTH="${user}:${pass}" transmission-remote localhost:9091 -ne "$@"
+    else
+        transmission-remote localhost:9091 "$@"
+    fi
+}
+
 # Function to check Transmission status
 check_transmission() {
     local start_time
@@ -85,7 +124,7 @@ check_transmission() {
     log "DEBUG" "Checking Transmission web interface..."
     
     # Check if Transmission web interface is responding
-    if curl -sSf http://localhost:9091/transmission/web/ > /dev/null 2>&1; then
+    if curl_web_ui; then
         local end_time
         end_time=$(date +%s%N)
         local response_time=$(((end_time - start_time) / 1000000)) # Convert to milliseconds
@@ -96,10 +135,10 @@ check_transmission() {
         
         # Additional check: Get session stats if possible
         if command -v transmission-remote >/dev/null 2>&1; then
-            if transmission-remote localhost:9091 -si >/dev/null 2>&1; then
+            if tr_remote -si >/dev/null 2>&1; then
                 # Extract some basic stats
                 local current_torrents
-                current_torrents=$(transmission-remote localhost:9091 -l 2>/dev/null | wc -l)
+                current_torrents=$(tr_remote -l 2>/dev/null | wc -l)
                 current_torrents=$((current_torrents - 2)) # Subtract header and footer lines
                 
                 log "DEBUG" "Active torrents: $current_torrents"
