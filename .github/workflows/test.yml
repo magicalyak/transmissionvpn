@@ -28,6 +28,7 @@ jobs:
           python3 test-metrics-render.py
           python3 test-pf-metrics.py
           python3 test-tunnel-metrics.py
+          python3 test-web-ui-auth.py
 
       - name: Shell tests
         # In a throwaway container because test-vpn-setup-bootstrap.sh rewrites
@@ -43,5 +44,6 @@ jobs:
             bash test-vpn-monitor-wait.sh
             bash test-vpn-setup-failclosed.sh
             bash test-healthcheck-probe-targets.sh
+            bash test-healthcheck-web-auth.sh
             bash test-vpn-setup-bootstrap.sh
           '
