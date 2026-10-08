@@ -44,6 +44,7 @@ jobs:
             bash test-vpn-monitor-wait.sh
             bash test-vpn-setup-failclosed.sh
             bash test-vpn-setup-timeout.sh
+            bash test-early-killswitch.sh
             bash test-healthcheck-probe-targets.sh
             bash test-healthcheck-web-auth.sh
             bash test-vpn-setup-bootstrap.sh

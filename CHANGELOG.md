@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r11] - 2026-10-08
+
+### Fixed
+- **The container had unrestricted network access until `vpn-setup.sh` ran.** The kill switch was first applied by cont-init 50. Before that, the base image's init and cont-init 01 to 05 ran on the empty, all-ACCEPT firewall that Docker and Kubernetes give a new container, and so did anything exec'd into it. Transmission, cron and Privoxy already waited for cont-init (v4.1.3-r4), so their traffic was not exposed. The image's entrypoint is now `early-killswitch`, which sets the INPUT, FORWARD and OUTPUT policies to DROP for IPv4 and IPv6 with only loopback allowed, then runs `/init`. `vpn-setup.sh` builds its rules from that state as before. Docker's embedded DNS server (127.0.0.11) is on loopback, so hostname VPN servers still resolve. Without `NET_ADMIN` it logs a warning and starts anyway, and `vpn-setup.sh` fails closed as before. Same change as magicalyak/nzbgetvpn v26.2.7.
+
+### Changed
+- **linuxserver.io Docker mods.** `DOCKER_MODS` are downloaded by the base image's init, which now runs with the firewall locked, so they cannot be installed. Add packages in a derived image instead.
+- **Tests.** `test-early-killswitch.sh` checks the policies, the loopback rules and the warning without `NET_ADMIN`. It runs in CI.
+
 ## [v4.1.3-r10] - 2026-10-08
 
 ### Fixed
