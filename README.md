@@ -680,6 +680,7 @@ If you're getting "*directory does not appear to exist inside the container*" er
 | `VPN_USER` | VPN username | (required for OpenVPN) |
 | `VPN_PASS` | VPN password | (required for OpenVPN) |
 | `VPN_OPTIONS` | Additional VPN options | (none) |
+| `VPN_UP_TIMEOUT` | Seconds to wait for the OpenVPN tunnel at startup. By default, long enough to try every `remote` line once (225s for three remotes) | (computed) |
 
 ### VPN Monitoring & Kill Switch
 

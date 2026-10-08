@@ -242,6 +242,28 @@ report_missing_vpn_config() {
   echo '[ERROR]   docker inspect <container> --format "{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}"'
 }
 
+# How long to wait for OpenVPN's 'up' script. OpenVPN tries the remote lines in
+# order and moves on after server-poll-timeout if a remote does not answer, or
+# after hand-window (60s by default) if it answers but the handshake stalls. A fixed 60s wait gave up just as OpenVPN reached the
+# second remote, so a dead first remote restart-looped the container while the
+# others were up. Allow one full pass over every remote, plus OpenVPN's restart
+# pause between them. VPN_UP_TIMEOUT overrides the result.
+openvpn_up_timeout() {
+  local config="$1" remotes per_remote
+
+  if [[ "${VPN_UP_TIMEOUT:-}" =~ ^[0-9]+$ ]] && [ "$VPN_UP_TIMEOUT" -gt 0 ]; then
+    echo "$VPN_UP_TIMEOUT"
+    return
+  fi
+  remotes=$(tr -d '\r' < "$config" | grep -cE '^[[:space:]]*remote[[:space:]]' || true)
+  [ "$remotes" -ge 1 ] 2>/dev/null || remotes=1
+  per_remote=$(tr -d '\r' < "$config" | awk '
+    ($1 == "server-poll-timeout" || $1 == "connect-timeout") && $2 ~ /^[0-9]+$/ { poll = $2 }
+    $1 == "hand-window" && $2 ~ /^[0-9]+$/ { hand = $2 }
+    END { if (hand == "") hand = 60; print (poll + 0 > hand + 0 ? poll : hand) }')
+  echo $(( remotes * (per_remote + 5) + 30 ))
+}
+
 start_openvpn() {
   echo "[INFO] Setting up OpenVPN..."
   OVPN_CONFIG_FILE=""
@@ -420,13 +442,19 @@ EOF
   openvpn --config "$TEMP_OVPN_CONFIG" \
           --dev "$(cat $VPN_INTERFACE_FILE)" \
           ${VPN_OPTIONS} > /tmp/openvpn.log 2>&1 &
+  OPENVPN_PID=$!
 
   # Wait for the 'up' script to complete by checking for the flag file
-  echo "[INFO] Waiting for OpenVPN 'up' script to complete (expect /tmp/openvpn_up_complete)..."
-  UP_SCRIPT_TIMEOUT=60 # seconds
+  UP_SCRIPT_TIMEOUT=$(openvpn_up_timeout "$TEMP_OVPN_CONFIG")
+  echo "[INFO] Waiting up to ${UP_SCRIPT_TIMEOUT}s for OpenVPN 'up' script to complete (expect /tmp/openvpn_up_complete)..."
   UP_SCRIPT_FLAG="/tmp/openvpn_up_complete"
   SECONDS=0
   while [ ! -f "$UP_SCRIPT_FLAG" ]; do
+    if ! kill -0 "$OPENVPN_PID" 2>/dev/null; then
+      echo "[ERROR] OpenVPN exited before the 'up' script ran. OpenVPN log (/tmp/openvpn.log):"
+      cat /tmp/openvpn.log
+      exit 1
+    fi
     if [ "$SECONDS" -ge "$UP_SCRIPT_TIMEOUT" ]; then
       echo "[ERROR] Timeout waiting for OpenVPN 'up' script to create $UP_SCRIPT_FLAG."
       echo "OpenVPN log (/tmp/openvpn.log) contents:"
