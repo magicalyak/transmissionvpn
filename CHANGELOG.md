@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r10] - 2026-10-08
+
+### Fixed
+- **A dead first OpenVPN remote restart-looped the container while the other remotes were up.** `vpn-setup.sh` waited a fixed 60 seconds for OpenVPN's `up` script, which is also OpenVPN's default TLS handshake window. When the first `remote` stopped answering, setup gave up at the moment OpenVPN would have moved to the second one, so the backups were never tried and every restart began with the dead server again. Seen in production on 2026-10-06: 18 restarts over 90 minutes, one per startup probe failure, until the first server came back. The wait now covers one full pass over every `remote` line: per remote, the larger of `server-poll-timeout`/`connect-timeout` and `hand-window` (60s by default), plus 5s for OpenVPN's restart pause, plus 30s. Three remotes with OpenVPN's defaults get 225s. Set `VPN_UP_TIMEOUT` (seconds) to override it. Keep a Kubernetes startup probe longer than this wait.
+- **Setup kept waiting after OpenVPN had already exited.** If OpenVPN quit during startup (a config error, for example), setup still waited out the full timeout. It now stops as soon as the process is gone and prints the OpenVPN log.
+
+### Changed
+- **Tests.** `test-vpn-setup-timeout.sh` checks the wait for remote counts, `server-poll-timeout`, `hand-window`, CRLF configs and the `VPN_UP_TIMEOUT` override. It runs in CI.
+
 ## [v4.1.3-r9] - 2026-09-28
 
 ### Fixed
