@@ -136,7 +136,7 @@ if [ -f "$PROVIDER" ]; then
             log_fail "provider rules left behind: $(cat "$STATE/iptables.rules")"
         fi
         if grep -qE "^trap 'provider_net close' EXIT" "$PROVIDER" &&
-           [ "$(grep -n "^provider_net open" "$PROVIDER" | cut -d: -f1)" -lt "$(grep -n '^case "\$PROVIDER"' "$PROVIDER" | cut -d: -f1)" ]; then
+           [ "$(grep -n "^provider_net open" "$PROVIDER" | cut -d: -f1)" -lt "$(grep -n "^case \"\\\$PROVIDER\"" "$PROVIDER" | cut -d: -f1)" ]; then
             log_pass "provider setup closes on every exit path and opens before any download"
         else
             log_fail "provider setup is missing the EXIT trap or opens too late"
