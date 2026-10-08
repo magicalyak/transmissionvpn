@@ -213,6 +213,12 @@ RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
     # Set proper ownership for metrics script
     chown -R transmission-user:transmission-user /usr/local/bin/transmission-metrics-server.py
 
+# Lock the firewall before s6-overlay starts anything, so nothing in the
+# container reaches the network outside the VPN before vpn-setup (cont-init 50)
+# builds the kill switch. See root/early-killswitch.sh.
+COPY --chmod=755 root/early-killswitch.sh /usr/local/bin/early-killswitch
+ENTRYPOINT ["/usr/local/bin/early-killswitch"]
+
 # Add security labels
 LABEL security.scan="enabled" \
       security.updates="auto" \

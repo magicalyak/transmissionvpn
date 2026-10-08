@@ -33,6 +33,7 @@ upstream version. If it is not bumped, Flux keeps the cluster on the last `4.1.3
 because from its point of view there is no newer tag.
 
 ## Version History
+- `v4.1.3-r11` - Lock the firewall before anything in the container starts, instead of when vpn-setup runs
 - `v4.1.3-r10` - Wait for OpenVPN long enough to try every remote, so a dead first server no longer restart-loops the container
 - `v4.1.3-r9` - Send the RPC credentials with the web UI health checks, so a container with authentication on no longer reports itself unhealthy
 - `v4.1.3-r8` - Stop taking VPN credentials as build arguments, so they can never be stored in the image
