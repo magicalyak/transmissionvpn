@@ -215,6 +215,7 @@ jobs:
 
       - name: Build Docker image
         id: build
+        continue-on-error: true
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -231,10 +232,31 @@ jobs:
             BUILDPLATFORM=${{ matrix.platform }}
             TARGETPLATFORM=${{ matrix.platform }}
 
+      # A GHA cache entry can stay listed after its blob is gone, which fails
+      # every cached build with BlobNotFound. Retry once without reading the cache.
+      - name: Build Docker image (without cache)
+        id: build_nocache
+        if: steps.build.outcome == 'failure'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          no-cache: true
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }},ignore-error=true
+          provenance: true
+          sbom: true
+          build-args: |
+            BUILDPLATFORM=${{ matrix.platform }}
+            TARGETPLATFORM=${{ matrix.platform }}
+
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
+          digest="${{ steps.build.outputs.digest || steps.build_nocache.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
