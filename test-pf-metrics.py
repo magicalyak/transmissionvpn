@@ -161,6 +161,40 @@ def main():
     mod.get_port_test(api)
     check("clamped to PORT_TEST_INTERVAL when smaller", calls['n'], 2)
 
+    print("\na new tunnel or forwarded port discards a cached success")
+    # Regression (2026-10-19): the VPN failed over to a server that refused port
+    # forwarding, and the previous server's "open" was reported for 15 minutes.
+    tmp = tempfile.mkdtemp()
+    up_path = os.path.join(tmp, 'openvpn_up_complete')
+    port_path = os.path.join(tmp, 'pia_forwarded_port')
+    with open(up_path, 'w') as fh:
+        fh.write('up\n')
+    with open(port_path, 'w') as fh:
+        fh.write('23107\n')
+    mod = load(PIA_PORT_FORWARD='true', PF_STATE_FILE=state_path,
+               PORT_TEST_INTERVAL='900', TUNNEL_UP_FILE=up_path,
+               PF_PORT_FILE=port_path)
+    calls = {'n': 0, 'open': True}
+    api = FlakyAPI()
+    check("first probe reports open", mod.get_port_test(api), True)
+    check("success is cached", (mod.get_port_test(api), calls['n']), (True, 1))
+
+    calls['open'] = False
+    future = time.time() + 5
+    os.utime(up_path, (future, future))
+    check("new tunnel re-probes at once", (mod.get_port_test(api), calls['n']),
+          (False, 2))
+
+    calls['open'] = True
+    mod.get_port_test(api)
+    mod._port_test_cache['checked_at'] = time.time() - 61
+    mod.get_port_test(api)
+    calls['n'] = 0
+    with open(port_path, 'w') as fh:
+        fh.write('24258\n')
+    mod.get_port_test(api)
+    check("new forwarded port re-probes at once", calls['n'], 1)
+
     print(f"\npassed={_passed} failed={_failed}")
     return 1 if _failed else 0
 

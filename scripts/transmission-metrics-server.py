@@ -54,6 +54,11 @@ PORT_TEST_INTERVAL = int(os.getenv('PORT_TEST_INTERVAL', '900'))
 # positive is stable and cheap to hold; a negative is actionable and worth
 # re-verifying quickly.
 PORT_TEST_RETRY_INTERVAL = int(os.getenv('PORT_TEST_RETRY_INTERVAL', '60'))
+# Rewritten by vpn-setup.sh's up script on every new tunnel, and by
+# pia-port-forward.sh on every new forwarded port. A cached port-test from before
+# either changed describes a different server or port, so it is discarded.
+TUNNEL_UP_FILE = os.getenv('TUNNEL_UP_FILE', '/tmp/openvpn_up_complete')
+PF_PORT_FILE = os.getenv('PF_PORT_FILE', '/tmp/pia_forwarded_port')
 # Published by pia-pf-firewall.sh. This process runs unprivileged
 # (s6-setuidgid abc) and cannot inspect iptables itself.
 PF_STATE_FILE = os.getenv('PF_STATE_FILE', '/tmp/pia_pf_state')
@@ -74,7 +79,7 @@ session_stats = {}
 health_data = {}
 last_update = 0
 start_time = time.time()
-_port_test_cache = {'value': None, 'checked_at': 0}
+_port_test_cache = {'value': None, 'checked_at': 0, 'epoch': None}
 
 # Setup logging
 logging.basicConfig(
@@ -356,6 +361,24 @@ def read_tunnel_check(now=None):
     }
 
 
+def _connection_epoch():
+    """Identify the current tunnel and forwarded port.
+
+    The up-script file's mtime changes on every new tunnel; the port file's
+    content changes with every new forwarded port. Either missing reads as None.
+    """
+    try:
+        tunnel = os.stat(TUNNEL_UP_FILE).st_mtime_ns
+    except OSError:
+        tunnel = None
+    try:
+        with open(PF_PORT_FILE, 'r') as fh:
+            port = fh.read().strip()
+    except (IOError, OSError):
+        port = None
+    return (tunnel, port)
+
+
 def get_port_test(api):
     """Run Transmission's port-test, throttled.
 
@@ -367,6 +390,13 @@ def get_port_test(api):
     Returns the cached value between runs. None means it has never succeeded.
     """
     now = time.time()
+    epoch = _connection_epoch()
+    if epoch != _port_test_cache['epoch']:
+        # New tunnel or new forwarded port: the old result says nothing about
+        # this one. On 2026-10-19 a failover to a server that refused port
+        # forwarding kept reporting the previous server's "open" for 15 minutes.
+        _port_test_cache['value'] = None
+        _port_test_cache['epoch'] = epoch
     cached = _port_test_cache['value']
     # Hold a success for the full interval; re-probe a failure much sooner.
     ttl = PORT_TEST_INTERVAL if cached else min(PORT_TEST_RETRY_INTERVAL,
