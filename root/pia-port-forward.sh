@@ -118,8 +118,11 @@ if [ $dns_retries -eq 0 ]; then
 fi
 
 log "Obtaining PIA authentication token..."
+# Every curl assignment ends in || true: under set -e a failed curl inside $(...)
+# exits the script before the error below is logged. On 2026-10-19 a gateway
+# refusing 19999 left nothing after "Requesting port forwarding signature".
 TOKEN_RESPONSE=$(curl -s -m 15 -u "$VPN_USER:$VPN_PASS" \
-  "https://privateinternetaccess.com/gtoken/generateToken" 2>&1)
+  "https://privateinternetaccess.com/gtoken/generateToken" 2>&1) || true
 
 PIA_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token' 2>/dev/null)
 
@@ -135,9 +138,9 @@ log "Requesting port forwarding signature from gateway..."
 
 # PIA gateway uses a self-signed cert on the VPN interface (trusted)
 # Use --data-urlencode because PIA tokens contain + characters
-SIGNATURE_RESPONSE=$(curl -s -m 10 -k -G \
+SIGNATURE_RESPONSE=$(curl -sS -m 10 -k -G \
   --data-urlencode "token=$PIA_TOKEN" \
-  "https://${PF_GATEWAY}:19999/getSignature" 2>&1)
+  "https://${PF_GATEWAY}:19999/getSignature" 2>&1) || true
 
 SIGNATURE_STATUS=$(echo "$SIGNATURE_RESPONSE" | jq -r '.status' 2>/dev/null)
 
@@ -250,7 +253,7 @@ bind_port() {
   response=$(curl -s -m 10 -k -G \
     --data-urlencode "payload=$PF_PAYLOAD" \
     --data-urlencode "signature=$PF_SIGNATURE" \
-    "https://${PF_GATEWAY}:19999/bindPort" 2>&1)
+    "https://${PF_GATEWAY}:19999/bindPort" 2>&1) || true
 
   local status
   status=$(echo "$response" | jq -r '.status' 2>/dev/null)

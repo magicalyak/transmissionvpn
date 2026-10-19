@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r12] - 2026-10-19
+
+### Fixed
+- **Port forwarding could fail without logging why.** `pia-port-forward.sh` runs under `set -e`, and a `curl` that failed inside `$(...)` ended the script before the error handling ran. On 2026-10-19 the VPN failed over to a server whose gateway refused connections on 19999, and the last log line was "Requesting port forwarding signature from gateway...". Nothing was retried for 15 minutes and Transmission kept the previous server's port. Failed requests are now logged with curl's error and go through the existing error path.
+- **`transmissionvpn_port_open` kept reporting the previous tunnel's result.** A successful `port-test` is cached for `PORT_TEST_INTERVAL` (15 minutes), and the cache survived a reconnect. After that failover the metric read `1` while Transmission's own port test said closed, so `TransmissionPortClosedUpstream` could not fire. The cache is now discarded whenever a new tunnel comes up or the forwarded port changes. `TUNNEL_UP_FILE` and `PF_PORT_FILE` override the two files it watches.
+
+### Changed
+- **Tests.** `test-pf-metrics.py` checks that a new tunnel and a new forwarded port both force a fresh port test.
+
 ## [v4.1.3-r11] - 2026-10-08
 
 ### Fixed
