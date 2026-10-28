@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.3-r13] - 2026-10-28
+
+### Changed
+- **Base image bumped to `lscr.io/linuxserver/transmission:4.1.3-r0-ls366`** (2026-10-27) from `4.1.3-r0-ls362` (2026-09-15). Transmission is still 4.1.3-r0. The four upstream builds in between only rebuilt Alpine packages, among them OpenSSL 3.5.9, curl 8.23.0, BusyBox 1.38.0-r7, musl 1.2.6-r6, Python 3.14.10 and ca-certificates 20261020. Upstream's Dockerfile and `root/` did not change. The image config was compared against ls362 from the registry and is the same: the entrypoint is `/init`, `S6_BEHAVIOUR_IF_STAGE2_FAILS` is still unset (the fail-closed trap in `vpn-setup.sh` depends on that), and s6-overlay is still 3.2.1.0, so `vpn-monitor`'s halt path is unchanged. The comment in `vpn-setup.sh` that records the check now names ls366.
+
 ## [v4.1.3-r12] - 2026-10-19
 
 ### Fixed
