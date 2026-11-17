@@ -33,6 +33,7 @@ upstream version. If it is not bumped, Flux keeps the cluster on the last `4.1.3
 because from its point of view there is no newer tag.
 
 ## Version History
+- `v4.1.4-r2` - Fix the empty OCI version and created labels on published images
 - `v4.1.4-r1` - Update to Transmission 4.1.4 (base image 4.1.4-r0-ls369)
 - `v4.1.3-r13` - Update the base image to 4.1.3-r0-ls366 (Alpine package security updates)
 - `v4.1.3-r12` - Log port forwarding failures and reset the cached port test on reconnect

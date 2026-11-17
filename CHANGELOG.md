@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.4-r2] - 2026-11-17
+
+### Fixed
+- **Published images had empty `org.opencontainers.image.version` and `org.opencontainers.image.created` labels.** The metadata step in `build-and-publish.yml` set both from its own outputs (`steps.meta.outputs.version` and `.created`), which do not exist yet while that step runs, so they evaluated to empty strings and replaced the values `docker/metadata-action` fills in by default. Every release through v4.1.4-r1 shipped with both labels blank. The two lines are removed and the action's own values are used. Same fix as magicalyak/nzbgetvpn#42.
+
 ## [v4.1.4-r1] - 2026-11-17
 
 ### Changed
