@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v4.1.4-r1] - 2026-11-17
+
+### Changed
+- **Transmission 4.1.4.** Base image bumped to `lscr.io/linuxserver/transmission:4.1.4-r0-ls369` (2026-11-10) from `4.1.3-r0-ls366`. 4.1.4 is a bugfix release: it fixes the 4.1.0 regression that could lose download progress on torrents with zero-byte files, hardens the `torrent-add` RPC method against malformed requests, fixes a rare hang on shutdown and a rare stall finishing webseed downloads, and makes per-torrent speed-limit overrides apply to uploads as well as downloads. The base image also moves to BusyBox 1.38.0-r8, apk-tools 3.0.9, libexpat 2.10.0, zlib 1.4 and tzdata 2026f. Upstream's Dockerfile and `root/` did not change between ls366 and ls369, only `package_versions.txt`. The image config was compared against ls366 from the registry and is the same: the entrypoint is `/init`, `S6_BEHAVIOUR_IF_STAGE2_FAILS` is still unset, and s6-overlay did not change, so the fail-closed trap in `vpn-setup.sh` and `vpn-monitor`'s halt path are unaffected. The comment in `vpn-setup.sh` that records the check now names ls369.
+- The rocky Flux `ImagePolicy` must move to `^4\.1\.4-r(?P<r>\d+)$` for this release to deploy (see `VERSIONING.md`).
+
 ## [v4.1.3-r13] - 2026-10-28
 
 ### Changed
