@@ -28,11 +28,12 @@ v{TRANSMISSION_VERSION}-r{PATCH_NUMBER}
 The first release on a new linuxserver.io transmission version (for example the first `4.1.4-rN` after
 `4.1.3-rN`) needs the Flux `ImagePolicy` in the rocky repo bumped in the same change window:
 `cluster/core/flux-image-automation/transmission-image-policy.yaml`, currently
-`^4\.1\.3-r(?P<r>\d+)$`. The policy ranks tags by the `rN` counter alone, so it has to match exactly one
+`^4\.1\.4-r(?P<r>\d+)$`. The policy ranks tags by the `rN` counter alone, so it has to match exactly one
 upstream version. If it is not bumped, Flux keeps the cluster on the last `4.1.3-rN` and reports nothing,
 because from its point of view there is no newer tag.
 
 ## Version History
+- `v4.1.4-r1` - Update to Transmission 4.1.4 (base image 4.1.4-r0-ls369)
 - `v4.1.3-r13` - Update the base image to 4.1.3-r0-ls366 (Alpine package security updates)
 - `v4.1.3-r12` - Log port forwarding failures and reset the cached port test on reconnect
 - `v4.1.3-r11` - Lock the firewall before anything in the container starts, instead of when vpn-setup runs
