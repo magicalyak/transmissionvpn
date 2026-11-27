@@ -4,7 +4,13 @@
 
 # Wait for VPN setup to complete
 echo "[pia-port-forward] Waiting for VPN setup to complete..."
+# Give up if setup failed: this oneshot is part of the startup transition, and
+# while it waits, s6 cannot shut the container down (vpn-setup's halt hangs).
 while [ ! -f /tmp/vpn_setup_complete ]; do
+  if [ -f /tmp/vpn_setup_failed ]; then
+    echo "[pia-port-forward] VPN setup failed; not starting port forwarding."
+    exit 1
+  fi
   sleep 2
 done
 

@@ -26,6 +26,8 @@ chmod 777 /tmp
 # Truncate the file up front, then tee to the console fds that are still attached.
 : > /tmp/vpn-setup.log
 exec > >(tee -a /tmp/vpn-setup.log) 2> >(tee -a /tmp/vpn-setup.log >&2)
+# Set by fail_closed_on_abort; /tmp survives a container restart.
+rm -f "${VPN_SETUP_FAILED_FLAG:-/tmp/vpn_setup_failed}"
 
 if [ "${DEBUG,,}" = "true" ]; then
   echo "[DEBUG] Debug mode enabled. Full script output will be logged."
@@ -639,6 +641,9 @@ fail_closed_on_abort() {
   # by vpn-monitor's attempt_vpn_restart() would otherwise leave a stale flag from the
   # previous successful run claiming that setup finished.
   rm -f /tmp/vpn_setup_complete
+  # Lets the services that wait for the completion flag (pia-port-forward) give up
+  # instead of waiting forever, which would also block a halt.
+  touch "${VPN_SETUP_FAILED_FLAG:-/tmp/vpn_setup_failed}" 2>/dev/null || true
 
   # Only claim the lockdown if the kernel shows it. When iptables itself is what
   # failed, every command above failed too, and staying up would leave Transmission
@@ -652,6 +657,15 @@ fail_closed_on_abort() {
   echo "[ERROR] Could NOT lock the firewall down: iptables rejected the rules. Stopping the container."
   echo "[ERROR] If iptables reported 'Could not fetch rule set generation id', this host cannot use"
   echo "[ERROR] nf_tables: set IPTABLES_BACKEND=legacy (auto picks it when legacy works)."
+  # s6 starts Transmission even after a failed cont-init, and the halt below only
+  # completes once startup has finished. Without a firewall, take the routes away
+  # so nothing can leave in the meantime. Loopback lives in the local table.
+  local table
+  for table in main 100 51820; do
+    ip -4 route flush table "$table" 2>/dev/null || true
+    ip -6 route flush table "$table" 2>/dev/null || true
+  done
+  echo "[ERROR] All routes removed; only loopback works until the container stops."
   local exitcode_file=${S6_EXITCODE_FILE:-/run/s6-linux-init-container-results/exitcode}
   { mkdir -p "${exitcode_file%/*}" && echo "$rc" > "$exitcode_file"; } 2>/dev/null
   "${S6_HALT:-/run/s6/basedir/bin/halt}" 2>/dev/null || kill -TERM 1 2>/dev/null

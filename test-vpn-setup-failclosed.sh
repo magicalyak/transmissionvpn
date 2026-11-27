@@ -58,8 +58,13 @@ for tool in iptables ip6tables; do
     chmod +x "$WORK/bin/$tool"
 done
 export PATH="$WORK/bin:$PATH"
-# Never let the trap halt the real container (or signal PID 1) during a test.
-export S6_EXITCODE_FILE="$WORK/exitcode" S6_HALT="$WORK/bin/halt-stub"
+# Never let the trap halt the real container (or signal PID 1), flush the real
+# routing tables or touch the real /tmp during a test.
+export S6_EXITCODE_FILE="$WORK/exitcode" S6_HALT="$WORK/bin/halt-stub" VPN_SETUP_FAILED_FLAG="$WORK/failed"
+# shellcheck disable=SC2016  # expands when the stub runs
+printf '#!/bin/bash\necho "ip $*" >> "$WORK/ip.log"\n' > "$WORK/bin/ip"
+chmod +x "$WORK/bin/ip"
+export WORK
 printf '#!/bin/bash\ntouch "%s"\n' "$WORK/halted" > "$S6_HALT"
 chmod +x "$S6_HALT"
 
@@ -120,10 +125,15 @@ else
     log_fail "Abort produced no explanation"
 fi
 
-if grep -q "Firewall locked down" "$WORK/abort.out" && [ ! -f "$WORK/halted" ]; then
-    log_pass "Verified lockdown reported and the container keeps running"
+if grep -q "Firewall locked down" "$WORK/abort.out" && [ ! -f "$WORK/halted" ] && [ ! -s "$WORK/ip.log" ]; then
+    log_pass "Verified lockdown reported; container keeps running with its routes"
 else
-    log_fail "Lockdown not verified, or the container was halted needlessly"
+    log_fail "Lockdown not verified, or the container was halted / its routes flushed needlessly"
+fi
+if [ -f "$WORK/failed" ]; then
+    log_pass "Setup failure flagged for waiting services"
+else
+    log_fail "No failure flag for pia-port-forward"
 fi
 
 echo ""
@@ -148,6 +158,11 @@ if [ -f "$WORK/halted" ] && [ "$(cat "$S6_EXITCODE_FILE" 2>/dev/null)" = 7 ] && 
     log_pass "Container halted with the setup exit code"
 else
     log_fail "Container not halted with exit code 7 (rc=$BROKEN_RC)"
+fi
+if grep -qx "ip -4 route flush table main" "$WORK/ip.log" && grep -qx "ip -6 route flush table main" "$WORK/ip.log"; then
+    log_pass "Routes removed when the firewall cannot be locked"
+else
+    log_fail "Routes not removed: $(tr '\n' ';' < "$WORK/ip.log" 2>/dev/null)"
 fi
 rm -f "$WORK/halted"
 
