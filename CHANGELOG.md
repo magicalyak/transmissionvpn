@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`IPTABLES_BACKEND=auto|nft|legacy`** (default `auto`). The image also ships `iptables-legacy`. The entrypoint picks the backend before the first rule: nft where it can build a filter chain with conntrack and comment matches and a mangle chain with CONNMARK, legacy otherwise. `nft` and `legacy` force one, with no fallback. All scripts keep calling plain `iptables`/`ip6tables`, which `/usr/local/sbin` links to the chosen binary through `/run/iptables-backend` (recreated by `00-iptables-backend` if s6-overlay replaces `/run`), so IPv4, IPv6, save/restore, wg-quick, restarts, port forwarding and health checks all use one backend. Fixes Synology DSM, where every nf_tables call failed with `Could not fetch rule set generation id`.
+- **`WIREGUARD_ROUTING=auto|standard|compat`** (default `auto`). wg-quick's default-route code needs the iptables raw table, which legacy-only kernels lack (`unable to initialize table 'raw'`). compat sets `Table`/`FwMark` (the config's FwMark, else 51820) so wg-quick only adds the route, and vpn-setup adds the rest itself, idempotently: the two policy rules (priority 32764/32765), CONNMARK save/restore for the WireGuard socket, and wg-quick's anti-spoofing rule as the first filter INPUT rule. `auto` picks compat only without a raw table, or when an `nft` binary would let wg-quick bypass the selected iptables backend. A config with its own `Table =` is left alone.
+
+### Fixed
+- **WireGuard now runs from an effective copy of the config** in `/run/wireguard/<interface>.conf` (mode 600; the user's file is never changed): endpoint hostnames are replaced by the address resolved during bootstrap, `DNS =` lines are taken out, and with IPv6 disabled in the container the IPv6 entries of `Address`, `AllowedIPs` and `DNS` are dropped (`ip -6 address add` failed with `Permission denied`). A config without any usable IPv4 `Address` is an error.
+- **DNS has one owner.** wg-quick no longer calls `resolvconf`, which fails inside Docker with `signature mismatch`. vpn-setup writes `/etc/resolv.conf` from `NAME_SERVERS`, else the config's IPv4 DNS, else 1.1.1.1/8.8.8.8, as before.
+- **A WireGuard endpoint could end up without a kill switch exception while setup reported success.** The permanent exception resolved the hostname a second time, after DNS had moved into the tunnel. A failed lookup was only a warning, the bootstrap rules were removed and setup completed. The permanent rules now use the bootstrap addresses, and a missing exception aborts setup (fail closed). On an in-place restart where the hostname cannot be resolved, the address from the last run is reused.
+- **Setup verifies the tunnel carries the traffic.** For a full-tunnel WireGuard config, `ip route get 1.1.1.1` must use the tunnel interface before setup reports success.
+- **vpn-monitor could not take a WireGuard tunnel down.** `wg-quick down <name>` looks for `/etc/wireguard/<name>.conf`, which does not exist here, so the old interface stayed and the restart failed. It now uses the effective config (falling back to `ip link del`), and vpn-setup also removes a leftover interface itself. The monitor's kill switch exceptions cover every peer endpoint, not only the first line of `WG_CONFIG` (which defaulted to `wg0.conf`).
+- **Web UI did not listen with IPv6 disabled.** An `rpc-bind-address` of `::`/`[::]` (or unset) is set to `0.0.0.0` in `settings.json` before Transmission starts, only when IPv6 is disabled. A specific bind address is never widened; an IPv6 one is reported.
+- **The fail-closed trap claimed a lockdown it could not verify.** `vpn-setup.sh` printed `Firewall locked down (loopback only)` even when iptables had rejected every rule. It now checks that the INPUT and OUTPUT policies read back as DROP, and otherwise stops the container with the setup's exit code.
+
 ## [v4.1.4-r2] - 2026-11-17
 
 ### Fixed

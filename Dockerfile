@@ -125,6 +125,7 @@ RUN apk update && \
     apk add --no-cache \
     openvpn \
     iptables \
+    iptables-legacy \
     bash \
     curl \
     iproute2 \
@@ -154,9 +155,11 @@ COPY --chmod=755 scripts/transmission-metrics-server.py /usr/local/bin/transmiss
 EXPOSE 9099
 
 # Copy s6-overlay init scripts with proper permissions
+COPY --chmod=755 root/etc/cont-init.d/00-iptables-backend.sh /etc/cont-init.d/00-iptables-backend
 COPY --chmod=755 root/etc/cont-init.d/01-ensure-vpn-config-dirs.sh /etc/cont-init.d/01-ensure-vpn-config-dirs
 COPY --chmod=755 root/etc/cont-init.d/02-setup-transmission-features.sh /etc/cont-init.d/02-setup-transmission-features
 COPY --chmod=755 root/etc/cont-init.d/03-setup-directory-compatibility.sh /etc/cont-init.d/03-setup-directory-compatibility
+COPY --chmod=755 root/etc/cont-init.d/04-rpc-bind-ipv4.sh /etc/cont-init.d/04-rpc-bind-ipv4
 COPY --chmod=755 root/etc/cont-init.d/05-reset-vpn-monitor-state.sh /etc/cont-init.d/05-reset-vpn-monitor-state
 COPY --chmod=755 root/vpn-setup.sh /etc/cont-init.d/50-vpn-setup
 # After vpn-setup, so the web UI download goes through the tunnel.
@@ -217,6 +220,16 @@ RUN mkdir -p /etc/s6-overlay/s6-rc.d/user/contents.d && \
 # container reaches the network outside the VPN before vpn-setup (cont-init 50)
 # builds the kill switch. See root/early-killswitch.sh.
 COPY --chmod=755 root/early-killswitch.sh /usr/local/bin/early-killswitch
+# iptables backend: auto (nft if it works, else legacy), nft or legacy. The
+# entrypoint points /run/iptables-backend at the chosen binary; these links put
+# it ahead of /usr/sbin in PATH for every script.
+ENV IPTABLES_BACKEND=auto
+# WireGuard routing: auto (compat where the raw table is missing), standard or compat.
+ENV WIREGUARD_ROUTING=auto
+RUN mkdir -p /usr/local/sbin && \
+    for t in iptables ip6tables iptables-save iptables-restore ip6tables-save ip6tables-restore; do \
+      ln -s "/run/iptables-backend/$t" "/usr/local/sbin/$t"; \
+    done
 ENTRYPOINT ["/usr/local/bin/early-killswitch"]
 
 # Add security labels

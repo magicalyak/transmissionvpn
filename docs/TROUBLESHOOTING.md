@@ -661,6 +661,22 @@ dns:
 # Check your VPN provider documentation for recommended DNS
 ```
 
+### 🧱 Synology DSM and other limited kernels
+
+Each of these is detected and handled automatically. The settings are there to force a choice.
+
+| Log message | Cause | What the container does |
+|---|---|---|
+| `Could not fetch rule set generation id: Invalid argument` | Kernel cannot run nf_tables iptables | `IPTABLES_BACKEND=auto` falls back to legacy iptables (log: `iptables backend: legacy`) |
+| `unable to initialize table 'raw'` from `iptables-restore` | No raw table; wg-quick's default-route code needs it | `WIREGUARD_ROUTING=auto` uses compat routing: own fwmark/table, policy rules, CONNMARK and an anti-spoofing rule in filter instead of raw |
+| `ip -6 address add ... Permission denied` | IPv6 disabled in the container | IPv6 entries of the WireGuard config are ignored (your file is not changed) |
+| `resolvconf: signature mismatch` | wg-quick's DNS handling inside Docker | `DNS =` is no longer passed to wg-quick; vpn-setup writes `/etc/resolv.conf` (`NAME_SERVERS`, else the config's DNS) |
+| Web UI not listening on 9091, `rpc-bind-address` is `[::]` | IPv6 wildcard bind with IPv6 disabled | Set to `0.0.0.0` before Transmission starts. A specific address is left alone and reported |
+
+If no iptables backend works, or the firewall cannot be locked, the container stops with a non-zero exit code instead of running without a kill switch. Check that `NET_ADMIN` is granted.
+
+**WireGuard needs the kernel module on the host.** If `ip link add wg0 type wireguard` fails with `Unknown device type`, install it on the host (for Synology, community packages such as `runfalk/synology-wireguard`) and load it at boot (`modprobe wireguard`, e.g. as a DSM boot task). The container does not install kernel modules. Otherwise use `VPN_CLIENT=openvpn`.
+
 ### 🔗 `127.0.0.11#53: connection refused`
 
 **Symptoms:**

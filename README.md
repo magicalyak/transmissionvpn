@@ -123,6 +123,8 @@ services:
 | `PIA_PORT_FORWARD` | Enable PIA port forwarding (requires non-US server) | `false` | `true` |
 | `PORT_TEST_INTERVAL` | Seconds between external peer-port reachability probes | `900` | `300` |
 | `PORT_TEST_RETRY_INTERVAL` | Seconds before re-probing after a *failed* reachability check | `60` | `30` |
+| `WIREGUARD_ROUTING` | WireGuard full-tunnel routing: `auto` (compat where the iptables raw table is missing), `standard` (wg-quick) or `compat` | `auto` | `compat` |
+| `IPTABLES_BACKEND` | iptables backend: `auto` (nft if it works, else legacy), `nft` or `legacy`. See [Synology](docs/TROUBLESHOOTING.md#-synology-dsm-and-other-limited-kernels) | `auto` | `legacy` |
 
 ## 📁 Volumes
 

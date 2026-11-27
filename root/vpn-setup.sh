@@ -26,6 +26,8 @@ chmod 777 /tmp
 # Truncate the file up front, then tee to the console fds that are still attached.
 : > /tmp/vpn-setup.log
 exec > >(tee -a /tmp/vpn-setup.log) 2> >(tee -a /tmp/vpn-setup.log >&2)
+# Set by fail_closed_on_abort; /tmp survives a container restart.
+rm -f "${VPN_SETUP_FAILED_FLAG:-/tmp/vpn_setup_failed}"
 
 if [ "${DEBUG,,}" = "true" ]; then
   echo "[DEBUG] Debug mode enabled. Full script output will be logged."
@@ -475,6 +477,33 @@ EOF
   fi
 }
 
+# WIREGUARD_ROUTING=auto|standard|compat. standard is wg-quick's own default-route
+# handling, which installs rules in the raw table. compat leaves that to
+# vpn_wg_compat_up. auto picks compat only where standard cannot work: no raw
+# table (legacy-only kernels), or an nft binary wg-quick would use instead of the
+# selected iptables backend. A config with its own Table = is left to the user.
+wg_routing_mode() {
+  local want="${WIREGUARD_ROUTING:-auto}" backend
+  want=${want,,}
+  case "$want" in
+    standard|compat) echo "$want"; return 0 ;;
+    auto) ;;
+    *) echo "[ERROR] WIREGUARD_ROUTING=$want is invalid (use auto, standard or compat)." >&2; return 1 ;;
+  esac
+  if [ -n "$(vpn_wg_value "$1" table)" ] || ! vpn_wg_has_default_route "$1"; then
+    echo standard
+  elif ! iptables -t raw -S >/dev/null 2>&1; then
+    echo "[INFO] The iptables raw table is not available; using compat WireGuard routing." >&2
+    echo compat
+  elif backend=$(readlink /run/iptables-backend/iptables 2>/dev/null) && [ "${backend##*/}" != xtables-nft-multi ] &&
+       command -v nft >/dev/null 2>&1; then
+    echo "[INFO] wg-quick would use nft while iptables uses ${backend##*/}; using compat WireGuard routing." >&2
+    echo compat
+  else
+    echo standard
+  fi
+}
+
 # Function to start WireGuard
 start_wireguard() {
   echo "[INFO] Setting up WireGuard..."
@@ -503,17 +532,39 @@ start_wireguard() {
       fi
   fi
   INTERFACE_NAME=$(cat "$VPN_INTERFACE_FILE")
+  WG_EFFECTIVE=$(vpn_wg_effective_config "$INTERFACE_NAME")
+
+  # An in-place re-run (vpn-monitor) may find the old tunnel still up; wg-quick up
+  # would then fail with "already exists". Take it down with the config it was
+  # started from, so its own hooks and routes go too.
+  if ip link show "$INTERFACE_NAME" >/dev/null 2>&1; then
+    echo "[INFO] Interface $INTERFACE_NAME already exists; taking it down first."
+    wg-quick down "$WG_EFFECTIVE" 2>/dev/null || ip link del "$INTERFACE_NAME" 2>/dev/null || true
+  fi
+  [ -f "$WG_EFFECTIVE" ] && vpn_wg_compat_down "$(vpn_wg_compat_table "$WG_EFFECTIVE")"
+
+  WG_ROUTING=$(wg_routing_mode "$WG_CONFIG")
+  WG_COMPAT=0
+  [ "$WG_ROUTING" = compat ] && WG_COMPAT=1
+
   # The firewall is locked down (see the flush below); open it for the peers only.
   if vpn_wg_endpoints_need_dns "$WG_CONFIG"; then
     bootstrap_allow_dns
   fi
-  vpn_allow_wg_endpoints "$WG_CONFIG" append -m comment --comment "$BOOTSTRAP_TAG"
-  echo "[INFO] Starting WireGuard for interface $INTERFACE_NAME using $WG_CONFIG..."
-  wg-quick up "$WG_CONFIG"
+  vpn_wg_prepare "$WG_CONFIG" "$WG_EFFECTIVE" "$WG_COMPAT"
+  vpn_allow_wg_endpoints "$WG_EFFECTIVE" append -m comment --comment "$BOOTSTRAP_TAG"
+  echo "[INFO] Starting WireGuard for interface $INTERFACE_NAME from $WG_CONFIG ($WG_ROUTING routing)..."
+  wg-quick up "$WG_EFFECTIVE"
+  if [ "$WG_COMPAT" = 1 ]; then
+    vpn_wg_compat_up "$INTERFACE_NAME" "$(vpn_wg_compat_table "$WG_EFFECTIVE")" "$SETUP_TAG"
+  fi
   echo "[INFO] WireGuard started. Interface: $INTERFACE_NAME"
-  # For WireGuard, DNS is typically set in the .conf file's [Interface] section (DNS = x.x.x.x)
-  # wg-quick should handle setting this up.
-  # If NAME_SERVERS is provided, we can override /etc/resolv.conf
+  # DNS = lines were taken out of the effective config (see vpn-remotes.sh), so
+  # this script is the only writer of /etc/resolv.conf. Precedence: NAME_SERVERS,
+  # then the config's DNS, then the 1.1.1.1/8.8.8.8 fallback.
+  if [ -z "$NAME_SERVERS" ] && [ -s "$WG_EFFECTIVE.dns" ]; then
+    NAME_SERVERS=$(tr ',\n' '  ' < "$WG_EFFECTIVE.dns" | xargs -n1 | grep -E '^[0-9]+(\.[0-9]+){3}$' | paste -sd, -)
+  fi
   if [ -n "$NAME_SERVERS" ]; then
     echo "[INFO] NAME_SERVERS is set ($NAME_SERVERS), updating /etc/resolv.conf for WireGuard."
     # Backup original resolv.conf if not already backed up
@@ -590,8 +641,34 @@ fail_closed_on_abort() {
   # by vpn-monitor's attempt_vpn_restart() would otherwise leave a stale flag from the
   # previous successful run claiming that setup finished.
   rm -f /tmp/vpn_setup_complete
+  # Lets the services that wait for the completion flag (pia-port-forward) give up
+  # instead of waiting forever, which would also block a halt.
+  touch "${VPN_SETUP_FAILED_FLAG:-/tmp/vpn_setup_failed}" 2>/dev/null || true
 
-  echo "[ERROR] Firewall locked down (loopback only)."
+  # Only claim the lockdown if the kernel shows it. When iptables itself is what
+  # failed, every command above failed too, and staying up would leave Transmission
+  # on an open firewall: stop the container instead.
+  if iptables -S INPUT 2>/dev/null | grep -qxF -- '-P INPUT DROP' &&
+     iptables -S OUTPUT 2>/dev/null | grep -qxF -- '-P OUTPUT DROP'; then
+    echo "[ERROR] Firewall locked down (loopback only)."
+    return "$rc"
+  fi
+
+  echo "[ERROR] Could NOT lock the firewall down: iptables rejected the rules. Stopping the container."
+  echo "[ERROR] If iptables reported 'Could not fetch rule set generation id', this host cannot use"
+  echo "[ERROR] nf_tables: set IPTABLES_BACKEND=legacy (auto picks it when legacy works)."
+  # s6 starts Transmission even after a failed cont-init, and the halt below only
+  # completes once startup has finished. Without a firewall, take the routes away
+  # so nothing can leave in the meantime. Loopback lives in the local table.
+  local table
+  for table in main 100 51820; do
+    ip -4 route flush table "$table" 2>/dev/null || true
+    ip -6 route flush table "$table" 2>/dev/null || true
+  done
+  echo "[ERROR] All routes removed; only loopback works until the container stops."
+  local exitcode_file=${S6_EXITCODE_FILE:-/run/s6-linux-init-container-results/exitcode}
+  { mkdir -p "${exitcode_file%/*}" && echo "$rc" > "$exitcode_file"; } 2>/dev/null
+  "${S6_HALT:-/run/s6/basedir/bin/halt}" 2>/dev/null || kill -TERM 1 2>/dev/null
   return "$rc"
 }
 trap fail_closed_on_abort EXIT
@@ -615,7 +692,7 @@ iptables -F FORWARD
 iptables -F OUTPUT
 # Only this script's own mangle rules (CONNMARK for replies on eth0) are removed,
 # so a rerun does not duplicate them. nat is left alone; see SETUP_TAG.
-delete_tagged mangle "$SETUP_TAG" PREROUTING OUTPUT
+delete_tagged mangle "$SETUP_TAG" PREROUTING OUTPUT POSTROUTING
 ip6tables -P INPUT DROP   2>/dev/null || true
 ip6tables -P FORWARD DROP 2>/dev/null || true
 ip6tables -P OUTPUT DROP  2>/dev/null || true
@@ -888,9 +965,11 @@ if [ "${VPN_CLIENT,,}" = "openvpn" ] && [ -f "$OVPN_CONFIG_FILE" ]; then
   # never connect. Hostnames resolve through the tunnel, which is up by now and
   # already allowed above, so no DNS is opened on eth0.
   vpn_allow_remotes "$OVPN_CONFIG_FILE" append
-elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_CONFIG" ]; then
-  # Every peer endpoint, the same way.
-  vpn_allow_wg_endpoints "$WG_CONFIG" append
+elif [ "${VPN_CLIENT,,}" = "wireguard" ] && [ -f "$WG_EFFECTIVE" ]; then
+  # Every peer endpoint, from the effective config: the addresses resolved during
+  # bootstrap, so no DNS is needed here. A missing exception aborts setup (fail
+  # closed) before the bootstrap rules are removed.
+  vpn_allow_wg_endpoints "$WG_EFFECTIVE" append
 fi
 
 # The permanent rules are all in place; drop the bootstrap ones.
@@ -916,6 +995,17 @@ if [ "${ENABLE_PRIVOXY,,}" = "yes" ] || [ "${ENABLE_PRIVOXY,,}" = "true" ]; then
   echo "[INFO] CONNMARK rules for Privoxy (port ${PRIVOXY_PORT:-8118}) applied."
 else
   echo "[INFO] Privoxy is disabled."
+fi
+
+# An interface with an address is not proof the tunnel carries the traffic. With a
+# full tunnel, internet traffic must route into it; otherwise fail closed.
+if [ "${VPN_CLIENT,,}" = "wireguard" ] && vpn_wg_has_default_route "$WG_EFFECTIVE"; then
+  ROUTE_DEV=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+  if [ "$ROUTE_DEV" != "$VPN_INTERFACE" ]; then
+    echo "[ERROR] Internet traffic routes via '${ROUTE_DEV:-nothing}', not $VPN_INTERFACE. Try WIREGUARD_ROUTING=compat."
+    exit 1
+  fi
+  echo "[INFO] Verified: internet traffic routes via $VPN_INTERFACE."
 fi
 
 # Create a flag file indicating VPN script completed successfully
