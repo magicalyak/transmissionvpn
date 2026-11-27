@@ -52,10 +52,16 @@ mkdir -p "$WORK/bin"
 for tool in iptables ip6tables; do
     # shellcheck disable=SC2016  # $* and $FW_LOG must stay literal: they are expanded
     # when the generated stub runs, not while it is being written.
-    printf '#!/bin/bash\necho "%s $*" >> "$FW_LOG"\n' "$tool" > "$WORK/bin/$tool"
+    # FW_FAIL models a backend that rejects everything (Synology nf_tables). -S prints the
+    # last policy set for the chain, so the trap's verification sees what was applied.
+    printf '#!/bin/bash\n[ -n "$FW_FAIL" ] && exit 4\nif [ "$1" = -S ]; then grep "^%s -P $2 " "$FW_LOG" | tail -n1 | cut -d" " -f2-; exit 0; fi\necho "%s $*" >> "$FW_LOG"\n' "$tool" "$tool" > "$WORK/bin/$tool"
     chmod +x "$WORK/bin/$tool"
 done
 export PATH="$WORK/bin:$PATH"
+# Never let the trap halt the real container (or signal PID 1) during a test.
+export S6_EXITCODE_FILE="$WORK/exitcode" S6_HALT="$WORK/bin/halt-stub"
+printf '#!/bin/bash\ntouch "%s"\n' "$WORK/halted" > "$S6_HALT"
+chmod +x "$S6_HALT"
 
 make_harness() {
     # $1 = output path, $2 = final command (determines exit status)
@@ -113,6 +119,37 @@ if grep -q "Locking the firewall down" "$WORK/abort.out"; then
 else
     log_fail "Abort produced no explanation"
 fi
+
+if grep -q "Firewall locked down" "$WORK/abort.out" && [ ! -f "$WORK/halted" ]; then
+    log_pass "Verified lockdown reported and the container keeps running"
+else
+    log_fail "Lockdown not verified, or the container was halted needlessly"
+fi
+
+echo ""
+echo "1b. Abort path with a broken iptables backend stops the container..."
+export FW_LOG="$WORK/fw_broken.log"
+: > "$FW_LOG"
+set +e
+FW_FAIL=1 "$WORK/abort.sh" > "$WORK/broken.out" 2>&1
+BROKEN_RC=$?
+set -e
+if grep -q "Firewall locked down" "$WORK/broken.out"; then
+    log_fail "Claimed a lockdown that iptables rejected"
+else
+    log_pass "No false lockdown claim"
+fi
+if grep -q "IPTABLES_BACKEND=legacy" "$WORK/broken.out"; then
+    log_pass "Points at IPTABLES_BACKEND"
+else
+    log_fail "No hint about IPTABLES_BACKEND"
+fi
+if [ -f "$WORK/halted" ] && [ "$(cat "$S6_EXITCODE_FILE" 2>/dev/null)" = 7 ] && [ "$BROKEN_RC" -eq 7 ]; then
+    log_pass "Container halted with the setup exit code"
+else
+    log_fail "Container not halted with exit code 7 (rc=$BROKEN_RC)"
+fi
+rm -f "$WORK/halted"
 
 echo ""
 echo "2. Success path leaves the firewall alone..."

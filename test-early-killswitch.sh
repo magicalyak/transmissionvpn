@@ -108,6 +108,45 @@ else
     log_fail "entrypoint does not exec /init \"\$@\""
 fi
 
+# 4b. Backend selection. Stub xtables binaries: $XT_BROKEN lists the backends that fail.
+awk '/^backend_works\(\) \{/,/^\}/ {print} /^select_backend\(\) \{/,/^\}/ {print}' "$EARLY" > "$WORK/fn_backend.sh"
+# shellcheck disable=SC1091
+source "$WORK/fn_backend.sh"
+export XTABLES_DIR="$WORK/xt" FW_TOOLS="iptables ip6tables"
+mkdir -p "$XTABLES_DIR"
+for b in nft legacy; do
+    # shellcheck disable=SC2016  # $XT_BROKEN expands when the stub runs.
+    printf '#!/bin/bash\ncase " $XT_BROKEN " in *" %s "*) exit 4 ;; esac\n' "$b" > "$XTABLES_DIR/xtables-$b-multi"
+    chmod +x "$XTABLES_DIR/xtables-$b-multi"
+done
+check_backend() { # $1 desc, $2 IPTABLES_BACKEND, $3 XT_BROKEN, $4 expected backend or "fail"
+    export BACKEND_DIR="$WORK/backend.$RANDOM"
+    if IPTABLES_BACKEND="$2" XT_BROKEN="$3" select_backend > "$WORK/out" 2>&1; then
+        got=$(readlink "$BACKEND_DIR/iptables"); got=${got##*xtables-}; got=${got%-multi}
+        [ "$(readlink "$BACKEND_DIR/ip6tables")" = "$(readlink "$BACKEND_DIR/iptables")" ] || got="mixed"
+    else
+        got=fail
+    fi
+    if [ "$got" = "$4" ]; then log_pass "$1"; else log_fail "$1 (got $got): $(cat "$WORK/out")"; fi
+}
+check_backend "auto keeps nft where it works" auto "" nft
+check_backend "auto falls back to legacy when nf_tables fails" auto "nft" legacy
+check_backend "explicit legacy is used" legacy "" legacy
+check_backend "explicit nft is not silently swapped for legacy" nft "nft" nft
+check_backend "invalid IPTABLES_BACKEND stops the entrypoint" bogus "" fail
+check_backend "no working backend still selects one (vpn-setup then halts)" auto "nft legacy" nft
+if grep -q "ERROR" "$WORK/out"; then
+    log_pass "no working backend is reported as an error"
+else
+    log_fail "no working backend was not reported"
+fi
+if grep -qx 'select_backend || exit 1' "$EARLY" &&
+   [ "$(grep -n '^select_backend ||' "$EARLY" | cut -d: -f1)" -lt "$(grep -n '^early_lock$' "$EARLY" | cut -d: -f1)" ]; then
+    log_pass "backend is selected before the first firewall rule"
+else
+    log_fail "backend selection does not run before early_lock"
+fi
+
 # 5. nzbgetvpn only: the provider download opens DNS/HTTP(S) and closes it again
 if [ -f "$PROVIDER" ]; then
     awk '/^provider_net\(\) \{/,/^\}/' "$PROVIDER" > "$WORK/fn_provider.sh"
